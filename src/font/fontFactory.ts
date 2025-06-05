@@ -1,0 +1,96 @@
+import { ShxFontData } from '@mlightcad/shx-parser';
+
+import { getExtension } from '../common';
+import { BaseFont } from './baseFont';
+import { FontData } from './font';
+import { MeshFont, MeshFontData } from './meshFont';
+import { ShxFont } from './shxFont';
+
+/**
+ * A singleton factory class for creating font instances.
+ * This factory can create both ShxFont and MeshFont instances based on the provided font data.
+ *
+ * @example
+ * ```typescript
+ * const fontFactory = FontFactory.getInstance();
+ * const font = fontFactory.createFont(fontData);
+ * ```
+ */
+export class FontFactory {
+  private static _instance: FontFactory;
+
+  private constructor() {}
+
+  /**
+   * Gets the singleton instance of the FontFactory.
+   * If no instance exists, creates a new one.
+   *
+   * @returns The singleton instance of FontFactory
+   */
+  public static get instance(): FontFactory {
+    if (!FontFactory._instance) {
+      FontFactory._instance = new FontFactory();
+    }
+    return FontFactory._instance;
+  }
+
+  /**
+   * Creates a font instance based on the provided font data.
+   * The type of font created (ShxFont or MeshFont) is determined by the presence of the fontType property.
+   *
+   * @param data - The font data to create the font instance from
+   * @returns A new instance of either ShxFont or MeshFont
+   * @throws {Error} If the font data type is not supported
+   */
+  public createFont(data: FontData): BaseFont {
+    if (this.isShxFontData(data)) {
+      return new ShxFont(data.data as ShxFontData);
+    } else if (this.isMeshFontData(data)) {
+      return new MeshFont(data.data as MeshFontData);
+    }
+    throw new Error('Unsupported font data type');
+  }
+
+  /**
+   * Creates a font instance from a file name and its ArrayBuffer data.
+   * The type of font created is determined by the file extension.
+   *
+   * @param fileName - The name of the font file
+   * @param buffer - The ArrayBuffer containing the font data
+   * @returns A new instance of either ShxFont or MeshFont
+   * @throws {Error} If the file type is not supported
+   */
+  public createFontFromBuffer(fileName: string, buffer: ArrayBuffer): BaseFont {
+    const extension = getExtension(fileName).toLowerCase();
+
+    if (extension === 'shx') {
+      return new ShxFont(buffer);
+    } else if (['ttf', 'otf', 'woff'].includes(extension)) {
+      return new MeshFont(buffer);
+    }
+
+    throw new Error(`Unsupported font file type: ${extension}`);
+  }
+
+  /**
+   * Determines if the provided font data is for a ShxFont.
+   * Checks for the presence of the fontType property.
+   *
+   * @param data - The font data to check
+   * @returns True if the data is for a ShxFont, false otherwise
+   */
+  private isShxFontData(data: FontData) {
+    return 'fontType' in data.data;
+  }
+
+  /**
+   * Determines if the provided font data is for a MeshFont.
+   * Checks for the absence of the fontType property.
+   *
+   * @param data - The font data to check
+   * @returns True if the data is for a MeshFont, false otherwise
+   */
+  private isMeshFontData(data: FontData) {
+    return !('fontType' in data.data);
+  }
+}
