@@ -58,4 +58,3 @@ export interface TextStyle {
   extendedFont?: string;
   color: number;
 }
-
