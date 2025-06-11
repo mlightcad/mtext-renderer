@@ -4,45 +4,59 @@ import { BaseFont } from './baseFont';
 import { BaseTextShape } from './baseTextShape';
 import { FontCacheManager } from '../cache';
 import { EventManager, getFileName, getFileNameWithoutExtension } from '../common';
-import { FontData } from './font';
 import { FontFactory } from './fontFactory';
 import { FontLoadStatus } from './fontLoader';
 
 /**
- * Font mappings.
+ * Font mappings configuration.
+ * Maps original font names to their replacement font names.
  * - The key is the original font name
  * - The value is the mapped font name
  */
 export type FontMapping = Record<string, string>;
 
+/**
+ * Event arguments for font-related events.
+ */
 export interface FontManagerEventArgs {
-  /**
-   * Name of font which can't be found
-   */
+  /** Name of font which can't be found */
   fontName: string;
-  /**
-   * The number of characters which use this font. This is only used when the font is not found.
-   */
+  /** The number of characters which use this font. This is only used when the font is not found. */
   count?: number;
 }
 
+/**
+ * Manages font loading, caching, and text rendering.
+ * This class is responsible for:
+ * - Loading fonts from URLs or cache
+ * - Managing font mappings and replacements
+ * - Providing text shapes for rendering
+ * - Tracking unsupported characters and missed fonts
+ */
 export class FontManager {
   private static _instance: FontManager;
+  /** THREE.js file loader for loading font files */
   private loader: THREE.FileLoader;
+  /** Mapping of original font names to their replacements */
   protected fontMapping: FontMapping = {};
+  /** Map of loaded fonts, keyed by font name */
   protected fontMap: Map<string, BaseFont> = new Map();
+  /** List of font file names that have been loaded */
   protected fileNames: string[];
+  /** Record of characters that are not supported by any loaded font */
   public unsupportedChars: Record<string, number> = {};
+  /** Record of fonts that were requested but not found */
   public missedFonts: Record<string, number> = {};
-  public enableFontCache = false;
-  /**
-   * Default font. If the specified font can't be found, the default font will be used
-   * when rendering texts.
-   */
+  /** Flag to enable/disable font caching */
+  public enableFontCache = true;
+  /** Default font to use when a requested font is not found */
   public defaultFont = 'simsun';
 
+  /** Event managers for font-related events */
   public readonly events = {
+    /** Event triggered when a font cannot be found */
     fontNotFound: new EventManager<FontManagerEventArgs>(),
+    /** Event triggered when a font is successfully loaded */
     fontLoaded: new EventManager<FontManagerEventArgs>(),
   };
 
@@ -52,6 +66,10 @@ export class FontManager {
     this.fileNames = [];
   }
 
+  /**
+   * Gets the singleton instance of the FontManager
+   * @returns The FontManager instance
+   */
   public static get instance(): FontManager {
     if (!FontManager._instance) {
       FontManager._instance = new FontManager();
@@ -60,17 +78,17 @@ export class FontManager {
   }
 
   /**
-   * Set font mapping
-   * @param Input font mapping to set
+   * Sets the font mapping configuration
+   * @param mapping - The font mapping to set
    */
   setFontMapping(mapping: FontMapping) {
     this.fontMapping = mapping;
   }
 
   /**
-   * Load the specified fonts
-   * @param urls Input urls of font files to load. The order represents the priority
-   * @returns Return the load status of fonts
+   * Loads the specified fonts from URLs
+   * @param urls - URLs of font files to load. The order represents the priority
+   * @returns Promise that resolves to an array of font load statuses
    */
   async loadFonts(urls: string | string[]) {
     urls = Array.isArray(urls) ? urls : [urls];
@@ -100,9 +118,9 @@ export class FontManager {
   }
 
   /**
-   * Try to find the specified font. If not found, use one new font to replace it and return its name.
-   * @param fontName Input font name to find
-   * @returns Return 'fontName' if found this font. Return replacement font name if not found.
+   * Tries to find the specified font. If not found, uses a replacement font and returns its name.
+   * @param fontName - The font name to find
+   * @returns The original font name if found, or the replacement font name if not found
    */
   findAndReplaceFont(fontName: string) {
     let font = this.fontMap.get(fontName.toLowerCase());
@@ -117,7 +135,11 @@ export class FontManager {
   }
 
   /**
-   * Get text shape of the specified character with the specified font type and font size
+   * Gets the text shape for a specific character with the specified font and size
+   * @param char - The character to get the shape for
+   * @param fontName - The name of the font to use
+   * @param size - The size of the character
+   * @returns The text shape for the character, or undefined if not found
    */
   public getCharShape(char: string, fontName: string, size: number): BaseTextShape | undefined {
     if (this.fontMap.size === 0) {
@@ -141,11 +163,21 @@ export class FontManager {
     return currentFont?.getCharShape(char, size);
   }
 
+  /**
+   * Gets the scale factor for a specific font
+   * @param fontName - The name of the font
+   * @returns The scale factor for the font, or 1 if the font is not found
+   */
   getFontScaleFactor(fontName: string) {
     const font = this.fontMap.get(fontName.toLowerCase());
     return font ? font.getScaleFactor() : 1;
   }
 
+  /**
+   * Gets the shape to display when a character is not found
+   * @param size - The size of the shape
+   * @returns The shape for the not found indicator, or undefined if not available
+   */
   getNotFoundTextShape(size: number) {
     for (const [, font] of this.fontMap) {
       const s = font.getNotFoundTextShape(size);
@@ -154,6 +186,10 @@ export class FontManager {
     return;
   }
 
+  /**
+   * Records a font that was requested but not found
+   * @param fontName - The name of the font that was not found
+   */
   private recordMissedFonts(fontName: string) {
     if (fontName) {
       if (!this.missedFonts[fontName]) {
@@ -167,6 +203,10 @@ export class FontManager {
     }
   }
 
+  /**
+   * Loads a single font from a URL
+   * @param url - The URL of the font file to load
+   */
   private async loadFont(url: string) {
     const fileName = getFileName(url);
     if (!fileName) {
@@ -185,7 +225,11 @@ export class FontManager {
       if (font) {
         this.fontMap.set(fontName, font);
         if (this.enableFontCache) {
-          await FontCacheManager.instance.set(fontName, font.data as FontData);
+          await FontCacheManager.instance.set(fontName, {
+            name: fontName,
+            type: font.type,
+            data: font.data,
+          });
         }
       }
     }
@@ -195,23 +239,27 @@ export class FontManager {
     });
   }
 
+  /**
+   * Loads all fonts from the cache
+   */
   async getAllFontsFromCache() {
     if (this.fontMap.size !== 0) {
       return;
     }
     const fontFileDatas = await FontCacheManager.instance.getAll();
     for (const fontFileData of fontFileDatas) {
-      const { fileName } = fontFileData;
-      if (this.fileNames && !this.fileNames.includes(fileName)) {
+      const { name } = fontFileData;
+      if (this.fileNames && !this.fileNames.includes(name)) {
         continue;
       }
       const font = FontFactory.instance.createFont(fontFileData);
-      this.fontMap.set(fileName, font);
+      this.fontMap.set(name, font);
     }
   }
 
   /**
-   * Just for log usage
+   * Gets a record of all unsupported characters across all loaded fonts
+   * @returns A record mapping unsupported characters to their occurrence count
    */
   public getUnsupportedChar() {
     for (const [, font] of this.fontMap) {
@@ -220,6 +268,9 @@ export class FontManager {
     return this.unsupportedChars;
   }
 
+  /**
+   * Releases all loaded fonts and clears the font map
+   */
   release() {
     this.fontMap.clear();
   }
