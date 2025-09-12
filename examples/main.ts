@@ -1,19 +1,16 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { MText } from '../src/renderer/mtext';
-import { FontManager } from '../src/font';
-import { StyleManager } from '../src/renderer/styleManager';
-import { DefaultFontLoader } from '../src/font/defaultFontLoader';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { UnifiedRenderer, RenderMode } from '../src/worker';
+import { MTextData, TextStyle } from '../src/renderer/types';
+import { MTextObject } from '../src/worker/baseRenderer';
 
 class MTextRendererExample {
   private scene: THREE.Scene;
   private camera: THREE.OrthographicCamera;
   private renderer: THREE.WebGLRenderer;
   private controls: OrbitControls;
-  private fontManager: FontManager;
-  private styleManager: StyleManager;
-  private currentMText: MText | null = null;
-  private fontLoader: DefaultFontLoader;
+  private unifiedRenderer: UnifiedRenderer;
+  private currentMText: MTextObject | null = null;
   private mtextBox: THREE.LineSegments | null = null;
 
   // DOM elements
@@ -22,6 +19,7 @@ class MTextRendererExample {
   private statusDiv: HTMLDivElement;
   private fontSelect: HTMLSelectElement;
   private showBoundingBoxCheckbox: HTMLInputElement;
+  private renderModeSelect: HTMLSelectElement;
 
   // Example texts
   private readonly exampleTexts = {
@@ -38,6 +36,7 @@ class MTextRendererExample {
       '{\\pql;Left aligned paragraph.}\\P{\\pqc;Center aligned paragraph.}\\P{\\pqr;Right aligned paragraph.}\\P{\\pqc;Center again.}\\P{\\pql;Back to left.}',
     paragraph:
       '{\\pql;\\P{\\pqi;\\pxi2;\\pxl5;\\pxr5;This paragraph has an indent of 2 units, left margin of 5 units, and right margin of 5 units. The first line is indented.}\\P{\\pqi;\\pxi2;\\pxl5;\\pxr5;This is the second line of the same paragraph, showing the effect of margins.}}',
+    multiple: 'multiple', // Special marker for multiple MText rendering
   };
 
   constructor() {
@@ -78,11 +77,8 @@ class MTextRendererExample {
     this.controls.maxDistance = 50;
     this.controls.maxPolarAngle = Math.PI / 2;
 
-    // Initialize managers and loader
-    this.fontManager = FontManager.instance;
-    this.fontManager.defaultFont = 'simkai';
-    this.styleManager = new StyleManager();
-    this.fontLoader = new DefaultFontLoader();
+    // Initialize unified renderer (default to main thread)
+    this.unifiedRenderer = new UnifiedRenderer('main');
 
     // Get DOM elements
     this.mtextInput = document.getElementById('mtext-input') as HTMLTextAreaElement;
@@ -90,6 +86,7 @@ class MTextRendererExample {
     this.statusDiv = document.getElementById('status') as HTMLDivElement;
     this.fontSelect = document.getElementById('font-select') as HTMLSelectElement;
     this.showBoundingBoxCheckbox = document.getElementById('show-bounding-box') as HTMLInputElement;
+    this.renderModeSelect = document.getElementById('render-mode') as HTMLSelectElement;
 
     // Add lights
     this.setupLights();
@@ -101,7 +98,7 @@ class MTextRendererExample {
     this.initializeFonts()
       .then(() => {
         // Initial render after fonts are loaded
-        this.renderMText(this.mtextInput.value);
+        void this.renderMText(this.mtextInput.value);
       })
       .catch((error) => {
         console.error('Failed to initialize fonts:', error);
@@ -142,11 +139,9 @@ class MTextRendererExample {
     });
 
     // Render button
-    this.renderBtn.addEventListener('click', () => {
+    this.renderBtn.addEventListener('click', async () => {
       const content = this.mtextInput.value;
-      this.renderMText(content);
-      this.statusDiv.textContent = 'MText rendered successfully';
-      this.statusDiv.style.color = '#0f0';
+      await this.renderMText(content);
     });
 
     // Font selection
@@ -160,10 +155,10 @@ class MTextRendererExample {
         this.statusDiv.style.color = '#ffa500';
 
         // Load the selected font
-        await this.fontLoader.load([selectedFont]);
+        await this.unifiedRenderer.loadFonts([selectedFont]);
 
         // Re-render MText with new font
-        this.renderMText(content);
+        await this.renderMText(content);
 
         // Update status
         this.statusDiv.textContent = `Font changed to ${selectedFont}`;
@@ -181,30 +176,37 @@ class MTextRendererExample {
         const exampleType = (button as HTMLElement).dataset.example;
         if (exampleType && this.exampleTexts[exampleType as keyof typeof this.exampleTexts]) {
           const content = this.exampleTexts[exampleType as keyof typeof this.exampleTexts];
-          this.mtextInput.value = content;
 
-          // Get required fonts from the MText content
-          const requiredFonts = Array.from(MText.getFonts(content, true));
-          if (requiredFonts.length > 0) {
-            try {
-              // Show loading status
-              this.statusDiv.textContent = `Loading fonts: ${requiredFonts.join(', ')}...`;
-              this.statusDiv.style.color = '#ffa500';
+          if (content === 'multiple') {
+            // For multiple MText, don't update the textarea but render directly
+            await this.renderMText(content);
+          } else {
+            // For regular examples, update textarea and render
+            this.mtextInput.value = content;
 
-              // Load the required fonts
-              await this.fontLoader.load(requiredFonts);
+            // Get required fonts from the MText content
+            const requiredFonts = Array.from(this.getFontsFromMText(content, true));
+            if (requiredFonts.length > 0) {
+              try {
+                // Show loading status
+                this.statusDiv.textContent = `Loading fonts: ${requiredFonts.join(', ')}...`;
+                this.statusDiv.style.color = '#ffa500';
 
-              // Update status
-              this.statusDiv.textContent = 'Fonts loaded successfully';
-              this.statusDiv.style.color = '#0f0';
-            } catch (error) {
-              console.error('Error loading fonts:', error);
-              this.statusDiv.textContent = `Error loading fonts: ${requiredFonts.join(', ')}`;
-              this.statusDiv.style.color = '#f00';
+                // Load the required fonts
+                await this.unifiedRenderer.loadFonts(requiredFonts);
+
+                // Update status
+                this.statusDiv.textContent = 'Fonts loaded successfully';
+                this.statusDiv.style.color = '#0f0';
+              } catch (error) {
+                console.error('Error loading fonts:', error);
+                this.statusDiv.textContent = `Error loading fonts: ${requiredFonts.join(', ')}`;
+                this.statusDiv.style.color = '#f00';
+              }
             }
-          }
 
-          this.renderMText(content);
+            await this.renderMText(content);
+          }
         }
       });
     });
@@ -215,15 +217,45 @@ class MTextRendererExample {
         this.mtextBox.visible = this.showBoundingBoxCheckbox.checked;
       }
     });
+
+    // Render mode toggle
+    this.renderModeSelect.addEventListener('change', async () => {
+      const mode = this.renderModeSelect.value as RenderMode;
+      this.unifiedRenderer.switchMode(mode);
+
+      try {
+        // Ensure required fonts are available in the new mode
+        const currentContent = this.mtextInput.value;
+        const requiredFonts = new Set<string>();
+        // From dropdown
+        if (this.fontSelect.value) requiredFonts.add(this.fontSelect.value);
+        // From MText content
+        this.getFontsFromMText(currentContent, true).forEach((f) => requiredFonts.add(f));
+        if (requiredFonts.size > 0) {
+          await this.unifiedRenderer.loadFonts(Array.from(requiredFonts));
+        }
+
+        this.statusDiv.textContent = `Switched to ${mode} thread rendering`;
+        this.statusDiv.style.color = '#0f0';
+      } catch (e) {
+        console.error('Error preparing fonts after mode switch:', e);
+        this.statusDiv.textContent = `Switched to ${mode} thread (font prep failed)`;
+        this.statusDiv.style.color = '#ffa500';
+      }
+
+      // Re-render with current content to reflect the new mode
+      await this.renderMText(this.mtextInput.value);
+    });
   }
 
   private async initializeFonts(): Promise<void> {
     try {
       // Load available fonts for the dropdown
-      const fonts = await this.fontLoader.getAvaiableFonts();
+      const result = await this.unifiedRenderer.getAvailableFonts();
+      const fonts = result.fonts;
 
       // Load default fonts
-      await this.fontLoader.load([this.fontManager.defaultFont]);
+      await this.unifiedRenderer.loadFonts(['simkai']);
 
       // Clear existing options
       this.fontSelect.innerHTML = '';
@@ -234,7 +266,7 @@ class MTextRendererExample {
         option.value = font.name[0];
         option.textContent = font.name[0]; // Use the first name from the array
         // Set selected if this is the default font
-        if (font.name[0] === this.fontManager.defaultFont) {
+        if (font.name[0] === 'simkai') {
           option.selected = true;
         }
         this.fontSelect.appendChild(option);
@@ -367,53 +399,203 @@ class MTextRendererExample {
     return this.mtextBox;
   }
 
-  private renderMText(content: string): void {
-    // Remove existing MText if any
-    if (this.currentMText) {
-      this.scene.remove(this.currentMText);
+  private createMultipleMTextData(): { mtextData: MTextData; textStyle: TextStyle }[] {
+    const texts = [
+      '{\\C1;Title Text 1}\\P{\\C2;Subtitle with different colors}',
+      '{\\C3;Title Text 2}\\P{\\C4;Subtitle with different colors}',
+      '{\\C5;Title Text 3}\\P{\\C6;Subtitle with different colors}',
+      '{\\C7;Title Text 4}\\P{\\C8;Subtitle with different colors}',
+      '{\\C9;Title Text 5}\\P{\\C10;Subtitle with different colors}',
+      '{\\C11;Title Text 6}\\P{\\C12;Subtitle with different colors}',
+      '{\\C13;Title Text 7}\\P{\\C14;Subtitle with different colors}',
+      '{\\C15;Title Text 8}\\P{\\C16;Subtitle with different colors}',
+      '{\\C17;Title Text 9}\\P{\\C18;Subtitle with different colors}',
+      '{\\C19;Title Text 10}\\P{\\C20;Subtitle with different colors}',
+    ];
+
+    return texts.map((text, index) => {
+      const col = index % 3;
+      const row = Math.floor(index / 3);
+      const x = -2.5 + col * 1.5; // 3 per row horizontally
+      const y = 2 - row * 0.5; // move down per row to fit within frustum
+
+      return {
+        mtextData: {
+          text,
+          height: 0.08,
+          width: 1.4, // Reduced width to fit better in the grid
+          position: new THREE.Vector3(x, y, 0),
+        },
+        textStyle: {
+          name: 'Standard',
+          standardFlag: 0,
+          fixedTextHeight: 0.08,
+          widthFactor: 1,
+          obliqueAngle: 0,
+          textGenerationFlag: 0,
+          lastHeight: 0.08,
+          font: this.fontSelect.value,
+          bigFont: '',
+          color: 0xffffff,
+        },
+      };
+    });
+  }
+
+  private async renderMText(content: string): Promise<void> {
+    try {
+      const startTime = performance.now();
+
+      // Show loading status
+      this.statusDiv.textContent = 'Rendering MText...';
+      this.statusDiv.style.color = '#ffa500';
+
+      // Remove existing MText if any
+      if (this.currentMText) {
+        this.scene.remove(this.currentMText);
+      }
+
+      // Remove existing bounding boxes
+      if (this.mtextBox) {
+        this.scene.remove(this.mtextBox);
+        this.mtextBox = null;
+      }
+
+      let renderTime: number;
+
+      if (content === 'multiple') {
+        // Render multiple MText objects
+        const multipleData = this.createMultipleMTextData();
+
+        const renderPromises = multipleData.map(({ mtextData, textStyle }) => {
+          return this.unifiedRenderer.renderMText(mtextData, textStyle, {
+            byLayerColor: 0xffffff,
+            byBlockColor: 0xffffff,
+          });
+        });
+
+        const mtextObjects: MTextObject[] = await Promise.all(renderPromises);
+
+        // Create a group to hold all MText objects
+        const group = new THREE.Group();
+        let combinedBox: THREE.Box3 | null = null;
+
+        mtextObjects.forEach((mtextObj, index) => {
+          group.add(mtextObj);
+
+          // Combine bounding boxes
+          if (mtextObj.box && !mtextObj.box.isEmpty()) {
+            if (combinedBox === null) {
+              combinedBox = mtextObj.box.clone();
+            } else {
+              combinedBox.union(mtextObj.box);
+            }
+          }
+
+          // Add bounding boxes if enabled
+          if (this.showBoundingBoxCheckbox.checked && mtextObj.box && !mtextObj.box.isEmpty()) {
+            const box = this.createMTextBox(
+              mtextObj.box,
+              new THREE.Vector3(
+                multipleData[index].mtextData.position.x,
+                multipleData[index].mtextData.position.y,
+                multipleData[index].mtextData.position.z
+              ),
+              multipleData[index].mtextData.width
+            );
+            group.add(box);
+          }
+        });
+
+        // Add combined bounding box to the group
+        if (combinedBox) {
+          (group as unknown as MTextObject).box = combinedBox;
+        } else {
+          (group as unknown as MTextObject).box = new THREE.Box3();
+        }
+
+        this.currentMText = group as unknown as MTextObject;
+        this.scene.add(this.currentMText);
+
+        renderTime = performance.now() - startTime;
+        this.statusDiv.textContent = `Rendered ${mtextObjects.length}/${multipleData.length} MText objects in ${renderTime.toFixed(2)}ms (${this.renderModeSelect.value} thread)`;
+      } else {
+        // Render single MText object
+        const mtextContent: MTextData = {
+          text: content,
+          height: 0.1,
+          width: 5.5,
+          position: new THREE.Vector3(-3, 2, 0),
+        };
+
+        const textStyle: TextStyle = {
+          name: 'Standard',
+          standardFlag: 0,
+          fixedTextHeight: 0.1,
+          widthFactor: 1,
+          obliqueAngle: 0,
+          textGenerationFlag: 0,
+          lastHeight: 0.1,
+          font: this.fontSelect.value,
+          bigFont: '',
+          color: 0xffffff,
+        };
+
+        // Render MText using unified renderer
+        this.currentMText = await this.unifiedRenderer.renderMText(mtextContent, textStyle, {
+          byLayerColor: 0xffffff,
+          byBlockColor: 0xffffff,
+        });
+        this.scene.add(this.currentMText);
+
+        // Create box around MText using its bounding box only if checkbox is checked
+        if (
+          this.showBoundingBoxCheckbox.checked &&
+          this.currentMText &&
+          this.currentMText.box &&
+          !this.currentMText.box.isEmpty()
+        ) {
+          const box = this.createMTextBox(
+            this.currentMText.box,
+            new THREE.Vector3(
+              mtextContent.position.x,
+              mtextContent.position.y,
+              mtextContent.position.z
+            ),
+            mtextContent.width
+          );
+          this.scene.add(box);
+        }
+
+        renderTime = performance.now() - startTime;
+        this.statusDiv.textContent = `MText rendered in ${renderTime.toFixed(2)}ms (${this.renderModeSelect.value} thread)`;
+      }
+
+      this.statusDiv.style.color = '#0f0';
+    } catch (error) {
+      console.error('Error rendering MText:', error);
+      this.statusDiv.textContent = 'Error rendering MText';
+      this.statusDiv.style.color = '#f00';
+    }
+  }
+
+  /**
+   * Extract font names from MText content (simplified version)
+   */
+  private getFontsFromMText(mtext: string, removeExtension: boolean = false): Set<string> {
+    const fonts = new Set<string>();
+    const fontRegex = /\\f([^\\|;]+)/gi;
+    let match;
+
+    while ((match = fontRegex.exec(mtext)) !== null) {
+      let fontName = match[1].toLowerCase();
+      if (removeExtension) {
+        fontName = fontName.replace(/\.(ttf|otf|shx)$/i, '');
+      }
+      fonts.add(fontName);
     }
 
-    // Create new MText instance
-    const mtextContent = {
-      text: content,
-      height: 0.1,
-      width: 5.5,
-      position: new THREE.Vector3(-3, 2, 0),
-    };
-
-    this.currentMText = new MText(
-      mtextContent,
-      {
-        name: 'Standard',
-        standardFlag: 0,
-        fixedTextHeight: 0.1,
-        widthFactor: 1,
-        obliqueAngle: 0,
-        textGenerationFlag: 0,
-        lastHeight: 0.1,
-        font: this.fontSelect.value,
-        bigFont: '',
-        color: 0xffffff,
-      },
-      this.styleManager,
-      this.fontManager
-    );
-
-    this.scene.add(this.currentMText);
-
-    // Create box around MText using its bounding box only if checkbox is checked
-    if (
-      this.showBoundingBoxCheckbox.checked &&
-      this.currentMText.box &&
-      !this.currentMText.box.isEmpty()
-    ) {
-      const box = this.createMTextBox(
-        this.currentMText.box,
-        mtextContent.position,
-        mtextContent.width
-      );
-      this.scene.add(box);
-    }
+    return fonts;
   }
 
   private animate(): void {
@@ -421,7 +603,19 @@ class MTextRendererExample {
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
+
+  /**
+   * Cleanup method to destroy the renderer
+   */
+  public destroy(): void {
+    this.unifiedRenderer.destroy();
+  }
 }
 
 // Create and start the example
-new MTextRendererExample();
+const app = new MTextRendererExample();
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  app.destroy();
+});
