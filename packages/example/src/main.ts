@@ -106,7 +106,7 @@ class MTextRendererExample {
     this.setupEventListeners()
 
     // Initialize fonts and UI, then render
-    this.initializeFonts()
+    this.initializeFonts(true)
       .then(() => {
         // Initial render after fonts are loaded
         void this.renderMText(this.mtextInput.value)
@@ -158,27 +158,9 @@ class MTextRendererExample {
     // Font selection
     this.fontSelect.addEventListener('change', async () => {
       const content = this.mtextInput.value
-      const selectedFont = this.fontSelect.value
 
-      try {
-        // Show loading status
-        this.statusDiv.textContent = `Loading font ${selectedFont}...`
-        this.statusDiv.style.color = '#ffa500'
-
-        // Load the selected font
-        await this.unifiedRenderer.loadFonts([selectedFont])
-
-        // Re-render MText with new font
-        await this.renderMText(content)
-
-        // Update status
-        this.statusDiv.textContent = `Font changed to ${selectedFont}`
-        this.statusDiv.style.color = '#0f0'
-      } catch (error) {
-        console.error('Error loading font:', error)
-        this.statusDiv.textContent = `Error loading font ${selectedFont}`
-        this.statusDiv.style.color = '#f00'
-      }
+      // Re-render MText with new font
+      await this.renderMText(content)
     })
 
     // Example buttons
@@ -198,30 +180,6 @@ class MTextRendererExample {
           } else {
             // For regular examples, update textarea and render
             this.mtextInput.value = content
-
-            // Get required fonts from the MText content
-            const requiredFonts = Array.from(
-              this.getFontsFromMText(content, true)
-            )
-            if (requiredFonts.length > 0) {
-              try {
-                // Show loading status
-                this.statusDiv.textContent = `Loading fonts: ${requiredFonts.join(', ')}...`
-                this.statusDiv.style.color = '#ffa500'
-
-                // Load the required fonts
-                await this.unifiedRenderer.loadFonts(requiredFonts)
-
-                // Update status
-                this.statusDiv.textContent = 'Fonts loaded successfully'
-                this.statusDiv.style.color = '#0f0'
-              } catch (error) {
-                console.error('Error loading fonts:', error)
-                this.statusDiv.textContent = `Error loading fonts: ${requiredFonts.join(', ')}`
-                this.statusDiv.style.color = '#f00'
-              }
-            }
-
             await this.renderMText(content)
           }
         }
@@ -241,58 +199,43 @@ class MTextRendererExample {
       this.unifiedRenderer.switchMode(mode, {
         workerUrl: './mtext-renderer-worker.js'
       })
+      this.statusDiv.textContent = `Switched to ${mode} thread rendering`
+      this.statusDiv.style.color = '#0f0'
 
-      try {
-        // Ensure required fonts are available in the new mode
-        const currentContent = this.mtextInput.value
-        const requiredFonts = new Set<string>()
-        // From dropdown
-        if (this.fontSelect.value) requiredFonts.add(this.fontSelect.value)
-        // From MText content
-        this.getFontsFromMText(currentContent, true).forEach(f =>
-          requiredFonts.add(f)
-        )
-        if (requiredFonts.size > 0) {
-          await this.unifiedRenderer.loadFonts(Array.from(requiredFonts))
-        }
-
-        this.statusDiv.textContent = `Switched to ${mode} thread rendering`
-        this.statusDiv.style.color = '#0f0'
-      } catch (e) {
-        console.error('Error preparing fonts after mode switch:', e)
-        this.statusDiv.textContent = `Switched to ${mode} thread (font prep failed)`
-        this.statusDiv.style.color = '#ffa500'
-      }
+      // Call this function to guarantee default font is loaded 
+      await this.initializeFonts(false)
 
       // Re-render with current content to reflect the new mode
       await this.renderMText(this.mtextInput.value)
     })
   }
 
-  private async initializeFonts(): Promise<void> {
+  private async initializeFonts(isResetAvaiableFonts = true): Promise<void> {
     try {
-      // Load available fonts for the dropdown
-      const result = await this.unifiedRenderer.getAvailableFonts()
-      const fonts = result.fonts
+      if (isResetAvaiableFonts) {
+        // Load available fonts for the dropdown
+        const result = await this.unifiedRenderer.getAvailableFonts()
+        const fonts = result.fonts
+
+        // Clear existing options
+        this.fontSelect.innerHTML = ''
+
+        // Add all available fonts to dropdown
+        fonts.forEach(font => {
+          const option = document.createElement('option')
+          option.value = font.name[0]
+          option.textContent = font.name[0] // Use the first name from the array
+          // Set selected if this is the default font
+          if (font.name[0] === 'simkai') {
+            option.selected = true
+          }
+          this.fontSelect.appendChild(option)
+        })
+      }
 
       // Load default fonts
-      await this.unifiedRenderer.loadFonts(['simkai'])
-
-      // Clear existing options
-      this.fontSelect.innerHTML = ''
-
-      // Add all available fonts to dropdown
-      fonts.forEach(font => {
-        const option = document.createElement('option')
-        option.value = font.name[0]
-        option.textContent = font.name[0] // Use the first name from the array
-        // Set selected if this is the default font
-        if (font.name[0] === 'simkai') {
-          option.selected = true
-        }
-        this.fontSelect.appendChild(option)
-      })
-
+      const selectedFont = this.fontSelect.value
+      await this.unifiedRenderer.loadFonts([selectedFont])
       this.statusDiv.textContent = 'Fonts loaded successfully'
       this.statusDiv.style.color = '#0f0'
     } catch (error) {
@@ -616,28 +559,6 @@ class MTextRendererExample {
       this.statusDiv.textContent = 'Error rendering MText'
       this.statusDiv.style.color = '#f00'
     }
-  }
-
-  /**
-   * Extract font names from MText content (simplified version)
-   */
-  private getFontsFromMText(
-    mtext: string,
-    removeExtension: boolean = false
-  ): Set<string> {
-    const fonts = new Set<string>()
-    const fontRegex = /\\f([^\\|;]+)/gi
-    let match
-
-    while ((match = fontRegex.exec(mtext)) !== null) {
-      let fontName = match[1].toLowerCase()
-      if (removeExtension) {
-        fontName = fontName.replace(/\.(ttf|otf|shx)$/i, '')
-      }
-      fonts.add(fontName)
-    }
-
-    return fonts
   }
 
   private animate(): void {
