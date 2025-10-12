@@ -9,12 +9,24 @@ import { FontManager } from './fontManager'
 export class DefaultFontLoader implements FontLoader {
   /** List of available fonts in the system */
   private _avaiableFonts: FontInfo[]
+  private _baseUrl: string
 
   /**
    * Creates a new instance of DefaultFontLoader
    */
   constructor() {
     this._avaiableFonts = []
+    this._baseUrl = 'https://mlightcad.gitlab.io/cad-data/fonts/'
+  }
+
+  /**
+   * Base URL to load fonts
+   */
+  get baseUrl() {
+    return this._baseUrl
+  }
+  set baseUrl(value: string) {
+    this._baseUrl = value
   }
 
   /**
@@ -33,8 +45,7 @@ export class DefaultFontLoader implements FontLoader {
    */
   async getAvaiableFonts() {
     if (this._avaiableFonts.length == 0) {
-      const baseUrl = 'https://cdn.jsdelivr.net/gh/mlight-lee/cad-data/fonts/'
-      const fontMetaDataUrl = baseUrl + 'fonts.json'
+      const fontMetaDataUrl = this._baseUrl + 'fonts.json'
       try {
         const response = await fetch(fontMetaDataUrl)
         this._avaiableFonts = (await response.json()) as FontInfo[]
@@ -43,7 +54,7 @@ export class DefaultFontLoader implements FontLoader {
       }
 
       this._avaiableFonts.forEach(font => {
-        font.url = baseUrl + font.file
+        font.url = this._baseUrl + font.file
       })
     }
     return this._avaiableFonts
