@@ -3,7 +3,7 @@ import { FontManager } from './fontManager'
 
 /**
  * Default implementation of the FontLoader interface.
- * This class provides font loading functionality using a [CDN-based font repository](https://cdn.jsdelivr.net/gh/mlight-lee/cad-data/fonts/).
+ * This class provides font loading functionality using [this font repository](https://mlightcad.gitlab.io/cad-data/fonts/).
  * It loads font metadata from a JSON file and provides access to available fonts.
  */
 export class DefaultFontLoader implements FontLoader {
@@ -49,8 +49,10 @@ export class DefaultFontLoader implements FontLoader {
       try {
         const response = await fetch(fontMetaDataUrl)
         this._avaiableFonts = (await response.json()) as FontInfo[]
-      } catch {
-        throw new Error(`Filed to get avaiable font from '${fontMetaDataUrl}'`)
+      } catch (error) {
+        throw new Error(
+          `Filed to get avaiable font from '${fontMetaDataUrl}' due to ${error}!`
+        )
       }
 
       this._avaiableFonts.forEach(font => {
@@ -68,9 +70,10 @@ export class DefaultFontLoader implements FontLoader {
    * @returns Promise that resolves to an array of FontLoadStatus objects
    */
   async load(fontNames: string[]) {
-    if (fontNames.length == 0) {
-      await this.getAvaiableFonts()
+    if (fontNames == null || fontNames.length === 0) {
+      return []
     }
+    await this.getAvaiableFonts()
 
     const urls: string[] = []
     const alreadyLoadedStatuses: FontLoadStatus[] = []
@@ -91,7 +94,7 @@ export class DefaultFontLoader implements FontLoader {
           alreadyLoadedStatuses.push({
             fontName: lowerCaseFontName,
             url,
-            status: true
+            status: 'Success'
           })
         } else {
           urls.push(url)
@@ -114,8 +117,8 @@ export class DefaultFontLoader implements FontLoader {
       return (
         statusMap[lowerCaseFontName] || {
           fontName: lowerCaseFontName,
-          url: fontNameToUrl[lowerCaseFontName] || '',
-          status: false
+          url: '',
+          status: 'NotFound'
         }
       )
     })

@@ -162,7 +162,7 @@ export class FontManager {
         status.push({
           fontName: fontName,
           url: url,
-          status: isSuccess
+          status: isSuccess ? 'Success' : 'FailedToLoad'
         })
         if (isSuccess) {
           this.fileNames.push(fontName)

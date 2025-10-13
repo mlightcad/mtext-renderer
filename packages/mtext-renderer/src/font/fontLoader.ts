@@ -7,7 +7,7 @@ export interface FontInfo {
   /** Font file name */
   file: string
   /** Type of the font - either mesh or shx format */
-  type: 'woff' | 'shx'
+  type: 'mesh' | 'shx'
   /** URL where the font can be accessed */
   url: string
 }
@@ -20,8 +20,13 @@ export interface FontLoadStatus {
   fontName: string
   /** URL from which the font was loaded */
   url: string
-  /** Whether the font was successfully loaded */
-  status: boolean
+  /**
+   * The status to load font
+   * - Success
+   * - Font not found in font repository
+   * - Failed to load font from font repository
+   */
+  status: 'Success' | 'NotFound' | 'FailedToLoad'
 }
 
 /**

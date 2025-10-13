@@ -36,7 +36,7 @@ will be stored in local IndexedDB to improve performance. Default value is true.
 
 ### FontLoader & DefaultFontLoader
 
-Interface for font loading operations. The default implementation [DefaultFontLoader](./src/font/defaultFontLoader.ts) uses a [CDN-based font repository](https://cdn.jsdelivr.net/gh/mlight-lee/cad-data/fonts/). It loads font metadata from a JSON file and provides access to available fonts.
+Interface for font loading operations. The default implementation [DefaultFontLoader](./src/font/defaultFontLoader.ts) uses [this font repository](https://mlightcad.gitlab.io/cad-data/fonts/). It loads font metadata from a JSON file and provides access to available fonts.
 
 You do NOT need to create `DefaultFontLoader` yourself anymore. `FontManager` manages a loader instance internally. If you want to customize font loading, implement `FontLoader` and set it via `FontManager.instance.setFontLoader(customLoader)`.
 

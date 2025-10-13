@@ -31,5 +31,14 @@ export const dbSchema = [
         keyPath: 'name'
       }
     ]
+  },
+  {
+    version: 1,
+    stores: [
+      {
+        name: DB_STORES.fonts,
+        keyPath: 'name'
+      }
+    ]
   }
 ]
