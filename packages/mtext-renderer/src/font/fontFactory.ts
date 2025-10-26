@@ -1,9 +1,6 @@
-import { ShxFontData } from '@mlightcad/shx-parser'
-
-import { getExtension } from '../common'
 import { BaseFont } from './baseFont'
 import { FontData } from './font'
-import { MeshFont, MeshFontData } from './meshFont'
+import { MeshFont } from './meshFont'
 import { ShxFont } from './shxFont'
 
 /**
@@ -43,31 +40,10 @@ export class FontFactory {
    */
   public createFont(data: FontData): BaseFont {
     if (data.type === 'shx') {
-      return new ShxFont(data.data as ShxFontData)
+      return new ShxFont(data)
     } else if (data.type === 'mesh') {
-      return new MeshFont(data.data as MeshFontData)
+      return new MeshFont(data)
     }
     throw new Error('Unsupported font data type')
-  }
-
-  /**
-   * Creates a font instance from a file name and its ArrayBuffer data.
-   * The type of font created is determined by the file extension.
-   *
-   * @param fileName - The name of the font file
-   * @param buffer - The ArrayBuffer containing the font data
-   * @returns A new instance of either ShxFont or MeshFont
-   * @throws {Error} If the file type is not supported
-   */
-  public createFontFromBuffer(fileName: string, buffer: ArrayBuffer): BaseFont {
-    const extension = getExtension(fileName).toLowerCase()
-
-    if (extension === 'shx') {
-      return new ShxFont(buffer)
-    } else if (['ttf', 'otf', 'woff'].includes(extension)) {
-      return new MeshFont(buffer)
-    }
-
-    throw new Error(`Unsupported font file type: ${extension}`)
   }
 }

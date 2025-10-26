@@ -1,6 +1,6 @@
 import { BaseTextShape } from './baseTextShape'
 import { CharGeometryCache } from './charGeometryCache'
-import { FontType } from './font'
+import { FontData, FontType } from './font'
 
 /**
  * Abstract base class for font implementations.
@@ -16,11 +16,22 @@ export abstract class BaseFont {
    */
   public abstract readonly data: unknown
   /**
+   * Font names. One font may have multiple names.
+   */
+  public names: Set<string> = new Set()
+  /**
+   * Encoding used by character code. Please refer to the following link for encoding name.
+   * https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API/Encodings
+   */
+  public encoding?: string;
+  /**
    * Caching of font character geometries to improve text rendering performance.
    */
   public cache: CharGeometryCache
 
-  constructor() {
+  constructor(fontData: FontData) {
+    this.encoding = fontData.encoding
+    fontData.alias.forEach(name => this.names.add(name))
     this.cache = new CharGeometryCache()
   }
 
@@ -30,6 +41,13 @@ export abstract class BaseFont {
    * @returns True if this font contains glyph of the specified character. Otherwise, return false.
    */
   abstract hasChar(char: string): boolean
+
+  /**
+   * Return true if this font contains glyph of the specified character code. Otherwise, return false.
+   * @param code - The character code to check
+   * @returns True if this font contains glyph of the specified character code. Otherwise, return false.
+   */
+  abstract hasCode(code: number): boolean
 
   /**
    * Record of characters that are not supported by this font.
@@ -45,6 +63,14 @@ export abstract class BaseFont {
    * @returns The shape data for the character, or undefined if not found
    */
   abstract getCharShape(char: string, size: number): BaseTextShape | undefined
+
+  /**
+   * Gets the shape data for a specific character code at a given size.
+   * @param code - The character code to get the shape for
+   * @param size - The desired size of the character
+   * @returns The shape data for the character code, or undefined if not found
+   */
+  abstract getCodeShape(code: number, size: number): BaseTextShape | undefined
 
   /**
    * Gets the scale factor for this font.

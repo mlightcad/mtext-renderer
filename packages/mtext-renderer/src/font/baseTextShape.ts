@@ -6,20 +6,10 @@ import * as THREE from 'three'
  * This class defines the core interface that all text shape types must implement.
  */
 export abstract class BaseTextShape extends THREE.Shape {
-  /** The character this shape represents */
-  public readonly char: string
   /**
    * Width used to render this character
    */
   public width = 0
-
-  /**
-   * Creates a new instance of BaseTextShape
-   * @param char - The character this shape represents   */
-  constructor(char: string) {
-    super()
-    this.char = char
-  }
 
   /**
    * Converts the text shape to a THREE.js geometry

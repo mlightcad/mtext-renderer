@@ -11,28 +11,28 @@ export class CharGeometryCache {
   }
 
   /**
-   * Returns true if the geometry of the specified character exists in the cache.
+   * Returns true if the geometry of the specified character code exists in the cache.
    * Otherwise, returns false.
-   * @param char One character.
+   * @param code One character code.
    * @param size The font size.
-   * @returns True if the geometry of the specified character exists in the cache.
+   * @returns True if the geometry of the specified character code exists in the cache.
    * Otherwise, returns false.
    */
-  hasGeometry(char: string, size: number) {
-    const key = this.generateKey(char, size)
+  hasGeometry(code: number, size: number) {
+    const key = this.generateKey(code, size)
     return this.cache.has(key)
   }
 
   /**
    * Get the geometry for a single character from cache if available.
-   * The cache key includes both character and size.
-   * @param char The character to get geometry from cache.
+   * The cache key includes both character codeand size.
+   * @param code The character code to get geometry from cache.
    * @param size The font size.
    * @returns The geometry for a single character from cache if avaiable.
    * Return undefined if the character not found in cache.
    */
-  getGeometry(char: string, size: number): THREE.BufferGeometry | undefined {
-    const key = this.generateKey(char, size)
+  getGeometry(code: number, size: number): THREE.BufferGeometry | undefined {
+    const key = this.generateKey(code, size)
     if (this.cache.has(key)) {
       return this.cache.get(key)
     }
@@ -45,8 +45,8 @@ export class CharGeometryCache {
    * @param size The font size.
    * @param geometry The geometry to set.
    */
-  setGeometry(char: string, size: number, geometry: THREE.BufferGeometry) {
-    const key = this.generateKey(char, size)
+  setGeometry(code: number, size: number, geometry: THREE.BufferGeometry) {
+    const key = this.generateKey(code, size)
     this.cache.set(key, geometry)
   }
 
@@ -62,10 +62,10 @@ export class CharGeometryCache {
 
   /**
    * Generates cache key by character and font size.
-   * @param char One character.
+   * @param char One character code.
    * @param size The font size.
    */
-  private generateKey(char: string, size: number) {
+  private generateKey(char: number, size: number) {
     return `${char}_${size}`
   }
 }

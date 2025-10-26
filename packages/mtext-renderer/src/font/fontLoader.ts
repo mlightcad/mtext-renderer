@@ -10,6 +10,11 @@ export interface FontInfo {
   type: 'mesh' | 'shx'
   /** URL where the font can be accessed */
   url: string
+  /**
+   * Encoding used by character code. Please refer to the following link for encoding name.
+   * https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API/Encodings
+   */
+  encoding?: string
 }
 
 /**

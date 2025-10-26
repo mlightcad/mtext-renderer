@@ -1,14 +1,15 @@
-import { Font, FontData } from 'three/examples/jsm/loaders/FontLoader.js'
+import { Font, FontData as ThreeFontData } from 'three/examples/jsm/loaders/FontLoader.js'
 
 import { BaseFont } from './baseFont'
+import { FontData } from './font'
 import { parseMeshFont } from './meshFontParser'
 import { MeshTextShape } from './meshTextShape'
 
 /**
  * Represents the data structure for mesh-based fonts.
- * Extends the base FontData interface with additional properties specific to mesh fonts.
+ * Extends the base ThreeFontData interface with additional properties specific to mesh fonts.
  */
-export interface MeshFontData extends FontData {
+export interface MeshFontData extends ThreeFontData {
   /** Scale factor used to adjust the size of characters when rendering */
   scaleFactor: number
 }
@@ -32,8 +33,9 @@ export class MeshFont extends BaseFont {
    * Creates a new instance of MeshFont.
    * @param data - Either a MeshFontData object containing font information or an ArrayBuffer containing raw font data
    */
-  constructor(data: MeshFontData | ArrayBuffer) {
-    super()
+  constructor(fontData: FontData) {
+    super(fontData)
+    const data = fontData.data as MeshFontData | ArrayBuffer
     if (data instanceof ArrayBuffer) {
       this.data = parseMeshFont(data)
     } else {
@@ -49,6 +51,15 @@ export class MeshFont extends BaseFont {
    */
   hasChar(char: string): boolean {
     return this.data.glyphs[char] != null
+  }
+
+  /**
+   * Return true if this font contains glyph of the specified character code. Otherwise, return false.
+   * @param code - The character code to check
+   * @returns True if this font contains glyph of the specified character code. Otherwise, return false.
+   */
+  hasCode(code: number): boolean {
+    return this.hasChar(String.fromCodePoint(code))
   }
 
   /**
@@ -73,9 +84,18 @@ export class MeshFont extends BaseFont {
       this.addUnsupportedChar(char)
       return undefined
     }
-
     const textShape = new MeshTextShape(char, size, this)
     return textShape
+  }
+
+  /**
+   * Gets the shape data for a specific character unicode at a given size.
+   * @param code - The character unicode to get the shape for
+   * @param size - The desired size of the character
+   * @returns The shape data for the character unicode, or undefined if not found
+   */
+  public getCodeShape(code: number, size: number) {
+    return this.getCharShape(String.fromCodePoint(code), size)
   }
 
   /**

@@ -19,12 +19,13 @@ export class MeshTextShape extends BaseTextShape {
    * Used to track if the character exists in the font's glyph set.
    */
   public isFound = false
-
+  private readonly char: string
   private readonly font: MeshFont
   private readonly fontSize: number
 
   constructor(char: string, fontSize: number, font: MeshFont) {
-    super(char)
+    super()
+    this.char = char
     this.fontSize = fontSize
     this.font = font
     this.width = this.getCharWidth(char, fontSize, font)
@@ -36,7 +37,7 @@ export class MeshTextShape extends BaseTextShape {
    * @returns A THREE.js BufferGeometry representing the text shape
    */
   toGeometry(): THREE.BufferGeometry {
-    let geometry = this.font.cache.getGeometry(this.char, this.fontSize)
+    let geometry = this.font.cache.getGeometry(this.char.charCodeAt(0), this.fontSize)
     if (geometry == null) {
       // Use NormalComputationToggle to disable generating 'normal' data in returned geometry
       // to save computation cost because rendering font characters don't need it.

@@ -9,9 +9,9 @@ import {
 import { BaseFont } from './baseFont'
 import { BaseTextShape } from './baseTextShape'
 import { DefaultFontLoader } from './defaultFontLoader'
-import { FontType } from './font'
+import { FontData, FontType } from './font'
 import { FontFactory } from './fontFactory'
-import { FontLoader, FontLoadStatus } from './fontLoader'
+import { FontInfo, FontLoader, FontLoadStatus } from './fontLoader'
 
 /**
  * Font mappings configuration.
@@ -134,10 +134,9 @@ export class FontManager {
    * @param names - Font names to load.
    * @returns Promise that resolves to an array of font load statuses
    */
-  async loadFontsByNames(names: string | string[]): Promise<FontLoadStatus> {
+  async loadFontsByNames(names: string | string[]): Promise<FontLoadStatus[]> {
     names = Array.isArray(names) ? names : [names]
-    const status = await this.fontLoader.load(names)
-    return status[0]
+    return await this.fontLoader.load(names)
   }
 
   /**
@@ -145,19 +144,18 @@ export class FontManager {
    * @param urls - URLs of font files to load.
    * @returns Promise that resolves to an array of font load statuses
    */
-  async loadFontsByUrls(urls: string | string[]) {
-    urls = Array.isArray(urls) ? urls : [urls]
+  async loadFonts(fonts: FontInfo | FontInfo[]) {
+    fonts = Array.isArray(fonts) ? fonts : [fonts]
     const promises: Promise<void>[] = []
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i]
-      promises.push(this.loadFont(url))
+    for (let i = 0; i < fonts.length; i++) {
+      promises.push(this.loadFont(fonts[i]))
     }
 
     const status: FontLoadStatus[] = []
     await Promise.allSettled(promises).then(results => {
       results.forEach((result, index) => {
         const isSuccess = result.status === 'fulfilled'
-        const url = urls[index]
+        const url = fonts[index].url
         const fontName = getFileNameWithoutExtension(url.toLowerCase())
         status.push({
           fontName: fontName,
@@ -219,8 +217,6 @@ export class FontManager {
   /**
    * Gets the first font which contains the specified character.
    * @param char - The character to get the shape for
-   * @param fontName - The name of the font to use
-   * @param size - The size of the character
    * @returns The text shape for the character, or undefined if not found
    */
   public getFontByChar(char: string): BaseFont | undefined {
@@ -312,32 +308,34 @@ export class FontManager {
   }
 
   /**
-   * Loads a single font from a URL
-   * @param url - The URL of the font file to load
+   * Loads a single font
+   * @param fontInfo - The matadata of the font to be loaded
    */
-  private async loadFont(url: string) {
-    const fileName = getFileName(url)
+  private async loadFont(fontInfo: FontInfo) {
+    const fileName = getFileName(fontInfo.file)
     if (!fileName) {
-      throw new Error(`Invalid font url: ${url}`)
+      throw new Error(`Invalid font file name: ${fontInfo.file}`)
     }
 
-    const fontName = getFileNameWithoutExtension(url).toLowerCase()
-    const data = await FontCacheManager.instance.get(fontName)
+    const fontData = this.fontInfoToFontData(fontInfo)
+    const fontName = fontData.name
+    if (this.isFontLoaded(fontData.name)) {
+      return
+    }
 
+    const data = await FontCacheManager.instance.get(fontName)
     if (data) {
       const font = FontFactory.instance.createFont(data)
       this.fontMap.set(fontName, font)
     } else {
-      const buffer = (await this.loader.loadAsync(url)) as ArrayBuffer
-      const font = FontFactory.instance.createFontFromBuffer(fileName, buffer)
+      const buffer = (await this.loader.loadAsync(fontInfo.url)) as ArrayBuffer
+      fontData.data = buffer
+      const font = FontFactory.instance.createFont(fontData)
       if (font) {
+        fontInfo.name.forEach(name => font.names.add(name))
         this.fontMap.set(fontName, font)
         if (this.enableFontCache) {
-          await FontCacheManager.instance.set(fontName, {
-            name: fontName,
-            type: font.type,
-            data: font.data
-          })
+          await FontCacheManager.instance.set(fontName, fontData)
         }
       }
     }
@@ -345,6 +343,17 @@ export class FontManager {
     this.events.fontLoaded.dispatch({
       fontName: fontName
     })
+  }
+
+  private fontInfoToFontData(fontInfo: FontInfo) {
+    const fontName = getFileNameWithoutExtension(fontInfo.file).toLowerCase()
+    const type = ['ttf', 'otf', 'woff'].includes(fontInfo.type) ? 'mesh' : fontInfo.type
+    return {
+      name: fontName,
+      alias: fontInfo.name,
+      type: type,
+      encoding: fontInfo.encoding
+    } as FontData
   }
 
   /**
