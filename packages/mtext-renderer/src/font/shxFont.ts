@@ -4,8 +4,10 @@ import {
   ShxFontData,
   ShxFontType
 } from '@mlightcad/shx-parser'
+import iconv from 'iconv-lite'
 
 import { BaseFont } from './baseFont'
+import { FontData } from './font'
 import { ShxTextShape } from './shxTextShape'
 
 /**
@@ -18,9 +20,9 @@ export class ShxFont extends BaseFont {
   public readonly type = 'shx'
   public readonly data: ShxFontData
 
-  constructor(data: ShxFontData | ArrayBuffer) {
-    super()
-    this.font = new ShxFontInternal(data)
+  constructor(fontData: FontData) {
+    super(fontData)
+    this.font = new ShxFontInternal(fontData.data as ShxFontData | ArrayBuffer)
     this.data = this.font.fontData
   }
 
@@ -30,7 +32,16 @@ export class ShxFont extends BaseFont {
    * @returns True if this font contains glyph of the specified character. Otherwise, return false.
    */
   hasChar(char: string): boolean {
-    const code = char.charCodeAt(0)
+    const code = this.getCode(char)
+    return this.font.hasChar(code)
+  }
+
+  /**
+   * Return true if this font contains glyph of the specified character code. Otherwise, return false.
+   * @param code - The character code to check
+   * @returns True if this font contains glyph of the specified character code. Otherwise, return false.
+   */
+  hasCode(code: number): boolean {
     return this.font.hasChar(code)
   }
 
@@ -67,14 +78,28 @@ export class ShxFont extends BaseFont {
 
   /**
    * Gets the shape data for a specific character at a given size.
+   * If the font type is BIGFONT, please use getCodeShape to get the shape data
+   * because the character code for BIGFONT isn't unicode.
    * @param char - The character to get the shape for
    * @param size - The desired size of the character
    * @returns The shape data for the character, or undefined if not found
    */
   public getCharShape(char: string, size: number) {
-    const code = this.getCode(char)
+    return this.getCodeShape(this.getCode(char), size)
+  }
+
+  /**
+   * Gets the shape data for a specific character code at a given size.
+   * The passed code must the code stored in font instead of unicode.
+   * - Unicode shx font uses unicode as character code. 
+   * - Bigfont uses a custom encoding for double-byte characters.
+   * @param code - The character code to get the shape for
+   * @param size - The desired size of the character
+   * @returns The shape data for the character code, or undefined if not found
+   */
+  public getCodeShape(code: number, size: number) {
     const shape = this.font.getCharShape(code, size)
-    return shape ? new ShxTextShape(char, size, shape, this) : undefined
+    return shape ? new ShxTextShape(code, size, shape, this) : undefined
   }
 
   /**
@@ -86,14 +111,22 @@ export class ShxFont extends BaseFont {
     return this.getCharShape(char, size)
   }
 
+  /**
+   * Gets encoded code of the specified character according to font character encoding
+   * @param char - The character to get its code
+   * @returns Returns encoded code of the specified character 
+   */
   private getCode(char: string) {
     const fontType = this.font.fontData.header.fontType
-    if (fontType === ShxFontType.BIGFONT) {
-      // TODO: Get code from bigfont
-      throw new Error(
-        `Can't get font glyph for '${char}' because big font is not supported yet!`
-      )
+    if (fontType === ShxFontType.BIGFONT && this.encoding) {
+      const buffer = iconv.encode(char[0], this.encoding)
+      if (buffer.length === 1) {
+        return buffer[0]
+      } else {
+        return (buffer[0] << 8) | buffer[1]
+      }
+    } else {
+      return char.charCodeAt(0)
     }
-    return char.charCodeAt(0)
   }
 }

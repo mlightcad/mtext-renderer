@@ -33,7 +33,7 @@ export const dbSchema = [
     ]
   },
   {
-    version: 1,
+    version: 2,
     stores: [
       {
         name: DB_STORES.fonts,

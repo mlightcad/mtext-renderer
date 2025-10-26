@@ -11,20 +11,22 @@ import { ShxFont } from './shxFont'
  */
 export class ShxTextShape extends BaseTextShape {
   /** The shape data for this character */
+  private readonly code: number
   private readonly shape: ShxShape
   private readonly font: ShxFont
   private readonly fontSize: number
 
   /**
    * Creates a new instance of ShxTextShape
-   * @param char - The character this shape represents
+   * @param code - The character code this shape represents
    * @param shape - The shape data for this character
    */
-  constructor(char: string, fontSize: number, shape: ShxShape, font: ShxFont) {
-    super(char)
+  constructor(code: number, fontSize: number, shape: ShxShape, font: ShxFont) {
+    super()
     this.fontSize = fontSize
     this.shape = shape
     this.font = font
+    this.code = code
     this.width = this.calcWidth()
   }
 
@@ -35,7 +37,7 @@ export class ShxTextShape extends BaseTextShape {
 
   offset(offset: Point) {
     return new ShxTextShape(
-      this.char,
+      this.code,
       this.fontSize,
       this.shape.offset(offset),
       this.font
@@ -47,7 +49,7 @@ export class ShxTextShape extends BaseTextShape {
    * @returns A THREE.js BufferGeometry representing the text shape
    */
   toGeometry() {
-    let geometry = this.font.cache.getGeometry(this.char, this.fontSize)
+    let geometry = this.font.cache.getGeometry(this.code, this.fontSize)
     if (geometry == null) {
       const polylines = this.shape.polylines
       const positions = []

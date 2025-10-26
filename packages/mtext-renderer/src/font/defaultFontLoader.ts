@@ -10,12 +10,14 @@ export class DefaultFontLoader implements FontLoader {
   /** List of available fonts in the system */
   private _avaiableFonts: FontInfo[]
   private _baseUrl: string
+  private _avaiableFontMap: Map<string, FontInfo>
 
   /**
    * Creates a new instance of DefaultFontLoader
    */
   constructor() {
     this._avaiableFonts = []
+    this._avaiableFontMap = new Map()
     this._baseUrl = 'https://mlightcad.gitlab.io/cad-data/fonts/'
   }
 
@@ -59,6 +61,7 @@ export class DefaultFontLoader implements FontLoader {
         font.url = this._baseUrl + font.file
       })
     }
+    this.buildFontMap()
     return this._avaiableFonts
   }
 
@@ -75,37 +78,23 @@ export class DefaultFontLoader implements FontLoader {
     }
     await this.getAvaiableFonts()
 
-    const urls: string[] = []
     const alreadyLoadedStatuses: FontLoadStatus[] = []
-    const fontNameToUrl: Record<string, string> = {}
-
-    // Build a map for quick lookup
-    this._avaiableFonts.forEach(font => {
-      font.name.forEach(name => {
-        fontNameToUrl[name.toLowerCase()] = font.url
-      })
-    })
-
+    const fontsToLoad: FontInfo[] = []
     fontNames.forEach(font => {
       const lowerCaseFontName = font.toLowerCase()
-      const url = fontNameToUrl[lowerCaseFontName]
-      if (url) {
+      const fontInfo = this._avaiableFontMap.get(lowerCaseFontName)
+      if (fontInfo) {
         if (FontManager.instance.isFontLoaded(lowerCaseFontName)) {
           alreadyLoadedStatuses.push({
             fontName: lowerCaseFontName,
-            url,
+            url: fontInfo.url,
             status: 'Success'
           })
-        } else {
-          urls.push(url)
         }
+        fontsToLoad.push(fontInfo)
       }
     })
-
-    let newlyLoadedStatuses: FontLoadStatus[] = []
-    if (urls.length > 0) {
-      newlyLoadedStatuses = await FontManager.instance.loadFontsByUrls(urls)
-    }
+    const newlyLoadedStatuses = await FontManager.instance.loadFonts(fontsToLoad)
 
     // Merge and return statuses for all requested fonts, preserving order
     const statusMap: Record<string, FontLoadStatus> = {}
@@ -121,6 +110,18 @@ export class DefaultFontLoader implements FontLoader {
           status: 'NotFound'
         }
       )
+    })
+  }
+
+  /**
+   * Build one font map. The key is font name. The value is font info.
+   */
+  private buildFontMap() {
+    const fontMap = this._avaiableFontMap
+    this._avaiableFonts.forEach(font => {
+      font.name.forEach(name => {
+        fontMap.set(name.toLocaleLowerCase(), font)
+      })
     })
   }
 }
