@@ -52,5 +52,11 @@ export interface FontLoader {
    * Retrieves information about all available fonts in the system
    * @returns Promise that resolves to an array of FontInfo objects containing details about available fonts
    */
-  getAvaiableFonts(): Promise<FontInfo[]>
+  getAvailableFonts(): Promise<FontInfo[]>
+
+  /**
+   * Base URL to load fonts
+   */
+  get baseUrl(): string
+  set baseUrl(value: string)
 }

@@ -7,18 +7,19 @@ import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
 
 // Worker message types
 interface WorkerMessage {
-  type: 'render' | 'loadFonts' | 'getAvailableFonts'
+  type: 'render' | 'loadFonts' | 'setFontUrl' | 'getAvailableFonts'
   id: string
   data?: {
     mtextContent?: unknown
     textStyle?: unknown
     colorSettings?: unknown
     fonts?: string[]
+    url?: string
   }
 }
 
 interface WorkerResponse {
-  type: 'render' | 'loadFonts' | 'getAvailableFonts' | 'error'
+  type: 'render' | 'loadFonts' | 'setFontUrl' | 'getAvailableFonts' | 'error'
   id: string
   success: boolean
   data?: unknown
@@ -44,7 +45,7 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
         }
 
         // Create MText instance and draw (loads fonts on demand)
-        const mtext = new MText(
+        let mtext = new MText(
           mtextContent,
           textStyle,
           styleManager,
@@ -67,6 +68,11 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
           } as WorkerResponse,
           { transfer: transferableObjects }
         )
+
+        // Release memory occupied by mtext
+        mtext.dispose()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(mtext as any) = undefined
         break
       }
 
@@ -83,8 +89,21 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
         break
       }
 
+      case 'setFontUrl': {
+        if (!data) throw new Error('Missing data for setFontUrl message')
+        const { url } = data as { url: string }
+        fontManager.baseUrl = url
+        self.postMessage({
+          type: 'setFontUrl',
+          id,
+          success: true,
+          data: {}
+        } as WorkerResponse)
+        break
+      }
+
       case 'getAvailableFonts': {
-        const fonts = await FontManager.instance.getAvaiableFonts()
+        const fonts = await FontManager.instance.getAvailableFonts()
 
         self.postMessage({
           type: 'getAvailableFonts',

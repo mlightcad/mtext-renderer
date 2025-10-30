@@ -1,4 +1,7 @@
-import { Font, FontData as ThreeFontData } from 'three/examples/jsm/loaders/FontLoader.js'
+import {
+  Font,
+  FontData as ThreeFontData
+} from 'three/examples/jsm/loaders/FontLoader.js'
 
 import { BaseFont } from './baseFont'
 import { FontData } from './font'

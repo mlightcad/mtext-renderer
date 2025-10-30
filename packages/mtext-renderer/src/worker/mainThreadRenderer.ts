@@ -20,6 +20,14 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   }
 
   /**
+   * Set URL to load fonts
+   * @param value - URL to load fonts
+   */
+  async setFontUrl(value: string) {
+    this.fontManager.baseUrl = value
+  }
+
+  /**
    * Render MText directly in the main thread asynchronously. It will ensure that default font
    * is loaded. And fonts needed in mtext are loaded on demand.
    */
@@ -80,7 +88,7 @@ export class MainThreadRenderer implements MTextBaseRenderer {
    * Get available fonts from the main thread
    */
   async getAvailableFonts(): Promise<{ fonts: Array<{ name: string[] }> }> {
-    const fonts = await this.fontManager.getAvaiableFonts()
+    const fonts = await this.fontManager.getAvailableFonts()
     return { fonts }
   }
 

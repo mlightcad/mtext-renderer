@@ -77,6 +77,12 @@ export interface MTextBaseRenderer {
   getAvailableFonts(): Promise<{ fonts: Array<{ name: string[] }> }>
 
   /**
+   * Set URL to load fonts
+   * @param value - URL to load fonts
+   */
+  setFontUrl(value: string): Promise<void>
+
+  /**
    * Release any resources owned by the renderer (e.g., terminate Web Workers).
    *
    * Safe to call multiple times.
