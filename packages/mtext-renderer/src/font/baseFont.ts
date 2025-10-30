@@ -23,7 +23,7 @@ export abstract class BaseFont {
    * Encoding used by character code. Please refer to the following link for encoding name.
    * https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API/Encodings
    */
-  public encoding?: string;
+  public encoding?: string
   /**
    * Caching of font character geometries to improve text rendering performance.
    */

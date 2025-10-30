@@ -91,7 +91,7 @@ export class ShxFont extends BaseFont {
   /**
    * Gets the shape data for a specific character code at a given size.
    * The passed code must the code stored in font instead of unicode.
-   * - Unicode shx font uses unicode as character code. 
+   * - Unicode shx font uses unicode as character code.
    * - Bigfont uses a custom encoding for double-byte characters.
    * @param code - The character code to get the shape for
    * @param size - The desired size of the character
@@ -114,7 +114,7 @@ export class ShxFont extends BaseFont {
   /**
    * Gets encoded code of the specified character according to font character encoding
    * @param char - The character to get its code
-   * @returns Returns encoded code of the specified character 
+   * @returns Returns encoded code of the specified character
    */
   private getCode(char: string) {
     const fontType = this.font.fontData.header.fontType

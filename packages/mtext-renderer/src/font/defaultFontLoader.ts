@@ -29,6 +29,7 @@ export class DefaultFontLoader implements FontLoader {
   }
   set baseUrl(value: string) {
     this._baseUrl = value
+    this.onFontUrlChanged(value)
   }
 
   /**
@@ -40,12 +41,20 @@ export class DefaultFontLoader implements FontLoader {
   }
 
   /**
+   * Triggered when font url changed
+   * @param url - New font url value
+   */
+  onFontUrlChanged(url: string) {
+    // Do nothing for now
+  }
+
+  /**
    * Retrieves information about all available fonts in the system.
    * Loads font metadata from a CDN if not already loaded.
    * @returns Promise that resolves to an array of FontInfo objects
    * @throws {Error} If font metadata cannot be loaded from the CDN
    */
-  async getAvaiableFonts() {
+  async getAvailableFonts() {
     if (this._avaiableFonts.length == 0) {
       const fontMetaDataUrl = this._baseUrl + 'fonts.json'
       try {
@@ -76,7 +85,7 @@ export class DefaultFontLoader implements FontLoader {
     if (fontNames == null || fontNames.length === 0) {
       return []
     }
-    await this.getAvaiableFonts()
+    await this.getAvailableFonts()
 
     const alreadyLoadedStatuses: FontLoadStatus[] = []
     const fontsToLoad: FontInfo[] = []
@@ -94,7 +103,8 @@ export class DefaultFontLoader implements FontLoader {
         fontsToLoad.push(fontInfo)
       }
     })
-    const newlyLoadedStatuses = await FontManager.instance.loadFonts(fontsToLoad)
+    const newlyLoadedStatuses =
+      await FontManager.instance.loadFonts(fontsToLoad)
 
     // Merge and return statuses for all requested fonts, preserving order
     const statusMap: Record<string, FontLoadStatus> = {}

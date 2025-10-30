@@ -88,6 +88,16 @@ export class FontManager {
   }
 
   /**
+   * Base URL to load fonts
+   */
+  get baseUrl() {
+    return this.fontLoader.baseUrl
+  }
+  set baseUrl(value: string) {
+    this.fontLoader.baseUrl = value
+  }
+
+  /**
    * Sets the font mapping configuration
    * @param mapping - The font mapping to set
    */
@@ -109,8 +119,8 @@ export class FontManager {
    * @returns Promise that resolves to an array of FontInfo objects
    * @throws {Error} If font metadata cannot be loaded from the CDN
    */
-  async getAvaiableFonts() {
-    return await this.fontLoader.getAvaiableFonts()
+  async getAvailableFonts() {
+    return await this.fontLoader.getAvailableFonts()
   }
 
   /**
@@ -347,7 +357,9 @@ export class FontManager {
 
   private fontInfoToFontData(fontInfo: FontInfo) {
     const fontName = getFileNameWithoutExtension(fontInfo.file).toLowerCase()
-    const type = ['ttf', 'otf', 'woff'].includes(fontInfo.type) ? 'mesh' : fontInfo.type
+    const type = ['ttf', 'otf', 'woff'].includes(fontInfo.type)
+      ? 'mesh'
+      : fontInfo.type
     return {
       name: fontName,
       alias: fontInfo.name,

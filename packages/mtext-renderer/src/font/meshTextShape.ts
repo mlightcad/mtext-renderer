@@ -37,7 +37,10 @@ export class MeshTextShape extends BaseTextShape {
    * @returns A THREE.js BufferGeometry representing the text shape
    */
   toGeometry(): THREE.BufferGeometry {
-    let geometry = this.font.cache.getGeometry(this.char.charCodeAt(0), this.fontSize)
+    let geometry = this.font.cache.getGeometry(
+      this.char.charCodeAt(0),
+      this.fontSize
+    )
     if (geometry == null) {
       // Use NormalComputationToggle to disable generating 'normal' data in returned geometry
       // to save computation cost because rendering font characters don't need it.

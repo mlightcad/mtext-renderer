@@ -9,7 +9,7 @@
     "type": "git",
     "url": "https://gitlab.com/mlightcad/mtext-renderer"
   },
-  "homepage": "https://gitlab.com/mlightcad/shx-parser",
+  "homepage": "https://gitlab.com/mlightcad/mtext-renderer",
   "main": "./dist/index.umd.cjs",
   "module": "./dist/index.js",
   "types": "./lib/index.d.ts",

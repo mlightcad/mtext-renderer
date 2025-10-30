@@ -107,6 +107,14 @@ export class MText extends THREE.Object3D {
   }
 
   /**
+   * Remove the current object from its parent and release geometry and material resource used
+   * by the current object.
+   */
+  dispose() {
+    this.disposeThreeObject(this)
+  }
+
+  /**
    * Draw the MText object. This method loads required fonts on demand and builds the object graph.
    */
   async asyncDraw() {
@@ -412,5 +420,40 @@ export class MText extends THREE.Object3D {
     for (let i = 0, l = children.length; i < l; i++) {
       this.getBoxes(children[i], boxes)
     }
+  }
+
+  /**
+   * Remove the specified object from its parent and release geometry and material resource used
+   * by the object.
+   * @param obj - Input object to dispose
+   */
+  private disposeThreeObject(obj: THREE.Object3D) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    obj.traverse((child: any) => {
+      if (child.geometry && typeof child.geometry.dispose === 'function') {
+        try {
+          child.geometry.dispose()
+        } catch {
+          /* ignore */
+        }
+      }
+      if (child.material) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const disposeMat = (mat: any) => {
+          if (mat && typeof mat.dispose === 'function') {
+            try {
+              mat.dispose()
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        if (Array.isArray(child.material)) {
+          child.material.forEach(disposeMat)
+        } else {
+          disposeMat(child.material)
+        }
+      }
+    })
   }
 }

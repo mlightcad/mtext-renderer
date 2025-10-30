@@ -28,24 +28,83 @@ export interface WebWorkerRendererConfig {
   timeOut?: number
 }
 
-// Worker message types
-interface WorkerMessage {
-  type: 'render'
+//
+// Base interfaces (unified and generic)
+//
+interface WorkerMessageBase<TType extends string, TData = unknown> {
   id: string
-  data?: {
-    mtextContent?: unknown
-    textStyle?: unknown
-    colorSettings?: unknown
-  }
+  type: TType
+  data?: TData
 }
 
-interface WorkerResponse {
-  type: 'render' | 'error'
+interface WorkerResponseBase<TType extends string, TData = unknown> {
   id: string
+  type: TType
   success: boolean
-  data?: unknown
+  data?: TData
   error?: string
 }
+
+//
+// Specific message types
+//
+type RenderMessage = WorkerMessageBase<
+  'render',
+  {
+    mtextContent: MTextData
+    textStyle: TextStyle
+    colorSettings: ColorSettings
+  }
+>
+
+type LoadFontsMessage = WorkerMessageBase<
+  'loadFonts',
+  {
+    fonts: string[]
+  }
+>
+
+type SetFontUrlMessage = WorkerMessageBase<
+  'setFontUrl',
+  {
+    url: string
+  }
+>
+
+type GetAvailableFontsMessage = WorkerMessageBase<'getAvailableFonts'>
+
+type WorkerMessageTyped =
+  | RenderMessage
+  | LoadFontsMessage
+  | SetFontUrlMessage
+  | GetAvailableFontsMessage
+
+//
+// Specific response types
+//
+type RenderResponse = WorkerResponseBase<'render', SerializedMText>
+
+type LoadFontsResponse = WorkerResponseBase<
+  'loadFonts',
+  {
+    loaded: string[]
+  }
+>
+
+type SetFontUrlResponse = WorkerResponseBase<'setFontUrl'>
+
+type GetAvailableFontsResponse = WorkerResponseBase<
+  'getAvailableFonts',
+  {
+    fonts: Array<{ name: string[] }>
+  }
+>
+
+type WorkerResponseTyped =
+  | RenderResponse
+  | LoadFontsResponse
+  | SetFontUrlResponse
+  | GetAvailableFontsResponse
 
 // Serialized MText data from worker (JSON-based)
 interface SerializedMText {
@@ -148,35 +207,50 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     await this.ensureTasksFinished()
   }
 
-  private handleWorkerMessage(response: WorkerResponse) {
+  /**
+   * Handles messages coming from any worker.
+   */
+  private handleWorkerMessage(
+    response: WorkerResponseTyped,
+    workerIndex: number
+  ) {
     const { id, success, data, error } = response
     const pendingRequest = this.pendingRequests.get(id)
+
     if (pendingRequest) {
       this.pendingRequests.delete(id)
-      const { workerIndex } = pendingRequest
       this.inFlightPerWorker[workerIndex] = Math.max(
         0,
         this.inFlightPerWorker[workerIndex] - 1
       )
+
       if (success) {
         pendingRequest.resolve(data)
       } else {
         pendingRequest.reject(new Error(error || 'Unknown worker error'))
       }
+    } else {
+      console.warn(`No pending request found for worker response id=${id}`)
     }
   }
 
+  /**
+   * Attaches message and error handlers to a worker.
+   */
   private attachWorkerHandlers(worker: Worker, index: number) {
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-      this.handleWorkerMessage(event.data)
+    worker.onmessage = (event: MessageEvent<WorkerResponseTyped>) => {
+      this.handleWorkerMessage(event.data, index)
     }
+
     worker.onerror = error => {
-      console.error('Worker error:', error)
-      // Reject all requests assigned to this worker
+      console.error(`Worker ${index} error:`, error)
+
+      // Reject all pending requests for this worker
       const idsToReject: string[] = []
-      this.pendingRequests.forEach((value, key) => {
-        if (value.workerIndex === index) idsToReject.push(key)
+      this.pendingRequests.forEach((pending, key) => {
+        if (pending.workerIndex === index) idsToReject.push(key)
       })
+
       idsToReject.forEach(id => {
         const pending = this.pendingRequests.get(id)
         if (pending) {
@@ -184,10 +258,10 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
           this.pendingRequests.delete(id)
         }
       })
+
       this.inFlightPerWorker[index] = 0
     }
   }
-
   private pickLeastLoadedWorker(): number {
     let minIndex = 0
     let minValue = this.inFlightPerWorker[0] ?? 0
@@ -200,30 +274,48 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     }
     return minIndex
   }
+  private sendMessageToAllWorkers<
+    TMessage extends WorkerMessageTyped,
+    TResponse extends WorkerResponseTyped
+  >(message: Omit<TMessage, 'id'>): Promise<NonNullable<TResponse['data']>[]> {
+    return Promise.all(
+      this.workers.map((_, index) =>
+        this.sendMessageToOneWorker<TMessage, TResponse>(message, index)
+      )
+    )
+  }
 
-  private sendMessage<TResponse = unknown>(
-    type: WorkerMessage['type'],
-    data?: unknown
-  ): Promise<TResponse> {
-    const workerIndex = this.pickLeastLoadedWorker()
-    const worker = this.workers[workerIndex]
-    return new Promise<TResponse>((resolve, reject) => {
+  private sendMessageToOneWorker<
+    TMessage extends WorkerMessageTyped,
+    TResponse extends WorkerResponseTyped
+  >(
+    message: Omit<TMessage, 'id'>,
+    workerIndex?: number
+  ): Promise<NonNullable<TResponse['data']>> {
+    const index = workerIndex ?? this.pickLeastLoadedWorker()
+    const worker = this.workers[index]
+
+    return new Promise((resolve, reject) => {
       const id = `req_${++this.requestId}`
+      const fullMessage = { ...message, id } as TMessage
+
       this.pendingRequests.set(id, {
-        resolve: (value: unknown) => resolve(value as TResponse),
+        resolve: (value: unknown) =>
+          resolve(value as NonNullable<TResponse['data']>),
         reject,
-        workerIndex
+        workerIndex: index
       })
-      this.inFlightPerWorker[workerIndex] =
-        (this.inFlightPerWorker[workerIndex] ?? 0) + 1
-      worker.postMessage({ type, id, data })
+
+      this.inFlightPerWorker[index] = (this.inFlightPerWorker[index] ?? 0) + 1
+      worker.postMessage(fullMessage)
+
       setTimeout(() => {
         const pending = this.pendingRequests.get(id)
         if (pending) {
           this.pendingRequests.delete(id)
-          this.inFlightPerWorker[workerIndex] = Math.max(
+          this.inFlightPerWorker[index] = Math.max(
             0,
-            this.inFlightPerWorker[workerIndex] - 1
+            this.inFlightPerWorker[index] - 1
           )
           reject(new Error('Worker request timeout'))
         }
@@ -267,7 +359,18 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   }
 
   /**
-   * Render MText in the worker and return serialized data asynchronously.
+   * Set URL to load fonts
+   * @param value - URL to load fonts
+   */
+  async setFontUrl(value: string) {
+    await this.sendMessageToAllWorkers<SetFontUrlMessage, SetFontUrlResponse>({
+      type: 'setFontUrl',
+      data: { url: value }
+    })
+  }
+
+  /**
+   * Render MText in one worker and return serialized data asynchronously.
    */
   async asyncRenderMText(
     mtextContent: MTextData,
@@ -278,11 +381,15 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     }
   ): Promise<MTextObject> {
     await this.ensureInitialized()
-    const serialized = await this.sendMessage<SerializedMText>('render', {
-      mtextContent,
-      textStyle,
-      colorSettings
+
+    const serialized = await this.sendMessageToOneWorker<
+      RenderMessage,
+      RenderResponse
+    >({
+      type: 'render',
+      data: { mtextContent, textStyle, colorSettings }
     })
+
     return this.reconstructMText(serialized)
   }
 
@@ -303,77 +410,33 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     )
   }
 
-  /**
-   * Load fonts in the worker
-   */
   async loadFonts(fonts: string[]): Promise<{ loaded: string[] }> {
     await this.ensureTasksFinished()
-    const results = await Promise.all(
-      this.workers.map(
-        (worker, index) =>
-          new Promise<{ loaded: string[] }>((resolve, reject) => {
-            const id = `req_${++this.requestId}`
-            this.pendingRequests.set(id, {
-              resolve: (data: unknown) => resolve(data as { loaded: string[] }),
-              reject,
-              workerIndex: index
-            })
-            this.inFlightPerWorker[index] =
-              (this.inFlightPerWorker[index] ?? 0) + 1
-            worker.postMessage({ type: 'loadFonts', id, data: { fonts } })
-            setTimeout(() => {
-              const pending = this.pendingRequests.get(id)
-              if (pending) {
-                this.pendingRequests.delete(id)
-                this.inFlightPerWorker[index] = Math.max(
-                  0,
-                  this.inFlightPerWorker[index] - 1
-                )
-                reject(new Error('Worker request timeout'))
-              }
-            }, this.timeOut)
-          })
-      )
-    )
+
+    const results = await this.sendMessageToAllWorkers<
+      LoadFontsMessage,
+      LoadFontsResponse
+    >({
+      type: 'loadFonts',
+      data: { fonts }
+    })
+
     const aggregated = new Set<string>()
-    results.forEach(r => r.loaded?.forEach(f => aggregated.add(f)))
+    results.forEach(r => r?.loaded?.forEach(f => aggregated.add(f)))
+
     return { loaded: Array.from(aggregated) }
   }
 
-  /**
-   * Get available fonts from the worker
-   */
   async getAvailableFonts(): Promise<{ fonts: Array<{ name: string[] }> }> {
-    // Query a single worker (all should be in sync after loadFonts broadcasts)
-    if (this.workers.length === 0) return { fonts: [] }
-    await this.ensureTasksFinished()
-    const workerIndex = 0
-    const worker = this.workers[workerIndex]
-    return new Promise<{ fonts: Array<{ name: string[] }> }>(
-      (resolve, reject) => {
-        const id = `req_${++this.requestId}`
-        this.pendingRequests.set(id, {
-          resolve: (value: unknown) =>
-            resolve(value as { fonts: Array<{ name: string[] }> }),
-          reject,
-          workerIndex
-        })
-        this.inFlightPerWorker[workerIndex] =
-          (this.inFlightPerWorker[workerIndex] ?? 0) + 1
-        worker.postMessage({ type: 'getAvailableFonts', id })
-        setTimeout(() => {
-          const pending = this.pendingRequests.get(id)
-          if (pending) {
-            this.pendingRequests.delete(id)
-            this.inFlightPerWorker[workerIndex] = Math.max(
-              0,
-              this.inFlightPerWorker[workerIndex] - 1
-            )
-            reject(new Error('Worker request timeout'))
-          }
-        }, this.timeOut)
-      }
-    )
+    const results = await this.sendMessageToAllWorkers<
+      GetAvailableFontsMessage,
+      GetAvailableFontsResponse
+    >({
+      type: 'getAvailableFonts'
+    })
+
+    // All workers return the same result; return the first
+    return results[0] ?? { fonts: [] }
   }
 
   /**
@@ -395,6 +458,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
           attr.byteOffset,
           attr.length
         )
+
         const bufferAttribute = new THREE.BufferAttribute(
           typedArray,
           attr.itemSize,
@@ -461,7 +525,10 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       if (childData.type === 'mesh') {
         object = new THREE.Mesh(geometry, material as THREE.MeshBasicMaterial)
       } else {
-        object = new THREE.Line(geometry, material as THREE.LineBasicMaterial)
+        object = new THREE.LineSegments(
+          geometry,
+          material as THREE.LineBasicMaterial
+        )
       }
 
       // Ensure geometry has bounding volumes for correct frustum culling

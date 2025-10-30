@@ -50,6 +50,14 @@ export class UnifiedRenderer {
   }
 
   /**
+   * Set URL to load fonts
+   * @param value - URL to load fonts
+   */
+  setFontUrl(value: string) {
+    return this.renderer.setFontUrl(value)
+  }
+
+  /**
    * Get the default rendering mode
    */
   getDefaultMode(): RenderMode {

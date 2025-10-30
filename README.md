@@ -26,7 +26,7 @@ will be stored in local IndexedDB to improve performance. Default value is true.
   - `fontLoaded`: Triggered when a font is successfully loaded
 
 **Public Methods:**
-- `getAvaiableFonts()`: Retrieve metadata of available fonts from the configured loader
+- `getAvailableFonts()`: Retrieve metadata of available fonts from the configured loader
 - `loadFontsByNames(names)`: Loads fonts by logical names (e.g., 'simsun', 'arial')
 - `getCharShape(char, fontName, size)`: Gets text shape for a character
 - `getFontScaleFactor(fontName)`: Gets scale factor for a font
@@ -42,7 +42,7 @@ You do NOT need to create `DefaultFontLoader` yourself anymore. `FontManager` ma
 
 **Public Methods:**
 - `load(fontNames)`: Loads specified fonts into the system
-- `getAvaiableFonts()`: Retrieves information about available fonts
+- `getAvailableFonts()`: Retrieves information about available fonts
 
 ### BaseFont
 
@@ -205,13 +205,13 @@ classDiagram
     class FontLoader {
         <<interface>>
         +load(fontNames)
-        +getAvaiableFonts()
+        +getAvailableFonts()
     }
 
     class DefaultFontLoader {
         -_avaiableFonts: FontInfo[]
         +load(fontNames)
-        +getAvaiableFonts()
+        +getAvailableFonts()
     }
 
     class BaseFont {
