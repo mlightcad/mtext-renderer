@@ -48,7 +48,7 @@ export class FontManager {
   /** Mapping of original font names to their replacements */
   protected fontMapping: FontMapping = {}
   /** Map of loaded fonts, keyed by font name */
-  protected fontMap: Map<string, BaseFont> = new Map()
+  protected loadedFontMap: Map<string, BaseFont> = new Map()
   /** List of font file names that have been loaded */
   protected fileNames: string[]
   /** Record of characters that are not supported by any loaded font */
@@ -128,7 +128,7 @@ export class FontManager {
    * @returns True if the default font was loaded. False otherwise.
    */
   isDefaultFontLoaded() {
-    return this.fontMap.get(this.defaultFont.toLowerCase()) != null
+    return this.loadedFontMap.get(this.defaultFont.toLowerCase()) != null
   }
 
   /**
@@ -186,11 +186,11 @@ export class FontManager {
    * @returns The original font name if found, or the replacement font name if not found
    */
   findAndReplaceFont(fontName: string) {
-    let font = this.fontMap.get(fontName.toLowerCase())
+    let font = this.loadedFontMap.get(fontName.toLowerCase())
     if (font == null) {
       const mappedFontName = this.fontMapping[fontName]
       if (mappedFontName) {
-        font = this.fontMap.get(mappedFontName.toLowerCase())
+        font = this.loadedFontMap.get(mappedFontName.toLowerCase())
         return mappedFontName
       }
     }
@@ -208,13 +208,13 @@ export class FontManager {
     fontName: string,
     recordMissedFonts: boolean = true
   ): BaseFont | undefined {
-    if (this.fontMap.size === 0) {
+    if (this.loadedFontMap.size === 0) {
       return
     }
     if (fontName == null) {
       fontName = '' // take null/undefined as empty
     }
-    const currentFont = this.fontMap.get(fontName.toLowerCase())
+    const currentFont = this.loadedFontMap.get(fontName.toLowerCase())
     if (!currentFont) {
       if (recordMissedFonts) {
         this.recordMissedFonts(fontName)
@@ -231,7 +231,7 @@ export class FontManager {
    */
   public getFontByChar(char: string): BaseFont | undefined {
     // Try all fonts until we find one that can render the character
-    for (const [, font] of this.fontMap) {
+    for (const [, font] of this.loadedFontMap) {
       if (font.hasChar(char)) {
         return font
       }
@@ -264,7 +264,7 @@ export class FontManager {
    * @returns The scale factor for the font, or 1 if the font is not found
    */
   getFontScaleFactor(fontName: string) {
-    const font = this.fontMap.get(fontName.toLowerCase())
+    const font = this.loadedFontMap.get(fontName.toLowerCase())
     return font ? font.getScaleFactor() : 1
   }
 
@@ -274,7 +274,7 @@ export class FontManager {
    * @returns The type of the font. If the specified font can't be found, `undefined` is returned
    */
   getFontType(fontName: string): FontType | undefined {
-    const font = this.fontMap.get(fontName.toLowerCase())
+    const font = this.loadedFontMap.get(fontName.toLowerCase())
     return font?.type
   }
 
@@ -284,7 +284,7 @@ export class FontManager {
    * @returns The shape for the not found indicator, or undefined if not available
    */
   getNotFoundTextShape(size: number) {
-    for (const [, font] of this.fontMap) {
+    for (const [, font] of this.loadedFontMap) {
       const s = font.getNotFoundTextShape(size)
       if (s) return s
     }
@@ -297,7 +297,7 @@ export class FontManager {
    * @returns True if the font is loaded, false otherwise
    */
   isFontLoaded(fontName: string): boolean {
-    return this.fontMap.has(fontName.toLowerCase())
+    return this.loadedFontMap.has(fontName.toLowerCase())
   }
 
   /**
@@ -336,14 +336,14 @@ export class FontManager {
     const data = await FontCacheManager.instance.get(fontName)
     if (data) {
       const font = FontFactory.instance.createFont(data)
-      this.fontMap.set(fontName, font)
+      this.loadedFontMap.set(fontName, font)
     } else {
       const buffer = (await this.loader.loadAsync(fontInfo.url)) as ArrayBuffer
       fontData.data = buffer
       const font = FontFactory.instance.createFont(fontData)
       if (font) {
         fontInfo.name.forEach(name => font.names.add(name))
-        this.fontMap.set(fontName, font)
+        this.loadedFontMap.set(fontName, font)
         if (this.enableFontCache) {
           await FontCacheManager.instance.set(fontName, fontData)
         }
@@ -372,7 +372,7 @@ export class FontManager {
    * Loads all fonts from the cache
    */
   async getAllFontsFromCache() {
-    if (this.fontMap.size !== 0) {
+    if (this.loadedFontMap.size !== 0) {
       return
     }
     const fontFileDatas = await FontCacheManager.instance.getAll()
@@ -382,7 +382,7 @@ export class FontManager {
         continue
       }
       const font = FontFactory.instance.createFont(fontFileData)
-      this.fontMap.set(name, font)
+      this.loadedFontMap.set(name, font)
     }
   }
 
@@ -391,7 +391,7 @@ export class FontManager {
    * @returns A record mapping unsupported characters to their occurrence count
    */
   public getUnsupportedChar() {
-    for (const [, font] of this.fontMap) {
+    for (const [, font] of this.loadedFontMap) {
       Object.assign(this.unsupportedChars, font.unsupportedChars)
     }
     return this.unsupportedChars
@@ -411,10 +411,10 @@ export class FontManager {
    */
   release(fontToRelease?: string) {
     if (fontToRelease == null) {
-      this.fontMap.clear()
+      this.loadedFontMap.clear()
       return true
     } else {
-      return this.fontMap.delete(fontToRelease)
+      return this.loadedFontMap.delete(fontToRelease)
     }
   }
 }
