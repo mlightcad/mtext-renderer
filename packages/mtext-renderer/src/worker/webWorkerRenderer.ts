@@ -204,7 +204,6 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       await this.loadFonts([FontManager.instance.defaultFont])
       this.isInitialized = true
     }
-    await this.ensureTasksFinished()
   }
 
   /**
