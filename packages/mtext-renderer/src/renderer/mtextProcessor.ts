@@ -1153,8 +1153,8 @@ export class MTextProcessor {
     const meshGroup = new THREE.Group()
     const color = this._currentContext.getColorAsHex()
 
-    // Mesh font (ExtrudeGeometry)
-    const meshGeoms = geometries.filter(g => g instanceof THREE.ExtrudeGeometry)
+    // Mesh font (ShapeGeometry)
+    const meshGeoms = geometries.filter(g => g instanceof THREE.ShapeGeometry)
     if (meshGeoms.length > 0) {
       const mesh = new THREE.Mesh()
       mesh.geometry = mergeGeometries(meshGeoms)
@@ -1166,7 +1166,7 @@ export class MTextProcessor {
     // All line-based geometries: SHX font + underline/overline/strikeThrough
     const allLineGeoms = [
       ...lineGeometries,
-      ...geometries.filter(g => !(g instanceof THREE.ExtrudeGeometry))
+      ...geometries.filter(g => !(g instanceof THREE.ShapeGeometry))
     ]
     if (allLineGeoms.length > 0) {
       const lineMesh = new THREE.LineSegments()
