@@ -1,12 +1,20 @@
-import { Font as OpenTypeFont,parse } from 'opentype.js'
-import {
-  Font,
-  FontData as ThreeFontData
-} from 'three/examples/jsm/loaders/FontLoader.js'
+import { Font as OpenTypeFont, parse } from 'opentype.js'
+import { FontData as ThreeFontData } from 'three/examples/jsm/loaders/FontLoader.js'
 
 import { BaseFont } from './baseFont'
 import { FontData } from './font'
 import { MeshTextShape } from './meshTextShape'
+import { ThreeFont } from './threeFont'
+
+export interface GlyphCommand {
+  type: string
+  x?: number
+  y?: number
+  x1?: number
+  y1?: number
+  x2?: number
+  y2?: number
+}
 
 interface MeshGlyph {
   ha: number
@@ -97,7 +105,7 @@ export class MeshFont extends BaseFont {
   /** Scale factor used to adjust the size of characters */
   protected scaleFactor?: number
   /** Three.js font instance used for rendering */
-  public readonly font: Font
+  public readonly font: ThreeFont
   /** The type of font (always 'mesh' for this class) */
   public readonly type = 'mesh'
   /** The parsed font data */
@@ -125,7 +133,7 @@ export class MeshFont extends BaseFont {
       )
     }
 
-    this.font = new Font(this.data)
+    this.font = new ThreeFont(this.data)
   }
 
   /**
@@ -210,8 +218,7 @@ export class MeshFont extends BaseFont {
       o: ''
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    glyph.path.commands.forEach((command: any) => {
+    glyph.path.commands.forEach((command: GlyphCommand) => {
       let t = command.type.toLowerCase()
       if (t === 'c') t = 'b'
       token.o += t + ' '
