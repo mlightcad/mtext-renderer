@@ -35,6 +35,8 @@ const AxisX = /*@__PURE__*/ new THREE.Vector3(1, 0, 0)
 export class MText extends THREE.Object3D {
   /** The text style configuration for this MText object */
   private _style: TextStyle
+  /** The flag to indicate whether fonts specified in style are loaded */
+  private _fontsInStyleLoaded: boolean
   /** The style manager instance for handling text styles */
   private _styleManager: StyleManager
   /** The font manager instance for handling font operations */
@@ -96,6 +98,7 @@ export class MText extends THREE.Object3D {
     this._box = new THREE.Box3()
     this._boxes = []
     this._mtextData = text
+    this._fontsInStyleLoaded = false
   }
 
   /**
@@ -120,8 +123,25 @@ export class MText extends THREE.Object3D {
   async asyncDraw() {
     // Determine fonts used in the mtext string (without extensions)
     const fonts = Array.from(MText.getFonts(this._mtextData.text || '', true))
+
+    // Determine fonts used in font style
+    if (!this._fontsInStyleLoaded) {
+      if (this._style.font) {
+        const fontName = this.getFontName(this._style.font)
+        if (fontName) fonts.push(fontName)
+      }
+      if (this._style.bigFont) {
+        const fontName = this.getFontName(this._style.bigFont)
+        if (fontName) fonts.push(fontName)
+      }
+      if (this._style.extendedFont) {
+        const fontName = this.getFontName(this._style.extendedFont)
+        if (fontName) fonts.push(fontName)
+      }
+    }
     if (fonts.length > 0) {
       await this._fontManager.loadFontsByNames(fonts)
+      this._fontsInStyleLoaded = true
     }
 
     this.syncDraw()
@@ -455,5 +475,15 @@ export class MText extends THREE.Object3D {
         }
       }
     })
+  }
+  private getFontName(fontFileName: string) {
+    if (fontFileName) {
+      const lastDotIndex = fontFileName.lastIndexOf('.')
+      if (lastDotIndex >= 0) {
+        return fontFileName.substring(0, lastDotIndex).toLowerCase()
+      } else {
+        return fontFileName.toLowerCase()
+      }
+    }
   }
 }

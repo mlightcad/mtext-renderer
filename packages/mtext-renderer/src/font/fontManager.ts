@@ -214,6 +214,13 @@ export class FontManager {
     if (fontName == null) {
       fontName = '' // take null/undefined as empty
     }
+
+    // Check if font name contain file extension
+    const dotIndex = fontName.lastIndexOf('.')
+    if (dotIndex > 0 && (dotIndex == fontName.length - 4) || (dotIndex == fontName.length - 5)) {
+      // Remove extension of font file name
+      fontName = fontName.substring(0, dotIndex)
+    }
     const currentFont = this.loadedFontMap.get(fontName.toLowerCase())
     if (!currentFont) {
       if (recordMissedFonts) {
