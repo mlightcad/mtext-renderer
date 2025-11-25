@@ -7,7 +7,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/mlightcad/mtext-renderer"
+    "url": "https://github.com/mlightcad/mtext-renderer"
   },
   "workspaces": [
     "packages/*"

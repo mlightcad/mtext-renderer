@@ -1,15 +1,15 @@
 {
   "name": "@mlightcad/mtext-renderer",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "AutoCAD MText renderer based on Three.js",
   "license": "MIT",
   "author": "MLight Lee <mlight.lee@outlook.com>",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/mlightcad/mtext-renderer"
+    "url": "https://github.com/mlightcad/mtext-renderer"
   },
-  "homepage": "https://gitlab.com/mlightcad/mtext-renderer",
+  "homepage": "https://github.com/mlightcad/mtext-renderer",
   "main": "./dist/index.umd.cjs",
   "module": "./dist/index.js",
   "types": "./lib/index.d.ts",

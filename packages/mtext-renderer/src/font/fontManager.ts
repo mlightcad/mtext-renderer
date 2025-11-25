@@ -217,7 +217,10 @@ export class FontManager {
 
     // Check if font name contain file extension
     const dotIndex = fontName.lastIndexOf('.')
-    if (dotIndex > 0 && (dotIndex == fontName.length - 4) || (dotIndex == fontName.length - 5)) {
+    if (
+      (dotIndex > 0 && dotIndex == fontName.length - 4) ||
+      dotIndex == fontName.length - 5
+    ) {
       // Remove extension of font file name
       fontName = fontName.substring(0, dotIndex)
     }

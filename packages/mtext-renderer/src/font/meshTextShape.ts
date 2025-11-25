@@ -41,7 +41,14 @@ export class MeshTextShape extends BaseTextShape {
     )
     if (geometry == null) {
       const shapes = this.font.generateShapes(this.char, this.fontSize)
-      geometry = new THREE.ShapeGeometry(shapes)
+      geometry = new THREE.ShapeGeometry(shapes, 4)
+      // Remove uv and normal to save memory
+      if (geometry.hasAttribute('uv')) {
+        geometry.deleteAttribute('uv')
+      }
+      if (geometry.hasAttribute('normal')) {
+        geometry.deleteAttribute('normal')
+      }
       return mergeVertices(geometry, 1e-6)
     }
     return geometry
