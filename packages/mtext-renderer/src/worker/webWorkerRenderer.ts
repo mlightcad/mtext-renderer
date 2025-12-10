@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
+import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { StyleManager } from '../renderer/styleManager'
 import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
 import { MTextBaseRenderer, MTextObject } from './baseRenderer'
@@ -170,7 +171,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   private timeOut: number
   private readyPromise: Promise<void> | null = null
   private isInitialized: boolean
-  private styleManager: StyleManager
+  private defaultStyleManager: StyleManager
 
   constructor(config: WebWorkerRendererConfig = {}) {
     // Apply default values
@@ -182,7 +183,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
           ? Math.min(4, navigator.hardwareConcurrency)
           : 2
       )
-    this.styleManager = new StyleManager()
+    this.defaultStyleManager = new DefaultStyleManager()
     const workerUrl = config.workerUrl ?? './mtext-renderer-worker.js'
     this.timeOut = config.timeOut ?? 120000
 
@@ -196,6 +197,16 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     }
 
     this.isInitialized = false
+  }
+
+  /**
+   * Used to manage materials used by texts
+   */
+  get styleManager(): StyleManager {
+    return this.defaultStyleManager
+  }
+  set styleManager(value: StyleManager) {
+    this.defaultStyleManager = value
   }
 
   private async ensureInitialized() {
@@ -389,7 +400,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       data: { mtextContent, textStyle, colorSettings }
     })
 
-    return this.reconstructMText(serialized)
+    return this.reconstructMText(serialized, textStyle)
   }
 
   /**
@@ -441,7 +452,10 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   /**
    * Reconstruct MText object from JSON serialized data
    */
-  reconstructMText(serializedData: SerializedMText): MTextObject {
+  reconstructMText(
+    serializedData: SerializedMText,
+    textStyle: TextStyle
+  ): MTextObject {
     const group = new THREE.Group()
 
     // Reconstruct all child objects
@@ -489,9 +503,11 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       // Create material using StyleManager for proper material reuse
       let material: THREE.Material
       if (childData.type === 'mesh') {
-        material = this.styleManager.getMeshBasicMaterial(
-          childData.material.color
-        )
+        material = this.defaultStyleManager.getMeshBasicMaterial({
+          layer: textStyle.layer,
+          isByLayer: textStyle.isByLayer,
+          color: childData.material.color
+        })
         // Apply additional properties if they differ from defaults
         if (childData.material.transparent !== undefined) {
           material.transparent = childData.material.transparent
@@ -503,9 +519,11 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
           material.side = childData.material.side as THREE.Side
         }
       } else {
-        material = this.styleManager.getLineBasicMaterial(
-          childData.material.color
-        )
+        material = this.defaultStyleManager.getLineBasicMaterial({
+          layer: textStyle.layer,
+          isByLayer: textStyle.isByLayer,
+          color: childData.material.color
+        })
         // Apply additional properties if they differ from defaults
         if (childData.material.transparent !== undefined) {
           material.transparent = childData.material.transparent

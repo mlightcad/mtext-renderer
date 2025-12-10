@@ -1158,7 +1158,11 @@ export class MTextProcessor {
     if (meshGeoms.length > 0) {
       const mesh = new THREE.Mesh()
       mesh.geometry = mergeGeometries(meshGeoms)
-      mesh.material = this.styleManager.getMeshBasicMaterial(color)
+      mesh.material = this.styleManager.getMeshBasicMaterial({
+        layer: this._style.layer,
+        isByLayer: this._style.isByLayer,
+        color
+      })
       mesh.userData.bboxIntersectionCheck = true
       meshGroup.add(mesh)
     }
@@ -1171,7 +1175,11 @@ export class MTextProcessor {
     if (allLineGeoms.length > 0) {
       const lineMesh = new THREE.LineSegments()
       lineMesh.geometry = mergeGeometries(allLineGeoms)
-      lineMesh.material = this.styleManager.getLineBasicMaterial(color)
+      lineMesh.material = this.styleManager.getLineBasicMaterial({
+        layer: this._style.layer,
+        isByLayer: this._style.isByLayer,
+        color
+      })
       lineMesh.userData.bboxIntersectionCheck = true
       meshGroup.add(lineMesh)
     }

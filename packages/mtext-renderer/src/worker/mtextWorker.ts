@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
+import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { MText } from '../renderer/mtext'
-import { StyleManager } from '../renderer/styleManager'
 import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
 
 // Worker message types
@@ -28,7 +28,7 @@ interface WorkerResponse {
 
 // Initialize managers in the worker
 const fontManager = FontManager.instance
-const styleManager = new StyleManager()
+const styleManager = new DefaultStyleManager()
 
 // Handle messages from main thread
 self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {

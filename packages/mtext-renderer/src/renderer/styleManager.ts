@@ -1,28 +1,23 @@
 import * as THREE from 'three'
 
+import { StyleTraits } from './types'
+
 /**
- * Class to manage basic text style
+ * Class to manage materials used by texts
  */
-export class StyleManager {
-  private lineBasicMaterials: { [color: number]: THREE.Material } = {}
-  private meshBasicMaterials: { [color: number]: THREE.Material } = {}
-  public unsupportedTextStyles: Record<string, number> = {}
+export interface StyleManager {
+  unsupportedTextStyles: Record<string, number>
+  /**
+   * Gets one reusable material for mesh type font. If not found in cache, just create one.
+   * @param traits - Traits to define one mesh basic material
+   * @returns - One reusable material for mesh type font.
+   */
+  getMeshBasicMaterial(traits: StyleTraits): THREE.Material
 
-  getMeshBasicMaterial(color: number): THREE.Material {
-    if (!this.meshBasicMaterials[color]) {
-      this.meshBasicMaterials[color] = new THREE.MeshBasicMaterial({
-        color
-      })
-    }
-    return this.meshBasicMaterials[color]
-  }
-
-  getLineBasicMaterial(color: number): THREE.Material {
-    if (!this.lineBasicMaterials[color]) {
-      this.lineBasicMaterials[color] = new THREE.LineBasicMaterial({
-        color
-      })
-    }
-    return this.lineBasicMaterials[color]
-  }
+  /**
+   * Gets one reusable material for line type font. If not found in cache, just create one.
+   * @param traits - Traits to define one line basic material
+   * @returns - One reusable material for line type font.
+   */
+  getLineBasicMaterial(traits: StyleTraits): THREE.Material
 }

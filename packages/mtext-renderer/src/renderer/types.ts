@@ -29,6 +29,23 @@ export enum MTextAttachmentPoint {
   BottomRight = 9
 }
 
+export interface StyleTraits {
+  /**
+   * Optional layer name. Material is identified by layer and color. So it means different
+   * materials are created for the same color and differnt layer.
+   */
+  layer?: string
+  /**
+   * The color of material
+   */
+  color: number
+  /**
+   * One flag to indicate whether the color is by layer. If it is true, it means that the
+   * material become invalid once layer color changed.
+   */
+  isByLayer?: boolean
+}
+
 /**
  * Represents the data structure for multiline text (MText) entities.
  * Contains all necessary properties to define the appearance and positioning of text.
@@ -61,7 +78,7 @@ export interface MTextData {
  * This interface contains properties that control various aspects of text rendering including font,
  * dimensions, and display characteristics.
  */
-export interface TextStyle {
+export interface TextStyle extends StyleTraits {
   /** The unique name identifier for this text style */
   name: string
   /** Flag indicating standard text style settings. Controls various text generation behaviors */
@@ -82,8 +99,6 @@ export interface TextStyle {
   bigFont: string
   /** Optional extended font settings or alternative font specification */
   extendedFont?: string
-  /** The color index or value for the text. May reference a color table or direct color value */
-  color: number
 }
 
 /**

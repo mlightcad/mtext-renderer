@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+import { StyleManager } from '../renderer/styleManager'
 import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
 
 /**
@@ -23,6 +24,12 @@ export interface MTextObject extends THREE.Object3D {
  * without changing usage.
  */
 export interface MTextBaseRenderer {
+  /**
+   * Used to manage materials used by texts
+   */
+  get styleManager(): StyleManager
+  set styleManager(value: StyleManager)
+
   /**
    * Render the provided MText content into a Three.js object hierarchy asynchronously
    *

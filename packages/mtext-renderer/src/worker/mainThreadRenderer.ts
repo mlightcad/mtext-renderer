@@ -1,4 +1,5 @@
 import { FontManager } from '../font'
+import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { MText } from '../renderer/mtext'
 import { StyleManager } from '../renderer/styleManager'
 import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
@@ -10,13 +11,23 @@ import { MTextBaseRenderer, MTextObject } from './baseRenderer'
  */
 export class MainThreadRenderer implements MTextBaseRenderer {
   private fontManager: FontManager
-  private styleManager: StyleManager
+  private defaultStyleManager: StyleManager
   private isInitialized: boolean
 
   constructor() {
     this.fontManager = FontManager.instance
-    this.styleManager = new StyleManager()
+    this.defaultStyleManager = new DefaultStyleManager()
     this.isInitialized = false
+  }
+
+  /**
+   * Used to manage materials used by texts
+   */
+  get styleManager(): StyleManager {
+    return this.defaultStyleManager
+  }
+  set styleManager(value: StyleManager) {
+    this.defaultStyleManager = value
   }
 
   /**
@@ -43,7 +54,7 @@ export class MainThreadRenderer implements MTextBaseRenderer {
     const mtext = new MText(
       mtextContent,
       textStyle,
-      this.styleManager,
+      this.defaultStyleManager,
       this.fontManager,
       colorSettings
     )
@@ -67,7 +78,7 @@ export class MainThreadRenderer implements MTextBaseRenderer {
     const mtext = new MText(
       mtextContent,
       textStyle,
-      this.styleManager,
+      this.defaultStyleManager,
       this.fontManager,
       colorSettings
     )

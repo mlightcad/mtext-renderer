@@ -1,3 +1,4 @@
+import { StyleManager } from '../renderer'
 import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
 import { MTextBaseRenderer, MTextObject } from './baseRenderer'
 import { MainThreadRenderer } from './mainThreadRenderer'
@@ -31,6 +32,14 @@ export class UnifiedRenderer {
     if (defaultMode === 'worker') {
       this.renderer = this.webWorkerRenderer
     }
+  }
+
+  /**
+   * Sets one new style manager to override the default style manager
+   * @param value - New style manager
+   */
+  setStyleManager(value: StyleManager) {
+    this.renderer.styleManager = value
   }
 
   /**
