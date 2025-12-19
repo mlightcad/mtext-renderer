@@ -1,4 +1,4 @@
-import { Point, ShxShape } from '@mlightcad/shx-parser'
+import { Point, ShxFontType, ShxShape } from '@mlightcad/shx-parser'
 import * as THREE from 'three'
 
 import { BaseTextShape } from './baseTextShape'
@@ -27,7 +27,14 @@ export class ShxTextShape extends BaseTextShape {
     this.shape = shape
     this.font = font
     this.code = code
-    this.width = this.calcWidth()
+    // According to ChatGPT, the advance width of one SHX font character equals the 
+    // X position of the final pen location when the character definition ends.
+    // In other words, advanceWidth = finalPenX
+    if (font.data.header.fontType === ShxFontType.BIGFONT) {
+      this.width = this.calcWidth()
+    } else {
+      this.width = shape.lastPoint?.x ?? this.calcWidth()
+    }
   }
 
   protected calcWidth() {
