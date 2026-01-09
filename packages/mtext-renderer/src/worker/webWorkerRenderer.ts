@@ -18,7 +18,7 @@ export interface WebWorkerRendererConfig {
 
   /**
    * URL path to the worker script
-   * @default './mtext-renderer-worker.js'
+   * @default './assets/mtext-renderer-worker.js'
    */
   workerUrl?: string
 
@@ -184,11 +184,11 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
           : 2
       )
     this.defaultStyleManager = new DefaultStyleManager()
-    const workerUrl = config.workerUrl ?? './mtext-renderer-worker.js'
+    const workerUrl = config.workerUrl ?? './assets/mtext-renderer-worker.js'
     this.timeOut = config.timeOut ?? 120000
 
     for (let i = 0; i < this.poolSize; i++) {
-      const worker = new Worker(new URL(workerUrl, import.meta.url), {
+      const worker = new Worker(workerUrl, {
         type: 'module'
       })
       this.attachWorkerHandlers(worker, i)

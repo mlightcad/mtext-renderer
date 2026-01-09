@@ -84,7 +84,7 @@ class MTextRendererExample {
 
     // Initialize unified renderer (default to main thread)
     this.unifiedRenderer = new UnifiedRenderer('main', {
-      workerUrl: './mtext-renderer-worker.js'
+      workerUrl: './assets/mtext-renderer-worker.js'
     })
 
     // Get DOM elements
