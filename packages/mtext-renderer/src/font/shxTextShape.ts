@@ -27,7 +27,7 @@ export class ShxTextShape extends BaseTextShape {
     this.shape = shape
     this.font = font
     this.code = code
-    // According to ChatGPT, the advance width of one SHX font character equals the 
+    // According to ChatGPT, the advance width of one SHX font character equals the
     // X position of the final pen location when the character definition ends.
     // In other words, advanceWidth = finalPenX
     if (font.data.header.fontType === ShxFontType.BIGFONT) {

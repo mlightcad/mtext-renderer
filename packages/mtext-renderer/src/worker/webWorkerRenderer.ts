@@ -188,7 +188,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     this.timeOut = config.timeOut ?? 120000
 
     for (let i = 0; i < this.poolSize; i++) {
-      const worker = new Worker(new URL(workerUrl, import.meta.url), {
+      const worker = new Worker(workerUrl, {
         type: 'module'
       })
       this.attachWorkerHandlers(worker, i)
