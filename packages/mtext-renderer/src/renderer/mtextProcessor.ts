@@ -662,7 +662,13 @@ export class MTextProcessor {
     }
     // 2. If word would overflow, start a new line first (no indent for wrapped lines)
     if (this.hOffset + wordWidth > (this.maxLineWidth || Infinity)) {
-      this.startNewLine() // Do not apply indent for wrapped lines
+      // SPECIAL CASE:
+      // If this is the first word of the current paragraph (no rendered objects yet), do not wrap.
+      if (this._vOffset <= 0 && this._currentLineObjects.length <= 0) {
+        // Do nothing
+      } else {
+        this.startNewLine() // Start a new line for wrapped words
+      }
     }
     // 3. Render the word character by character
     for (let i = 0; i < word.length; i++) {
