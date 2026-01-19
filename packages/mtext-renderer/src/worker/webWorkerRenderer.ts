@@ -20,7 +20,7 @@ export interface WebWorkerRendererConfig {
    * URL path to the worker script
    * @default './assets/mtext-renderer-worker.js'
    */
-  workerUrl?: string
+  workerUrl?: string | URL
 
   /**
    * Timeout duration in milliseconds for worker requests
