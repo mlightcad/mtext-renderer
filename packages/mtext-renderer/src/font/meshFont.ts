@@ -207,31 +207,43 @@ export class MeshFont extends BaseFont {
       return
     }
 
-    const glyph = this.opentypeFont.charToGlyph(char)
-    if (!glyph || !glyph.path) return
+    // Notes:
+    // Please don't use method `hasChar`. Its implementation is as follows.
+    // ```
+    // return this.encoding.charToGlyphIndex(n) !== null;
+    // ```
+    // Method `charToGlyphIndex` returns undefined if not found. However, it
+    // uses '!==null' to check whether it is found or not.
+    //
+    // I checked opentype.js source code and found it was fixed. However, it
+    // isn't included in latest released (1.3.4) yet.
+    if (this.opentypeFont.charToGlyphIndex(char) > 0) {
+      const glyph = this.opentypeFont.charToGlyph(char)
+      if (!glyph || !glyph.path) return
 
-    const round = Math.round
-    const token = {
-      ha: round(glyph.advanceWidth ?? 0),
-      x_min: round(glyph.xMin ?? 0),
-      x_max: round(glyph.xMax ?? 0),
-      o: ''
+      const round = Math.round
+      const token = {
+        ha: round(glyph.advanceWidth ?? 0),
+        x_min: round(glyph.xMin ?? 0),
+        x_max: round(glyph.xMax ?? 0),
+        o: ''
+      }
+
+      glyph.path.commands.forEach((command: GlyphCommand) => {
+        let t = command.type.toLowerCase()
+        if (t === 'c') t = 'b'
+        token.o += t + ' '
+        if (command.x !== undefined && command.y !== undefined)
+          token.o += round(command.x) + ' ' + round(command.y) + ' '
+        if (command.x1 !== undefined && command.y1 !== undefined)
+          token.o += round(command.x1) + ' ' + round(command.y1) + ' '
+        if (command.x2 !== undefined && command.y2 !== undefined)
+          token.o += round(command.x2) + ' ' + round(command.y2) + ' '
+      })
+
+      this.data.glyphs[char] = token
+      this.glyphCache.set(char, token)
     }
-
-    glyph.path.commands.forEach((command: GlyphCommand) => {
-      let t = command.type.toLowerCase()
-      if (t === 'c') t = 'b'
-      token.o += t + ' '
-      if (command.x !== undefined && command.y !== undefined)
-        token.o += round(command.x) + ' ' + round(command.y) + ' '
-      if (command.x1 !== undefined && command.y1 !== undefined)
-        token.o += round(command.x1) + ' ' + round(command.y1) + ' '
-      if (command.x2 !== undefined && command.y2 !== undefined)
-        token.o += round(command.x2) + ' ' + round(command.y2) + ' '
-    })
-
-    this.data.glyphs[char] = token
-    this.glyphCache.set(char, token)
   }
 
   /**
