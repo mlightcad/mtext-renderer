@@ -11,7 +11,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { getColorByIndex } from '../common'
 import { FontManager } from '../font'
 import { StyleManager } from './styleManager'
-import { MTextFlowDirection, TextStyle } from './types'
+import { CharBox, MTextFlowDirection, TextStyle } from './types'
 
 const tempVector = /*@__PURE__*/ new THREE.Vector3()
 
@@ -56,6 +56,10 @@ export interface MTextFormatOptions {
    * Whether to remove font name extension.
    */
   removeFontExtension: boolean
+  /**
+   * Whether to collect per-character bounding boxes for picking.
+   */
+  collectCharBoxes?: boolean
 }
 
 /**
@@ -561,10 +565,20 @@ export class MTextProcessor {
   private startNewParagraph(
     geometries: THREE.BufferGeometry[],
     lineGeometries: THREE.BufferGeometry[],
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[],
     group: THREE.Group
   ) {
-    this.processGeometries(geometries, lineGeometries, group)
-    this.startNewLine() // Mark as first line of paragraph, apply indent
+    this.processGeometries(
+      geometries,
+      lineGeometries,
+      meshCharBoxes,
+      lineCharBoxes,
+      group
+    )
+
+    this.startNewLine(meshCharBoxes, lineCharBoxes) // Mark as first line of paragraph, apply indent
+
     // Reset paragraph properties to defaults at the start of a new paragraph
     this.resetParagraphProperties()
   }
@@ -576,26 +590,54 @@ export class MTextProcessor {
   processText(tokens: Generator<MTextToken>) {
     const geometries: THREE.BufferGeometry[] = []
     const lineGeometries: THREE.BufferGeometry[] = []
+    const meshCharBoxes: CharBox[] = []
+    const lineCharBoxes: CharBox[] = []
+
     const group: THREE.Group = new THREE.Group()
 
     for (const token of tokens) {
       if (token.type === TokenType.NEW_PARAGRAPH) {
-        this.startNewParagraph(geometries, lineGeometries, group)
+        this.startNewParagraph(
+          geometries,
+          lineGeometries,
+          meshCharBoxes,
+          lineCharBoxes,
+          group
+        )
       } else if (token.type === TokenType.WORD) {
         const words = token.data
         if (Array.isArray(words)) {
           words.forEach(word =>
-            this.processWord(word, geometries, lineGeometries)
+            this.processWord(
+              word,
+              geometries,
+              lineGeometries,
+              meshCharBoxes,
+              lineCharBoxes
+            )
           )
         } else if (typeof words === 'string' && words.length > 0) {
-          this.processWord(words, geometries, lineGeometries)
+          this.processWord(
+            words,
+            geometries,
+            lineGeometries,
+            meshCharBoxes,
+            lineCharBoxes
+          )
         }
       } else if (token.type === TokenType.SPACE) {
-        this.processBlank()
+        this.processBlank(meshCharBoxes, lineCharBoxes)
       } else if (token.type === TokenType.PROPERTIES_CHANGED) {
         // FLUSH before changing style: ensures all geometries up to this point use the previous style.
         // This is critical for correct color/formatting application within a line.
-        this.processGeometries(geometries, lineGeometries, group)
+        this.processGeometries(
+          geometries,
+          lineGeometries,
+          meshCharBoxes,
+          lineCharBoxes,
+          group
+        )
+
         const item = token.data as ChangedProperties
         if (item.command === undefined) {
           // Restore previous context when exiting a formatting group
@@ -611,14 +653,33 @@ export class MTextProcessor {
           this.processFormat(item)
         }
       } else if (token.type === TokenType.STACK) {
-        this.processStack(token.data as string[], geometries, lineGeometries)
-        this.processGeometries(geometries, lineGeometries, group)
+        this.processStack(
+          token.data as string[],
+          geometries,
+          lineGeometries,
+          meshCharBoxes,
+          lineCharBoxes
+        )
+        this.processGeometries(
+          geometries,
+          lineGeometries,
+          meshCharBoxes,
+          lineCharBoxes,
+          group
+        )
       }
     }
 
     if (geometries.length > 0 || lineGeometries.length > 0) {
-      this.processGeometries(geometries, lineGeometries, group)
+      this.processGeometries(
+        geometries,
+        lineGeometries,
+        meshCharBoxes,
+        lineCharBoxes,
+        group
+      )
     }
+
     this.processLastLine()
     return group
   }
@@ -626,21 +687,32 @@ export class MTextProcessor {
   private processGeometries(
     geometries: THREE.BufferGeometry[],
     lineGeometries: THREE.BufferGeometry[],
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[],
     group: THREE.Group
   ) {
     if (geometries.length > 0 || lineGeometries.length > 0) {
-      const object = this.toThreeObject(geometries, lineGeometries)
+      const object = this.toThreeObject(
+        geometries,
+        lineGeometries,
+        meshCharBoxes,
+        lineCharBoxes
+      )
       group.add(object)
       this._currentLineObjects.push(object)
       geometries.length = 0
       lineGeometries.length = 0
+      meshCharBoxes.length = 0
+      lineCharBoxes.length = 0
     }
   }
 
   private processWord(
     word: string,
     geometries: THREE.BufferGeometry[],
-    lineGeometries: THREE.BufferGeometry[]
+    lineGeometries: THREE.BufferGeometry[],
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[]
   ) {
     // --- Word-level wrapping logic ---
     // 1. Measure word width
@@ -667,19 +739,27 @@ export class MTextProcessor {
       if (this._vOffset <= 0 && this._currentLineObjects.length <= 0) {
         // Do nothing
       } else {
-        this.startNewLine() // Start a new line for wrapped words
+        this.startNewLine(meshCharBoxes, lineCharBoxes) // Start a new line for wrapped words
       }
     }
     // 3. Render the word character by character
     for (let i = 0; i < word.length; i++) {
-      this.processChar(word[i], geometries, lineGeometries)
+      this.processChar(
+        word[i],
+        geometries,
+        lineGeometries,
+        meshCharBoxes,
+        lineCharBoxes
+      )
     }
   }
 
   private processStack(
     stackData: string[],
     geometries: THREE.BufferGeometry[],
-    lineGeometries: THREE.BufferGeometry[]
+    lineGeometries: THREE.BufferGeometry[],
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[]
   ) {
     const [numerator, denominator, divider] = stackData
 
@@ -725,34 +805,49 @@ export class MTextProcessor {
       if (numerator && !denominator) {
         const superscriptGeometries: THREE.BufferGeometry[] = []
         const superscriptLineGeometries: THREE.BufferGeometry[] = []
+        const superscriptMeshCharBoxes: CharBox[] = []
+        const superscriptLineCharBoxes: CharBox[] = []
+
         this._hOffset = currentHOffset
         this._vOffset = currentVOffset + currentFontSize * 0.1
         for (let i = 0; i < numerator.length; i++) {
           this.processChar(
             numerator[i],
             superscriptGeometries,
-            superscriptLineGeometries
+            superscriptLineGeometries,
+            superscriptMeshCharBoxes,
+            superscriptLineCharBoxes
           )
         }
         geometries.push(...superscriptGeometries)
         lineGeometries.push(...superscriptLineGeometries)
+        meshCharBoxes.push(...superscriptMeshCharBoxes)
+        lineCharBoxes.push(...superscriptLineCharBoxes)
         this._hOffset = currentHOffset + numeratorWidth
       }
+
       // Subscript case
       else if (!numerator && denominator) {
         const subscriptGeometries: THREE.BufferGeometry[] = []
         const subscriptLineGeometries: THREE.BufferGeometry[] = []
+        const subscriptMeshCharBoxes: CharBox[] = []
+        const subscriptLineCharBoxes: CharBox[] = []
+
         this._hOffset = currentHOffset
         this._vOffset = currentVOffset - currentFontSize * 0.6
         for (let i = 0; i < denominator.length; i++) {
           this.processChar(
             denominator[i],
             subscriptGeometries,
-            subscriptLineGeometries
+            subscriptLineGeometries,
+            subscriptMeshCharBoxes,
+            subscriptLineCharBoxes
           )
         }
         geometries.push(...subscriptGeometries)
         lineGeometries.push(...subscriptLineGeometries)
+        meshCharBoxes.push(...subscriptMeshCharBoxes)
+        lineCharBoxes.push(...subscriptLineCharBoxes)
         this._hOffset = currentHOffset + denominatorWidth
       }
 
@@ -764,32 +859,46 @@ export class MTextProcessor {
       // Second pass: render numerator
       const numeratorGeometries: THREE.BufferGeometry[] = []
       const numeratorLineGeometries: THREE.BufferGeometry[] = []
+      const numeratorMeshCharBoxes: CharBox[] = []
+      const numeratorLineCharBoxes: CharBox[] = []
+
       this._hOffset = currentHOffset + numeratorOffset
       this._vOffset = currentVOffset + this.currentFontSize * 0.3
       for (let i = 0; i < numerator.length; i++) {
         this.processChar(
           numerator[i],
           numeratorGeometries,
-          numeratorLineGeometries
+          numeratorLineGeometries,
+          numeratorMeshCharBoxes,
+          numeratorLineCharBoxes
         )
       }
       geometries.push(...numeratorGeometries)
       lineGeometries.push(...numeratorLineGeometries)
+      meshCharBoxes.push(...numeratorMeshCharBoxes)
+      lineCharBoxes.push(...numeratorLineCharBoxes)
 
       // Render denominator
       const denominatorGeometries: THREE.BufferGeometry[] = []
       const denominatorLineGeometries: THREE.BufferGeometry[] = []
+      const denominatorMeshCharBoxes: CharBox[] = []
+      const denominatorLineCharBoxes: CharBox[] = []
+
       this._hOffset = currentHOffset + denominatorOffset
       this._vOffset = currentVOffset - this.currentFontSize * 0.6
       for (let i = 0; i < denominator.length; i++) {
         this.processChar(
           denominator[i],
           denominatorGeometries,
-          denominatorLineGeometries
+          denominatorLineGeometries,
+          denominatorMeshCharBoxes,
+          denominatorLineCharBoxes
         )
       }
       geometries.push(...denominatorGeometries)
       lineGeometries.push(...denominatorLineGeometries)
+      meshCharBoxes.push(...denominatorMeshCharBoxes)
+      lineCharBoxes.push(...denominatorLineCharBoxes)
 
       // Render fraction line if needed
       if (divider === '/' || divider === '#') {
@@ -807,6 +916,7 @@ export class MTextProcessor {
           new THREE.BufferAttribute(lineVertices, 3)
         )
         lineGeometry.setIndex(null)
+        lineGeometry.userData = { isDecoration: true }
         lineGeometries.push(lineGeometry)
       }
 
@@ -821,18 +931,56 @@ export class MTextProcessor {
     }
   }
 
-  private processBlank() {
+  private processBlank(meshCharBoxes: CharBox[], lineCharBoxes: CharBox[]) {
+    if (this._options.collectCharBoxes !== false) {
+      const charX = this._hOffset
+      const charY =
+        this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP
+          ? this._vOffset
+          : this._vOffset - this.currentFontSize
+      const box = new THREE.Box3(
+        new THREE.Vector3(charX, charY, 0),
+        new THREE.Vector3(
+          charX + this._currentContext.blankWidth,
+          charY + this.currentFontSize,
+          0
+        )
+      )
+      if (this.fontManager.getFontType(this.currentFont) === 'mesh') {
+        meshCharBoxes.push({ box, char: ' ' })
+      } else {
+        lineCharBoxes.push({ box, char: ' ' })
+      }
+    }
     this._hOffset += this._currentContext.blankWidth
+  }
+
+  private recordLineBreak(
+    meshCharBoxes?: CharBox[],
+    lineCharBoxes?: CharBox[]
+  ) {
+    if (this._options.collectCharBoxes === false) return
+    if (!meshCharBoxes || !lineCharBoxes) return
+
+    const point = new THREE.Vector3(this._hOffset, this._vOffset, 0)
+    const box = new THREE.Box3(point.clone(), point.clone())
+    if (this.fontManager.getFontType(this.currentFont) === 'mesh') {
+      meshCharBoxes.push({ box, char: '\n' })
+    } else {
+      lineCharBoxes.push({ box, char: '\n' })
+    }
   }
 
   private processChar(
     char: string,
     geometries: THREE.BufferGeometry[],
-    lineGeometries: THREE.BufferGeometry[]
+    lineGeometries: THREE.BufferGeometry[],
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[]
   ): void {
     const shape = this.getCharShape(char)
     if (!shape) {
-      this.processBlank()
+      this.processBlank(meshCharBoxes, lineCharBoxes)
       return
     }
 
@@ -878,7 +1026,7 @@ export class MTextProcessor {
     }
 
     if (this.hOffset > (this.maxLineWidth || Infinity)) {
-      this.startNewLine()
+      this.startNewLine(meshCharBoxes, lineCharBoxes)
     }
 
     const charX = this.hOffset
@@ -901,6 +1049,19 @@ export class MTextProcessor {
     }
     geometries.push(geometry)
 
+    if (this._options.collectCharBoxes !== false) {
+      geometry.userData.char = char
+      if (!geometry.boundingBox) {
+        geometry.computeBoundingBox()
+      }
+      const box = new THREE.Box3().copy(geometry.boundingBox!)
+      if (geometry instanceof THREE.ShapeGeometry) {
+        meshCharBoxes.push({ box, char })
+      } else {
+        lineCharBoxes.push({ box, char })
+      }
+    }
+
     // Underline, overline, strikeThrough
     const lineOffset = charHeight * 0.05
     const lineZ = 0.001
@@ -922,8 +1083,10 @@ export class MTextProcessor {
         )
       )
       underlineGeom.setIndex(null)
+      underlineGeom.userData = { isDecoration: true }
       lineGeometries.push(underlineGeom)
     }
+
     if (this._currentContext.overline) {
       const overlineGeom = new THREE.BufferGeometry()
       const overlineY = charY + charHeight + lineOffset
@@ -942,8 +1105,10 @@ export class MTextProcessor {
         )
       )
       overlineGeom.setIndex(null)
+      overlineGeom.userData = { isDecoration: true }
       lineGeometries.push(overlineGeom)
     }
+
     if (this._currentContext.strikeThrough) {
       const strikeGeom = new THREE.BufferGeometry()
       const strikeY = charY + charHeight / 2 - charHeight * 0.2
@@ -962,6 +1127,7 @@ export class MTextProcessor {
         )
       )
       strikeGeom.setIndex(null)
+      strikeGeom.userData = { isDecoration: true }
       lineGeometries.push(strikeGeom)
     }
   }
@@ -1037,7 +1203,8 @@ export class MTextProcessor {
     return shape
   }
 
-  private startNewLine() {
+  private startNewLine(meshCharBoxes?: CharBox[], lineCharBoxes?: CharBox[]) {
+    this.recordLineBreak(meshCharBoxes, lineCharBoxes)
     this._hOffset = 0
     if (this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP) {
       this._vOffset += this.currentLineHeight
@@ -1060,75 +1227,113 @@ export class MTextProcessor {
    * Apply translation on the specified buffer geometries according to text alignment setting
    */
   private processAlignment() {
-    const geometries: THREE.BufferGeometry[] = []
+    const geometryEntries: Array<{
+      geometry: THREE.BufferGeometry
+      owner: THREE.Object3D
+    }> = []
     this.currentLineObjects.forEach(object =>
       object.traverse(obj => {
         if ('geometry' in obj) {
-          geometries.push(obj.geometry as THREE.BufferGeometry)
+          geometryEntries.push({
+            geometry: obj.geometry as THREE.BufferGeometry,
+            owner: obj as THREE.Object3D
+          })
         }
       })
     )
-    if (geometries.length == 0) return
+    if (geometryEntries.length == 0) return
 
     let bbox: THREE.Box3 | undefined
-    geometries.forEach((g, i) => {
-      if (!g.boundingBox) {
-        g.computeBoundingBox()
+    geometryEntries.forEach((entry, i) => {
+      if (!entry.geometry.boundingBox) {
+        entry.geometry.computeBoundingBox()
       }
       if (i === 0) {
-        bbox = g.boundingBox as THREE.Box3
+        bbox = entry.geometry.boundingBox as THREE.Box3
       } else {
-        bbox!.union(g.boundingBox as THREE.Box3)
+        bbox!.union(entry.geometry.boundingBox as THREE.Box3)
       }
     })
-    if (bbox) {
-      const size = bbox.getSize(tempVector)
-      switch (this.currentHorizontalAlignment) {
-        case MTextParagraphAlignment.LEFT:
-          // Shift to left margin
-          geometries.forEach(g =>
-            g.translate(this._currentLeftMargin - bbox!.min.x, 0, 0)
-          )
-          break
-        case MTextParagraphAlignment.CENTER:
-          geometries.forEach(g =>
-            g.translate(
-              this._currentLeftMargin +
-                (this.maxLineWidth - size.x) / 2 -
-                bbox!.min.x,
-              0,
-              0
-            )
-          )
-          break
-        case MTextParagraphAlignment.RIGHT:
-          geometries.forEach(g =>
-            g.translate(
-              this._currentLeftMargin +
-                this.maxLineWidth -
-                size.x -
-                bbox!.min.x,
-              0,
-              0
-            )
-          )
-          break
-        case MTextParagraphAlignment.DISTRIBUTED:
-          if (geometries.length > 1) {
-            const gap = (this.maxLineWidth - size.x) / (geometries.length - 1)
-            for (let k = 1; k < geometries.length; k++) {
-              const geometry = geometries[k]
-              geometry.translate(gap * k, 0, 0)
-            }
-          }
-          // Shift to left margin
-          geometries.forEach(g =>
-            g.translate(this._currentLeftMargin - bbox!.min.x, 0, 0)
-          )
-          break
-        default:
-          break
+    if (!bbox) return
+
+    const resolvedBBox = bbox
+    const size = resolvedBBox.getSize(tempVector)
+    const translateCharBoxes = (owner: THREE.Object3D, dx: number) => {
+      const charBoxes = owner.userData?.charBoxes as CharBox[] | undefined
+
+      if (charBoxes && charBoxes.length > 0) {
+        const translation = new THREE.Vector3(dx, 0, 0)
+        charBoxes.forEach(entry => entry.box.translate(translation))
       }
+    }
+
+    switch (this.currentHorizontalAlignment) {
+      case MTextParagraphAlignment.LEFT: {
+        const dx = this._currentLeftMargin - resolvedBBox.min.x
+
+        const translated = new Set<THREE.Object3D>()
+        geometryEntries.forEach(entry => {
+          entry.geometry.translate(dx, 0, 0)
+          if (!translated.has(entry.owner)) {
+            translateCharBoxes(entry.owner, dx)
+            translated.add(entry.owner)
+          }
+        })
+        break
+      }
+      case MTextParagraphAlignment.CENTER: {
+        const dx =
+          this._currentLeftMargin +
+          (this.maxLineWidth - size.x) / 2 -
+          resolvedBBox.min.x
+
+        const translated = new Set<THREE.Object3D>()
+        geometryEntries.forEach(entry => {
+          entry.geometry.translate(dx, 0, 0)
+          if (!translated.has(entry.owner)) {
+            translateCharBoxes(entry.owner, dx)
+            translated.add(entry.owner)
+          }
+        })
+        break
+      }
+      case MTextParagraphAlignment.RIGHT: {
+        const dx =
+          this._currentLeftMargin +
+          this.maxLineWidth -
+          size.x -
+          resolvedBBox.min.x
+
+        const translated = new Set<THREE.Object3D>()
+        geometryEntries.forEach(entry => {
+          entry.geometry.translate(dx, 0, 0)
+          if (!translated.has(entry.owner)) {
+            translateCharBoxes(entry.owner, dx)
+            translated.add(entry.owner)
+          }
+        })
+        break
+      }
+      case MTextParagraphAlignment.DISTRIBUTED: {
+        const gap =
+          geometryEntries.length > 1
+            ? (this.maxLineWidth - size.x) / (geometryEntries.length - 1)
+            : 0
+        const translated = new Set<THREE.Object3D>()
+        geometryEntries.forEach((entry, index) => {
+          const dx =
+            gap * index + (this._currentLeftMargin - resolvedBBox.min.x)
+
+          entry.geometry.translate(dx, 0, 0)
+          if (!translated.has(entry.owner)) {
+            translateCharBoxes(entry.owner, dx)
+            translated.add(entry.owner)
+          }
+        })
+        break
+      }
+      default:
+        break
     }
   }
 
@@ -1154,22 +1359,38 @@ export class MTextProcessor {
    */
   private toThreeObject(
     geometries: THREE.BufferGeometry[],
-    lineGeometries: THREE.BufferGeometry[]
+    lineGeometries: THREE.BufferGeometry[],
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[]
   ) {
     const meshGroup = new THREE.Group()
     const color = this._currentContext.getColorAsHex()
 
+    const meshMaterial = this.styleManager.getMeshBasicMaterial({
+      layer: this._style.layer,
+      isByLayer: this._style.isByLayer,
+      color
+    })
+    const lineMaterial = this.styleManager.getLineBasicMaterial({
+      layer: this._style.layer,
+      isByLayer: this._style.isByLayer,
+      color
+    })
+
+    const shouldCollectCharBoxes = this._options.collectCharBoxes !== false
+
     // Mesh font (ShapeGeometry)
     const meshGeoms = geometries.filter(g => g instanceof THREE.ShapeGeometry)
+
     if (meshGeoms.length > 0) {
-      const mesh = new THREE.Mesh()
-      mesh.geometry = mergeGeometries(meshGeoms)
-      mesh.material = this.styleManager.getMeshBasicMaterial({
-        layer: this._style.layer,
-        isByLayer: this._style.isByLayer,
-        color
-      })
+      const mergedMeshGeom =
+        meshGeoms.length > 1 ? mergeGeometries(meshGeoms) : meshGeoms[0]
+      const mesh = new THREE.Mesh(mergedMeshGeom, meshMaterial)
       mesh.userData.bboxIntersectionCheck = true
+      if (shouldCollectCharBoxes && meshCharBoxes.length > 0) {
+        mesh.userData.charBoxes = meshCharBoxes.slice()
+      }
+
       meshGroup.add(mesh)
     }
 
@@ -1179,14 +1400,16 @@ export class MTextProcessor {
       ...geometries.filter(g => !(g instanceof THREE.ShapeGeometry))
     ]
     if (allLineGeoms.length > 0) {
-      const lineMesh = new THREE.LineSegments()
-      lineMesh.geometry = mergeGeometries(allLineGeoms)
-      lineMesh.material = this.styleManager.getLineBasicMaterial({
-        layer: this._style.layer,
-        isByLayer: this._style.isByLayer,
-        color
-      })
+      const mergedLineGeom =
+        allLineGeoms.length > 1
+          ? mergeGeometries(allLineGeoms)
+          : allLineGeoms[0]
+      const lineMesh = new THREE.LineSegments(mergedLineGeom, lineMaterial)
       lineMesh.userData.bboxIntersectionCheck = true
+      if (shouldCollectCharBoxes && lineCharBoxes.length > 0) {
+        lineMesh.userData.charBoxes = lineCharBoxes.slice()
+      }
+
       meshGroup.add(lineMesh)
     }
 

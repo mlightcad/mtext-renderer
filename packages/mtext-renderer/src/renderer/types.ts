@@ -1,3 +1,5 @@
+import * as THREE from 'three'
+
 export interface Point3d {
   x: number
   y: number
@@ -27,6 +29,11 @@ export enum MTextAttachmentPoint {
   BottomLeft = 7,
   BottomCenter = 8,
   BottomRight = 9
+}
+
+export interface CharBox {
+  box: THREE.Box3
+  char: string
 }
 
 export interface StyleTraits {
@@ -71,6 +78,8 @@ export interface MTextData {
   lineSpaceFactor?: number
   /** The width scaling factor applied to each character. Default is 1.0 */
   widthFactor?: number
+  /** Whether to collect per-character bounding boxes for picking. Default is true */
+  collectCharBoxes?: boolean
 }
 
 /**

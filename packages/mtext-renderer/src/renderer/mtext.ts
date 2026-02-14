@@ -11,6 +11,7 @@ import { FontManager } from '../font'
 import { MTextFormatOptions, MTextProcessor } from './mtextProcessor'
 import { StyleManager } from './styleManager'
 import {
+  CharBox,
   ColorSettings,
   MTextAttachmentPoint,
   MTextData,
@@ -45,8 +46,9 @@ export class MText extends THREE.Object3D {
   private _colorSettings: ColorSettings
   /** The bounding box of the entire MText object */
   private _box: THREE.Box3
-  /** Array of bounding boxes for individual text elements */
-  private _boxes: THREE.Box3[]
+  /** Array of per-character bounding boxes with debug chars */
+  private _charBoxes: CharBox[]
+
   /** Raw mtext data to draw on demand */
   private _mtextData: MTextData
 
@@ -96,8 +98,10 @@ export class MText extends THREE.Object3D {
       byBlockColor: colorSettings.byBlockColor
     }
     this._box = new THREE.Box3()
-    this._boxes = []
+    this._charBoxes = []
+
     this._mtextData = text
+
     this._fontsInStyleLoaded = false
   }
 
@@ -154,8 +158,9 @@ export class MText extends THREE.Object3D {
   syncDraw() {
     const obj = this.loadMText(this._mtextData, this._style)
     if (obj) {
-      this.getBoxes(obj, this._boxes)
-      this._boxes.forEach(box => this.box.union(box))
+      this._charBoxes = []
+      this.getBoxes(obj, this._charBoxes)
+      this._charBoxes.forEach(entry => this.box.union(entry.box))
       this.add(obj)
     }
   }
@@ -189,14 +194,21 @@ export class MText extends THREE.Object3D {
   }
 
   /**
+   * Gets per-character bounding boxes with debug characters.
+   */
+  get charBoxes() {
+    return this._charBoxes
+  }
+
+  /**
    * Calculates intersections between a ray and this MText object.
    * Overrides the base THREE.Object3D raycast method to use the text's bounding boxes.
    * @param raycaster - The raycaster to use for intersection testing
    * @param intersects - Array to store intersection results
    */
   raycast(raycaster: THREE.Raycaster, intersects: THREE.Intersection[]) {
-    this._boxes.forEach(box => {
-      if (raycaster.ray.intersectBox(box, tempPoint)) {
+    this._charBoxes.forEach(entry => {
+      if (raycaster.ray.intersectBox(entry.box, tempPoint)) {
         const distance = raycaster.ray.origin.distanceTo(tempPoint)
         intersects.push({
           distance: distance,
@@ -318,7 +330,8 @@ export class MText extends THREE.Object3D {
       flowDirection: flowDirection,
       byBlockColor: this._colorSettings.byBlockColor,
       byLayerColor: this._colorSettings.byLayerColor,
-      removeFontExtension: true
+      removeFontExtension: true,
+      collectCharBoxes: mtextData.collectCharBoxes ?? true
     }
 
     const context = new MTextContext()
@@ -423,22 +436,33 @@ export class MText extends THREE.Object3D {
    * @param object - The Three.js object to process
    * @param boxes - Array to store the calculated bounding boxes
    */
-  private getBoxes(object: THREE.Object3D, boxes: THREE.Box3[]) {
+  private getBoxes(object: THREE.Object3D, charBoxes: CharBox[]) {
     object.updateWorldMatrix(false, false)
+    const objectCharBoxes = object.userData?.charBoxes as CharBox[] | undefined
+    if (objectCharBoxes && objectCharBoxes.length > 0) {
+      objectCharBoxes.forEach(entry => {
+        const transformed = new THREE.Box3().copy(entry.box)
+        transformed.applyMatrix4(object.matrixWorld)
+        charBoxes.push({ box: transformed, char: entry.char })
+      })
+      return
+    }
+
     if (object instanceof THREE.Line || object instanceof THREE.Mesh) {
       const geometry = object.geometry
-
-      if (geometry.boundingBox === null) {
-        geometry.computeBoundingBox()
+      if (!geometry.userData?.isDecoration) {
+        if (geometry.boundingBox === null) {
+          geometry.computeBoundingBox()
+        }
+        const box = new THREE.Box3().copy(geometry.boundingBox)
+        box.applyMatrix4(object.matrixWorld)
+        charBoxes.push({ box, char: '' })
       }
-      const box = new THREE.Box3().copy(geometry.boundingBox)
-      box.applyMatrix4(object.matrixWorld)
-      boxes.push(box)
     }
 
     const children = object.children
     for (let i = 0, l = children.length; i < l; i++) {
-      this.getBoxes(children[i], boxes)
+      this.getBoxes(children[i], charBoxes)
     }
   }
 
