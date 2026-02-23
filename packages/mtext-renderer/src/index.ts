@@ -1,3 +1,4 @@
+export { getColorByIndex } from './common'
 export * from './common/eventManager'
 export * from './font'
 export * from './renderer'
