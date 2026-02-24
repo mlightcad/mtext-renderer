@@ -21,6 +21,9 @@ const LINE_SPACING_SCALE_FACTOR = 1.666666
 // Vertical compensation needed after switching normal glyph placement from
 // top-anchored to baseline-anchored coordinates.
 const STACK_VERTICAL_SHIFT_FACTOR = 0.3
+// Sentinel char used in CharBox output to represent stacked fraction divider line.
+// Private-use codepoint avoids collision with regular text content.
+export const STACK_DIVIDER_CHAR = '\uE000'
 
 export interface MTextFormatOptions {
   /**
@@ -187,6 +190,7 @@ export class MTextProcessor {
    * so it persists until explicitly changed by another paragraph alignment command.
    */
   private _currentHorizontalAlignment: MTextParagraphAlignment
+  private _lastCharBoxTarget: 'mesh' | 'line' | undefined
   // Paragraph properties
   private _currentIndent: number = 0
   private _currentLeftMargin: number = 0
@@ -240,6 +244,7 @@ export class MTextProcessor {
     this._currentContext.oblique = style.obliqueAngle || 0
     this._maxFontSize = 0
     this._currentHorizontalAlignment = options.horizontalAlignment
+    this._lastCharBoxTarget = undefined
     // Initialize paragraph properties (as factors, so initial value is 0)
     this._currentIndent = 0
     this._currentLeftMargin = 0
@@ -572,6 +577,7 @@ export class MTextProcessor {
     lineCharBoxes: CharBox[],
     group: THREE.Group
   ) {
+    this.recordLineBreak(meshCharBoxes, lineCharBoxes)
     this.processGeometries(
       geometries,
       lineGeometries,
@@ -579,8 +585,7 @@ export class MTextProcessor {
       lineCharBoxes,
       group
     )
-
-    this.startNewLine(meshCharBoxes, lineCharBoxes) // Mark as first line of paragraph, apply indent
+    this.advanceToNextLine() // Mark as first line of paragraph, apply indent
 
     // Reset paragraph properties to defaults at the start of a new paragraph
     this.resetParagraphProperties()
@@ -591,6 +596,7 @@ export class MTextProcessor {
    * @param item Input texts to render
    */
   processText(tokens: Generator<MTextToken>) {
+    this._lastCharBoxTarget = undefined
     const geometries: THREE.BufferGeometry[] = []
     const lineGeometries: THREE.BufferGeometry[] = []
     const meshCharBoxes: CharBox[] = []
@@ -890,6 +896,17 @@ export class MTextProcessor {
       meshCharBoxes.push(...numeratorMeshCharBoxes)
       lineCharBoxes.push(...numeratorLineCharBoxes)
 
+      // Keep logical char order for stacks: numerator -> divider -> denominator.
+      if (divider === '/' || divider === '#') {
+        this.recordStackDivider(
+          currentHOffset,
+          currentVOffset,
+          fractionWidth,
+          meshCharBoxes,
+          lineCharBoxes
+        )
+      }
+
       // Render denominator
       const denominatorGeometries: THREE.BufferGeometry[] = []
       const denominatorLineGeometries: THREE.BufferGeometry[] = []
@@ -950,6 +967,32 @@ export class MTextProcessor {
     }
   }
 
+  private recordStackDivider(
+    startX: number,
+    currentVOffset: number,
+    width: number,
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[]
+  ) {
+    if (this._options.collectCharBoxes === false) return
+
+    const y =
+      currentVOffset -
+      this.currentFontSize * 0.8 +
+      this.defaultFontSize * STACK_VERTICAL_SHIFT_FACTOR
+    const box = new THREE.Box3(
+      new THREE.Vector3(startX, y, 0),
+      new THREE.Vector3(startX + width, y, 0)
+    )
+
+    const target = this.resolveCharBoxTarget(meshCharBoxes, lineCharBoxes)
+    if (target === 'mesh') {
+      meshCharBoxes.push({ box, char: STACK_DIVIDER_CHAR })
+    } else {
+      lineCharBoxes.push({ box, char: STACK_DIVIDER_CHAR })
+    }
+  }
+
   /**
    * Convert a legacy top-anchored vOffset (used by stack/sub/sup logic) into
    * the current baseline-anchored coordinate system.
@@ -981,7 +1024,8 @@ export class MTextProcessor {
           0
         )
       )
-      if (this.fontManager.getFontType(this.currentFont) === 'mesh') {
+      const target = this.resolveCharBoxTarget(meshCharBoxes, lineCharBoxes)
+      if (target === 'mesh') {
         meshCharBoxes.push({ box, char: ' ' })
       } else {
         lineCharBoxes.push({ box, char: ' ' })
@@ -999,7 +1043,8 @@ export class MTextProcessor {
 
     const point = new THREE.Vector3(this._hOffset, this._vOffset, 0)
     const box = new THREE.Box3(point.clone(), point.clone())
-    if (this.fontManager.getFontType(this.currentFont) === 'mesh') {
+    const target = this.resolveCharBoxTarget(meshCharBoxes, lineCharBoxes)
+    if (target === 'mesh') {
       meshCharBoxes.push({ box, char: '\n' })
     } else {
       lineCharBoxes.push({ box, char: '\n' })
@@ -1091,8 +1136,10 @@ export class MTextProcessor {
       }
       const box = new THREE.Box3().copy(geometry.boundingBox!)
       if (geometry instanceof THREE.ShapeGeometry) {
+        this._lastCharBoxTarget = 'mesh'
         meshCharBoxes.push({ box, char })
       } else {
+        this._lastCharBoxTarget = 'line'
         lineCharBoxes.push({ box, char })
       }
     }
@@ -1240,6 +1287,10 @@ export class MTextProcessor {
 
   private startNewLine(meshCharBoxes?: CharBox[], lineCharBoxes?: CharBox[]) {
     this.recordLineBreak(meshCharBoxes, lineCharBoxes)
+    this.advanceToNextLine()
+  }
+
+  private advanceToNextLine() {
     this._hOffset = 0
     if (this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP) {
       this._vOffset += this.currentLineHeight
@@ -1256,6 +1307,18 @@ export class MTextProcessor {
     }
     // Reset maxFontSize for the new line
     this._maxFontSize = 0
+  }
+
+  private resolveCharBoxTarget(
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[]
+  ): 'mesh' | 'line' {
+    if (this._lastCharBoxTarget) return this._lastCharBoxTarget
+    if (meshCharBoxes.length > 0 && lineCharBoxes.length === 0) return 'mesh'
+    if (lineCharBoxes.length > 0 && meshCharBoxes.length === 0) return 'line'
+    return this.fontManager.getFontType(this.currentFont) === 'mesh'
+      ? 'mesh'
+      : 'line'
   }
 
   /**
