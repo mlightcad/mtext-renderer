@@ -18,6 +18,9 @@ const tempVector = /*@__PURE__*/ new THREE.Vector3()
 // The property palette of mtext can display line spacing. This magic number is inferred from value
 // displayed in property palette of mtext.
 const LINE_SPACING_SCALE_FACTOR = 1.666666
+// Vertical compensation needed after switching normal glyph placement from
+// top-anchored to baseline-anchored coordinates.
+const STACK_VERTICAL_SHIFT_FACTOR = 0.3
 
 export interface MTextFormatOptions {
   /**
@@ -809,7 +812,10 @@ export class MTextProcessor {
         const superscriptLineCharBoxes: CharBox[] = []
 
         this._hOffset = currentHOffset
-        this._vOffset = currentVOffset + currentFontSize * 0.1
+        this._vOffset = this.convertTopAlignedVOffset(
+          currentVOffset + currentFontSize * 0.1,
+          this.currentFontSize
+        )
         for (let i = 0; i < numerator.length; i++) {
           this.processChar(
             numerator[i],
@@ -834,7 +840,10 @@ export class MTextProcessor {
         const subscriptLineCharBoxes: CharBox[] = []
 
         this._hOffset = currentHOffset
-        this._vOffset = currentVOffset - currentFontSize * 0.6
+        this._vOffset = this.convertTopAlignedVOffset(
+          currentVOffset - currentFontSize * 0.6,
+          this.currentFontSize
+        )
         for (let i = 0; i < denominator.length; i++) {
           this.processChar(
             denominator[i],
@@ -863,7 +872,10 @@ export class MTextProcessor {
       const numeratorLineCharBoxes: CharBox[] = []
 
       this._hOffset = currentHOffset + numeratorOffset
-      this._vOffset = currentVOffset + this.currentFontSize * 0.3
+      this._vOffset = this.convertTopAlignedVOffset(
+        currentVOffset + this.currentFontSize * 0.3,
+        this.currentFontSize
+      )
       for (let i = 0; i < numerator.length; i++) {
         this.processChar(
           numerator[i],
@@ -885,7 +897,10 @@ export class MTextProcessor {
       const denominatorLineCharBoxes: CharBox[] = []
 
       this._hOffset = currentHOffset + denominatorOffset
-      this._vOffset = currentVOffset - this.currentFontSize * 0.6
+      this._vOffset = this.convertTopAlignedVOffset(
+        currentVOffset - this.currentFontSize * 0.6,
+        this.currentFontSize
+      )
       for (let i = 0; i < denominator.length; i++) {
         this.processChar(
           denominator[i],
@@ -905,10 +920,14 @@ export class MTextProcessor {
         const lineGeometry = new THREE.BufferGeometry()
         const lineVertices = new Float32Array([
           currentHOffset,
-          currentVOffset - this.currentFontSize * 0.8,
+          currentVOffset -
+            this.currentFontSize * 0.8 +
+            this.defaultFontSize * STACK_VERTICAL_SHIFT_FACTOR,
           0,
           currentHOffset + fractionWidth,
-          currentVOffset - this.currentFontSize * 0.8,
+          currentVOffset -
+            this.currentFontSize * 0.8 +
+            this.defaultFontSize * STACK_VERTICAL_SHIFT_FACTOR,
           0
         ])
         lineGeometry.setAttribute(
@@ -931,13 +950,29 @@ export class MTextProcessor {
     }
   }
 
+  /**
+   * Convert a legacy top-anchored vOffset (used by stack/sub/sup logic) into
+   * the current baseline-anchored coordinate system.
+   */
+  private convertTopAlignedVOffset(
+    legacyTopAlignedVOffset: number,
+    fontSize: number
+  ): number {
+    return (
+      legacyTopAlignedVOffset -
+      fontSize +
+      this.defaultFontSize +
+      this.defaultFontSize * STACK_VERTICAL_SHIFT_FACTOR
+    )
+  }
+
   private processBlank(meshCharBoxes: CharBox[], lineCharBoxes: CharBox[]) {
     if (this._options.collectCharBoxes !== false) {
       const charX = this._hOffset
       const charY =
         this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP
           ? this._vOffset
-          : this._vOffset - this.currentFontSize
+          : this._vOffset - this.defaultFontSize
       const box = new THREE.Box3(
         new THREE.Vector3(charX, charY, 0),
         new THREE.Vector3(
@@ -1033,7 +1068,7 @@ export class MTextProcessor {
     const charY =
       this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP
         ? this.vOffset
-        : this.vOffset - this.currentFontSize
+        : this.vOffset - this.defaultFontSize
     const charWidth = shape.width * this.currentWidthFactor
     const charHeight = this.currentFontSize
 
@@ -1427,10 +1462,6 @@ export class MTextProcessor {
   }
 
   private changeFontHeight(value: number) {
-    this._currentContext.fontSize =
-      value *
-      this._currentContext.fontScaleFactor *
-      this._currentContext.fontSizeScaleFactor
-    this.calcuateLineParams()
+    this.calcuateLineParams(value)
   }
 }
