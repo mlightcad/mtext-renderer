@@ -8,10 +8,15 @@ import {
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
-import { MTextFormatOptions, MTextProcessor } from './mtextProcessor'
+import {
+  MTextFormatOptions,
+  MTextProcessor,
+  STACK_DIVIDER_CHAR
+} from './mtextProcessor'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
+  CharBoxType,
   ColorSettings,
   MTextAttachmentPoint,
   MTextData,
@@ -160,7 +165,9 @@ export class MText extends THREE.Object3D {
     if (obj) {
       this._charBoxes = []
       this.getBoxes(obj, this._charBoxes)
-      this._charBoxes.forEach(entry => this.box.union(entry.box))
+      this._charBoxes.forEach(entry => {
+        if (entry.box) this.box.union(entry.box)
+      })
       this.add(obj)
     }
   }
@@ -194,7 +201,17 @@ export class MText extends THREE.Object3D {
   }
 
   /**
-   * Gets per-character bounding boxes with debug characters.
+   * Gets logical text token boxes for picking/debug.
+   *
+   * Token semantics:
+   * - `CHAR`: `char` is the rendered character, `box` is defined, `children` is empty.
+   * - `NEW_PARAGRAPH`: `char` is `\n`, `box` is `undefined`, `children` is empty.
+   * - `STACK`: `char` is empty string (`''`), `box` is the union of stack component boxes,
+   *   and `children` contains the stack sub-components.
+   *
+   * Notes:
+   * - Superscript/subscript stacks (`^`) are emitted as regular `CHAR` entries.
+   * - Fraction stacks (`/`, `#`) are emitted as one `STACK` entry.
    */
   get charBoxes() {
     return this._charBoxes
@@ -208,7 +225,7 @@ export class MText extends THREE.Object3D {
    */
   raycast(raycaster: THREE.Raycaster, intersects: THREE.Intersection[]) {
     this._charBoxes.forEach(entry => {
-      if (raycaster.ray.intersectBox(entry.box, tempPoint)) {
+      if (entry.box && raycaster.ray.intersectBox(entry.box, tempPoint)) {
         const distance = raycaster.ray.origin.distanceTo(tempPoint)
         intersects.push({
           distance: distance,
@@ -440,11 +457,53 @@ export class MText extends THREE.Object3D {
     object.updateWorldMatrix(false, false)
     const objectCharBoxes = object.userData?.charBoxes as CharBox[] | undefined
     if (objectCharBoxes && objectCharBoxes.length > 0) {
-      objectCharBoxes.forEach(entry => {
-        const transformed = new THREE.Box3().copy(entry.box)
-        transformed.applyMatrix4(object.matrixWorld)
-        charBoxes.push({ box: transformed, char: entry.char })
-      })
+      const transformedEntries = objectCharBoxes
+        .filter(entry => entry.char !== STACK_DIVIDER_CHAR)
+        .map(entry => {
+          const transformedBox = entry.box
+            ? new THREE.Box3().copy(entry.box).applyMatrix4(object.matrixWorld)
+            : undefined
+          return {
+            type:
+              entry.type === CharBoxType.NEW_PARAGRAPH
+                ? CharBoxType.NEW_PARAGRAPH
+                : CharBoxType.CHAR,
+            box: transformedBox,
+            char: entry.type === CharBoxType.NEW_PARAGRAPH ? '\n' : entry.char,
+            children: []
+          } as CharBox
+        })
+
+      const charBoxType = object.userData?.charBoxType as
+        | CharBoxType
+        | undefined
+      if (charBoxType === CharBoxType.STACK) {
+        const stackBox = new THREE.Box3()
+        let hasBox = false
+        transformedEntries.forEach(entry => {
+          if (!entry.box) return
+          if (!hasBox) {
+            stackBox.copy(entry.box)
+            hasBox = true
+          } else {
+            stackBox.union(entry.box)
+          }
+        })
+        charBoxes.push({
+          type: CharBoxType.STACK,
+          char: '',
+          box: hasBox ? stackBox : undefined,
+          children: transformedEntries
+        })
+      } else {
+        transformedEntries.forEach(entry => {
+          charBoxes.push({
+            ...entry,
+            box:
+              entry.type === CharBoxType.NEW_PARAGRAPH ? undefined : entry.box
+          })
+        })
+      }
       return
     }
 
@@ -456,7 +515,12 @@ export class MText extends THREE.Object3D {
         }
         const box = new THREE.Box3().copy(geometry.boundingBox)
         box.applyMatrix4(object.matrixWorld)
-        charBoxes.push({ box, char: '' })
+        charBoxes.push({
+          type: CharBoxType.CHAR,
+          box,
+          char: '',
+          children: []
+        })
       }
     }
 

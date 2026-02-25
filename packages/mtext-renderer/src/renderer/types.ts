@@ -1,39 +1,96 @@
 import * as THREE from 'three'
 
+/**
+ * A 3D point in drawing coordinates.
+ */
 export interface Point3d {
+  /** X coordinate */
   x: number
+  /** Y coordinate */
   y: number
+  /** Z coordinate */
   z: number
 }
 
+/**
+ * A 2D point in drawing coordinates.
+ */
 export interface Point2d {
+  /** X coordinate */
   x: number
+  /** Y coordinate */
   y: number
 }
 
+/**
+ * Defines the global text flow direction for MText layout.
+ */
 export enum MTextFlowDirection {
+  /** Text flows from left to right. */
   LEFT_TO_RIGHT = 1,
+  /** Text flows from right to left. */
   RIGHT_TO_LEFT = 2,
+  /** Text flows from top to bottom. */
   TOP_TO_BOTTOM = 3,
+  /** Text flows from bottom to top. */
   BOTTOM_TO_TOP = 4,
+  /** Use the direction defined by the active text style. */
   BY_STYLE = 5
 }
 
+/**
+ * Anchor position used to align rendered MText relative to its insertion point.
+ */
 export enum MTextAttachmentPoint {
+  /** Top-left corner. */
   TopLeft = 1,
+  /** Top-center point. */
   TopCenter = 2,
+  /** Top-right corner. */
   TopRight = 3,
+  /** Middle-left point. */
   MiddleLeft = 4,
+  /** Center point. */
   MiddleCenter = 5,
+  /** Middle-right point. */
   MiddleRight = 6,
+  /** Bottom-left corner. */
   BottomLeft = 7,
+  /** Bottom-center point. */
   BottomCenter = 8,
+  /** Bottom-right corner. */
   BottomRight = 9
 }
 
+/**
+ * Logical text token with optional pick box information.
+ *
+ * Semantics by {@link CharBoxType}:
+ * - `CHAR`: `char` is the rendered character, `box` is defined, `children` is empty.
+ * - `NEW_PARAGRAPH`: `char` is `\n`, `box` is `undefined`, `children` is empty.
+ * - `STACK`: `char` is `''`, `box` is the union box of stack components, `children` contains stack parts.
+ */
 export interface CharBox {
-  box: THREE.Box3
+  /** Token type. */
+  type: CharBoxType
+  /** Token bounding box in local MText coordinates (undefined for `NEW_PARAGRAPH`). */
+  box?: THREE.Box3
+  /** Token character payload (`''` for `STACK`, `\n` for `NEW_PARAGRAPH`). */
   char: string
+  /** Nested token components (currently used by `STACK`). */
+  children: CharBox[]
+}
+
+/**
+ * Type of logical token emitted in {@link CharBox} output.
+ */
+export enum CharBoxType {
+  /** Regular rendered character token. */
+  CHAR = 'CHAR',
+  /** Explicit paragraph break token. */
+  NEW_PARAGRAPH = 'NEW_PARAGRAPH',
+  /** Stack token (for fraction-style stacked expressions). */
+  STACK = 'STACK'
 }
 
 export interface StyleTraits {
