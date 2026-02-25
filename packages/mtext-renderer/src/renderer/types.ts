@@ -67,14 +67,15 @@ export enum MTextAttachmentPoint {
  *
  * Semantics by {@link CharBoxType}:
  * - `CHAR`: `char` is the rendered character, `box` is defined, `children` is empty.
- * - `NEW_PARAGRAPH`: `char` is `\n`, `box` is `undefined`, `children` is empty.
+ * - `NEW_PARAGRAPH`: `char` is `\n`. The `box` represents a zero-width vertical
+ *   line whose height equals the current line height. `children` is empty.
  * - `STACK`: `char` is `''`, `box` is the union box of stack components, `children` contains stack parts.
  */
 export interface CharBox {
   /** Token type. */
   type: CharBoxType
-  /** Token bounding box in local MText coordinates (undefined for `NEW_PARAGRAPH`). */
-  box?: THREE.Box3
+  /** Token bounding box in local MText coordinates. */
+  box: THREE.Box3
   /** Token character payload (`''` for `STACK`, `\n` for `NEW_PARAGRAPH`). */
   char: string
   /** Nested token components (currently used by `STACK`). */

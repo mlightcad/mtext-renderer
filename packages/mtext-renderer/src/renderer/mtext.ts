@@ -205,7 +205,8 @@ export class MText extends THREE.Object3D {
    *
    * Token semantics:
    * - `CHAR`: `char` is the rendered character, `box` is defined, `children` is empty.
-   * - `NEW_PARAGRAPH`: `char` is `\n`, `box` is `undefined`, `children` is empty.
+   * - `NEW_PARAGRAPH`: `char` is `\n`. The `box` represents a zero-width vertical
+   *   line whose height equals the current line height. `children` is empty.
    * - `STACK`: `char` is empty string (`''`), `box` is the union of stack component boxes,
    *   and `children` contains the stack sub-components.
    *
@@ -479,28 +480,19 @@ export class MText extends THREE.Object3D {
         | undefined
       if (charBoxType === CharBoxType.STACK) {
         const stackBox = new THREE.Box3()
-        let hasBox = false
         transformedEntries.forEach(entry => {
-          if (!entry.box) return
-          if (!hasBox) {
-            stackBox.copy(entry.box)
-            hasBox = true
-          } else {
-            stackBox.union(entry.box)
-          }
+          stackBox.union(entry.box)
         })
         charBoxes.push({
           type: CharBoxType.STACK,
           char: '',
-          box: hasBox ? stackBox : undefined,
+          box: stackBox,
           children: transformedEntries
         })
       } else {
         transformedEntries.forEach(entry => {
           charBoxes.push({
-            ...entry,
-            box:
-              entry.type === CharBoxType.NEW_PARAGRAPH ? undefined : entry.box
+            ...entry
           })
         })
       }

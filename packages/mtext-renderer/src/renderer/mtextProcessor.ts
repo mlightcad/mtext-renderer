@@ -1076,18 +1076,20 @@ export class MTextProcessor {
     if (this._options.collectCharBoxes === false) return
     if (!meshCharBoxes || !lineCharBoxes) return
 
+    const point = new THREE.Vector3(this._hOffset, this._vOffset, 0)
+    const box = new THREE.Box3(point.clone(), point.clone())
     const target = this.resolveCharBoxTarget(meshCharBoxes, lineCharBoxes)
     if (target === 'mesh') {
       meshCharBoxes.push({
         type: CharBoxType.NEW_PARAGRAPH,
-        box: undefined,
+        box: box,
         char: '\n',
         children: []
       })
     } else {
       lineCharBoxes.push({
         type: CharBoxType.NEW_PARAGRAPH,
-        box: undefined,
+        box: box,
         char: '\n',
         children: []
       })
