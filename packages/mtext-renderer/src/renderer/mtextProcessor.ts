@@ -11,7 +11,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { getColorByIndex } from '../common'
 import { FontManager } from '../font'
 import { StyleManager } from './styleManager'
-import { CharBox, MTextFlowDirection, TextStyle } from './types'
+import { CharBox, CharBoxType, MTextFlowDirection, TextStyle } from './types'
 
 const tempVector = /*@__PURE__*/ new THREE.Vector3()
 
@@ -662,19 +662,32 @@ export class MTextProcessor {
           this.processFormat(item)
         }
       } else if (token.type === TokenType.STACK) {
-        this.processStack(
-          token.data as string[],
-          geometries,
-          lineGeometries,
-          meshCharBoxes,
-          lineCharBoxes
-        )
+        // Flush pending regular text first so it won't be grouped into this stack char box.
         this.processGeometries(
           geometries,
           lineGeometries,
           meshCharBoxes,
           lineCharBoxes,
           group
+        )
+
+        const stackData = token.data as string[]
+        this.processStack(
+          stackData,
+          geometries,
+          lineGeometries,
+          meshCharBoxes,
+          lineCharBoxes
+        )
+        const stackType =
+          stackData[2] === '^' ? CharBoxType.CHAR : CharBoxType.STACK
+        this.processGeometries(
+          geometries,
+          lineGeometries,
+          meshCharBoxes,
+          lineCharBoxes,
+          group,
+          stackType
         )
       }
     }
@@ -698,14 +711,16 @@ export class MTextProcessor {
     lineGeometries: THREE.BufferGeometry[],
     meshCharBoxes: CharBox[],
     lineCharBoxes: CharBox[],
-    group: THREE.Group
+    group: THREE.Group,
+    charBoxType: CharBoxType = CharBoxType.CHAR
   ) {
     if (geometries.length > 0 || lineGeometries.length > 0) {
       const object = this.toThreeObject(
         geometries,
         lineGeometries,
         meshCharBoxes,
-        lineCharBoxes
+        lineCharBoxes,
+        charBoxType
       )
       group.add(object)
       this._currentLineObjects.push(object)
@@ -987,9 +1002,19 @@ export class MTextProcessor {
 
     const target = this.resolveCharBoxTarget(meshCharBoxes, lineCharBoxes)
     if (target === 'mesh') {
-      meshCharBoxes.push({ box, char: STACK_DIVIDER_CHAR })
+      meshCharBoxes.push({
+        type: CharBoxType.CHAR,
+        box,
+        char: STACK_DIVIDER_CHAR,
+        children: []
+      })
     } else {
-      lineCharBoxes.push({ box, char: STACK_DIVIDER_CHAR })
+      lineCharBoxes.push({
+        type: CharBoxType.CHAR,
+        box,
+        char: STACK_DIVIDER_CHAR,
+        children: []
+      })
     }
   }
 
@@ -1026,9 +1051,19 @@ export class MTextProcessor {
       )
       const target = this.resolveCharBoxTarget(meshCharBoxes, lineCharBoxes)
       if (target === 'mesh') {
-        meshCharBoxes.push({ box, char: ' ' })
+        meshCharBoxes.push({
+          type: CharBoxType.CHAR,
+          box,
+          char: ' ',
+          children: []
+        })
       } else {
-        lineCharBoxes.push({ box, char: ' ' })
+        lineCharBoxes.push({
+          type: CharBoxType.CHAR,
+          box,
+          char: ' ',
+          children: []
+        })
       }
     }
     this._hOffset += this._currentContext.blankWidth
@@ -1041,13 +1076,21 @@ export class MTextProcessor {
     if (this._options.collectCharBoxes === false) return
     if (!meshCharBoxes || !lineCharBoxes) return
 
-    const point = new THREE.Vector3(this._hOffset, this._vOffset, 0)
-    const box = new THREE.Box3(point.clone(), point.clone())
     const target = this.resolveCharBoxTarget(meshCharBoxes, lineCharBoxes)
     if (target === 'mesh') {
-      meshCharBoxes.push({ box, char: '\n' })
+      meshCharBoxes.push({
+        type: CharBoxType.NEW_PARAGRAPH,
+        box: undefined,
+        char: '\n',
+        children: []
+      })
     } else {
-      lineCharBoxes.push({ box, char: '\n' })
+      lineCharBoxes.push({
+        type: CharBoxType.NEW_PARAGRAPH,
+        box: undefined,
+        char: '\n',
+        children: []
+      })
     }
   }
 
@@ -1137,10 +1180,20 @@ export class MTextProcessor {
       const box = new THREE.Box3().copy(geometry.boundingBox!)
       if (geometry instanceof THREE.ShapeGeometry) {
         this._lastCharBoxTarget = 'mesh'
-        meshCharBoxes.push({ box, char })
+        meshCharBoxes.push({
+          type: CharBoxType.CHAR,
+          box,
+          char,
+          children: []
+        })
       } else {
         this._lastCharBoxTarget = 'line'
-        lineCharBoxes.push({ box, char })
+        lineCharBoxes.push({
+          type: CharBoxType.CHAR,
+          box,
+          char,
+          children: []
+        })
       }
     }
 
@@ -1361,7 +1414,7 @@ export class MTextProcessor {
 
       if (charBoxes && charBoxes.length > 0) {
         const translation = new THREE.Vector3(dx, 0, 0)
-        charBoxes.forEach(entry => entry.box.translate(translation))
+        charBoxes.forEach(entry => entry.box?.translate(translation))
       }
     }
 
@@ -1459,7 +1512,8 @@ export class MTextProcessor {
     geometries: THREE.BufferGeometry[],
     lineGeometries: THREE.BufferGeometry[],
     meshCharBoxes: CharBox[],
-    lineCharBoxes: CharBox[]
+    lineCharBoxes: CharBox[],
+    charBoxType: CharBoxType
   ) {
     const meshGroup = new THREE.Group()
     const color = this._currentContext.getColorAsHex()
@@ -1485,6 +1539,7 @@ export class MTextProcessor {
         meshGeoms.length > 1 ? mergeGeometries(meshGeoms) : meshGeoms[0]
       const mesh = new THREE.Mesh(mergedMeshGeom, meshMaterial)
       mesh.userData.bboxIntersectionCheck = true
+      mesh.userData.charBoxType = charBoxType
       if (shouldCollectCharBoxes && meshCharBoxes.length > 0) {
         mesh.userData.charBoxes = meshCharBoxes.slice()
       }
@@ -1504,6 +1559,7 @@ export class MTextProcessor {
           : allLineGeoms[0]
       const lineMesh = new THREE.LineSegments(mergedLineGeom, lineMaterial)
       lineMesh.userData.bboxIntersectionCheck = true
+      lineMesh.userData.charBoxType = charBoxType
       if (shouldCollectCharBoxes && lineCharBoxes.length > 0) {
         lineMesh.userData.charBoxes = lineCharBoxes.slice()
       }
