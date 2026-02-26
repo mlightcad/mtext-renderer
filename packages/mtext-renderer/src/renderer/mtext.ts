@@ -8,11 +8,8 @@ import {
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
-import {
-  MTextFormatOptions,
-  MTextProcessor,
-  STACK_DIVIDER_CHAR
-} from './mtextProcessor'
+import { buildCharBoxesFromObject } from './charBoxUtils'
+import { MTextFormatOptions, MTextProcessor } from './mtextProcessor'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
@@ -458,44 +455,15 @@ export class MText extends THREE.Object3D {
     object.updateWorldMatrix(false, false)
     const objectCharBoxes = object.userData?.charBoxes as CharBox[] | undefined
     if (objectCharBoxes && objectCharBoxes.length > 0) {
-      const transformedEntries = objectCharBoxes
-        .filter(entry => entry.char !== STACK_DIVIDER_CHAR)
-        .map(entry => {
-          const transformedBox = entry.box
-            ? new THREE.Box3().copy(entry.box).applyMatrix4(object.matrixWorld)
-            : undefined
-          return {
-            type:
-              entry.type === CharBoxType.NEW_PARAGRAPH
-                ? CharBoxType.NEW_PARAGRAPH
-                : CharBoxType.CHAR,
-            box: transformedBox,
-            char: entry.type === CharBoxType.NEW_PARAGRAPH ? '\n' : entry.char,
-            children: []
-          } as CharBox
-        })
-
       const charBoxType = object.userData?.charBoxType as
         | CharBoxType
         | undefined
-      if (charBoxType === CharBoxType.STACK) {
-        const stackBox = new THREE.Box3()
-        transformedEntries.forEach(entry => {
-          stackBox.union(entry.box)
-        })
-        charBoxes.push({
-          type: CharBoxType.STACK,
-          char: '',
-          box: stackBox,
-          children: transformedEntries
-        })
-      } else {
-        transformedEntries.forEach(entry => {
-          charBoxes.push({
-            ...entry
-          })
-        })
-      }
+      const entries = buildCharBoxesFromObject(
+        objectCharBoxes,
+        object.matrixWorld,
+        charBoxType
+      )
+      charBoxes.push(...entries)
       return
     }
 

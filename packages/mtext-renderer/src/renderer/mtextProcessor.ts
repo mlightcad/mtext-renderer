@@ -11,7 +11,13 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { getColorByIndex } from '../common'
 import { FontManager } from '../font'
 import { StyleManager } from './styleManager'
-import { CharBox, CharBoxType, MTextFlowDirection, TextStyle } from './types'
+import {
+  CharBox,
+  CharBoxType,
+  MTextFlowDirection,
+  STACK_DIVIDER_CHAR,
+  TextStyle
+} from './types'
 
 const tempVector = /*@__PURE__*/ new THREE.Vector3()
 
@@ -21,10 +27,6 @@ const LINE_SPACING_SCALE_FACTOR = 1.666666
 // Vertical compensation needed after switching normal glyph placement from
 // top-anchored to baseline-anchored coordinates.
 const STACK_VERTICAL_SHIFT_FACTOR = 0.3
-// Sentinel char used in CharBox output to represent stacked fraction divider line.
-// Private-use codepoint avoids collision with regular text content.
-export const STACK_DIVIDER_CHAR = '\uE000'
-
 export interface MTextFormatOptions {
   /**
    * Font size.

@@ -94,6 +94,11 @@ export enum CharBoxType {
   STACK = 'STACK'
 }
 
+/**
+ * Sentinel character used internally to represent a stack divider line.
+ */
+export const STACK_DIVIDER_CHAR = '\uE000'
+
 export interface StyleTraits {
   /**
    * Optional layer name. Material is identified by layer and color. So it means different
