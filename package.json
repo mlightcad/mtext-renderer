@@ -20,7 +20,8 @@
     "lint": "nx run-many -t lint",
     "lint:fix": "nx run-many -t lint:fix",
     "preview": "nx run @mlightcad/mtext-renderer-example:preview",
-    "publish-renderer": "pnpm -r publish --filter mtext-renderer --no-git-checks"
+    "publish-renderer": "pnpm -r publish --filter mtext-renderer --no-git-checks",
+    "test": "pnpm --filter @mlightcad/mtext-renderer test"
   },
   "engines": {
     "pnpm": ">=8"
