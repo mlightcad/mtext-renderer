@@ -801,7 +801,7 @@ export class MTextProcessor {
       if (this._vOffset <= 0 && this._currentLineObjects.length <= 0) {
         // Do nothing
       } else {
-        this.startNewLine(meshCharBoxes, lineCharBoxes) // Start a new line for wrapped words
+        this.advanceToNextLine() // Start a new line for wrapped words
       }
     }
     // 3. Render the word character by character
@@ -1201,7 +1201,7 @@ export class MTextProcessor {
     }
 
     if (this.hOffset > (this.maxLineWidth || Infinity)) {
-      this.startNewLine(meshCharBoxes, lineCharBoxes)
+      this.advanceToNextLine()
     }
 
     const charX = this.hOffset
@@ -1389,11 +1389,6 @@ export class MTextProcessor {
       this._maxFontSize = this.currentFontSize
     }
     return shape
-  }
-
-  private startNewLine(meshCharBoxes?: CharBox[], lineCharBoxes?: CharBox[]) {
-    this.recordLineBreak(meshCharBoxes, lineCharBoxes)
-    this.advanceToNextLine()
   }
 
   private advanceToNextLine() {

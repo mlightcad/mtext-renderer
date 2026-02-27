@@ -1,4 +1,6 @@
 import {
+  CharBox,
+  CharBoxType,
   MTextData,
   MTextObject,
   RenderMode,
@@ -16,6 +18,7 @@ class MTextRendererExample {
   private unifiedRenderer: UnifiedRenderer
   private currentMText: MTextObject | null = null
   private mtextBox: THREE.LineSegments | null = null
+  private charBoxOverlays: THREE.Object3D[] = []
 
   // DOM elements
   private mtextInput: HTMLTextAreaElement
@@ -23,6 +26,7 @@ class MTextRendererExample {
   private statusDiv: HTMLDivElement
   private fontSelect: HTMLSelectElement
   private showBoundingBoxCheckbox: HTMLInputElement
+  private showCharBoxesCheckbox: HTMLInputElement
   private renderModeSelect: HTMLSelectElement
 
   // Example texts
@@ -84,7 +88,10 @@ class MTextRendererExample {
 
     // Initialize unified renderer (default to main thread)
     this.unifiedRenderer = new UnifiedRenderer('main', {
-      workerUrl: './assets/mtext-renderer-worker.js'
+      workerUrl: new URL(
+        '../../mtext-renderer/src/worker/index.ts',
+        import.meta.url
+      )
     })
 
     // Get DOM elements
@@ -98,6 +105,9 @@ class MTextRendererExample {
     ) as HTMLSelectElement
     this.showBoundingBoxCheckbox = document.getElementById(
       'show-bounding-box'
+    ) as HTMLInputElement
+    this.showCharBoxesCheckbox = document.getElementById(
+      'show-char-boxes'
     ) as HTMLInputElement
     this.renderModeSelect = document.getElementById(
       'render-mode'
@@ -195,6 +205,10 @@ class MTextRendererExample {
       if (this.mtextBox) {
         this.mtextBox.visible = this.showBoundingBoxCheckbox.checked
       }
+    })
+
+    this.showCharBoxesCheckbox.addEventListener('change', () => {
+      this.setCharBoxOverlayVisibility(this.showCharBoxesCheckbox.checked)
     })
 
     // Render mode toggle
@@ -418,6 +432,114 @@ class MTextRendererExample {
     })
   }
 
+  private setCharBoxOverlayVisibility(visible: boolean): void {
+    this.charBoxOverlays.forEach(overlay => {
+      overlay.visible = visible
+    })
+  }
+
+  private flattenCharBoxes(charBoxes: CharBox[]): CharBox[] {
+    const flattened: CharBox[] = []
+    const stack = [...charBoxes]
+
+    while (stack.length > 0) {
+      const entry = stack.pop()!
+      if (
+        entry.type === CharBoxType.CHAR ||
+        entry.type === CharBoxType.NEW_PARAGRAPH
+      ) {
+        flattened.push(entry)
+      }
+
+      if (entry.children && entry.children.length > 0) {
+        for (let i = entry.children.length - 1; i >= 0; i--) {
+          stack.push(entry.children[i])
+        }
+      }
+    }
+
+    return flattened
+  }
+
+  private createCharBoxOverlay(charBoxes: CharBox[]): THREE.Group {
+    const overlay = new THREE.Group()
+    const renderableCharBoxes = this.flattenCharBoxes(charBoxes)
+
+    const charMaterial = new THREE.LineBasicMaterial({
+      color: 0x00cfff,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.95
+    })
+    const lineBreakMaterial = new THREE.LineBasicMaterial({
+      color: 0xff8a00,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.95
+    })
+
+    renderableCharBoxes.forEach(entry => {
+      const minX = entry.box.min.x
+      const minY = entry.box.min.y
+      const maxX = entry.box.max.x
+      const maxY = entry.box.max.y
+      const z = Math.max(entry.box.max.z, 0) + 0.001
+
+      const outlineVertices = [
+        minX,
+        minY,
+        z,
+        maxX,
+        minY,
+        z,
+        maxX,
+        minY,
+        z,
+        maxX,
+        maxY,
+        z,
+        maxX,
+        maxY,
+        z,
+        minX,
+        maxY,
+        z,
+        minX,
+        maxY,
+        z,
+        minX,
+        minY,
+        z
+      ]
+
+      const outlineGeometry = new THREE.BufferGeometry()
+      outlineGeometry.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(outlineVertices, 3)
+      )
+
+      const isLineBreak = entry.type === CharBoxType.NEW_PARAGRAPH
+      const outline = new THREE.LineSegments(
+        outlineGeometry,
+        isLineBreak ? lineBreakMaterial : charMaterial
+      )
+      overlay.add(outline)
+
+    })
+
+    return overlay
+  }
+
+  private attachCharBoxOverlay(mtextObj: MTextObject): void {
+    if (!mtextObj.charBoxes || mtextObj.charBoxes.length === 0) return
+
+    const overlay = this.createCharBoxOverlay(mtextObj.charBoxes)
+    overlay.visible = this.showCharBoxesCheckbox.checked
+    overlay.renderOrder = 999
+    mtextObj.add(overlay)
+    this.charBoxOverlays.push(overlay)
+  }
+
   private async renderMText(content: string): Promise<void> {
     try {
       const startTime = performance.now()
@@ -436,6 +558,7 @@ class MTextRendererExample {
         this.scene.remove(this.mtextBox)
         this.mtextBox = null
       }
+      this.charBoxOverlays = []
 
       let renderTime: number
 
@@ -457,6 +580,7 @@ class MTextRendererExample {
         let combinedBox: THREE.Box3 | null = null
 
         mtextObjects.forEach((mtextObj, index) => {
+          this.attachCharBoxOverlay(mtextObj)
           group.add(mtextObj)
 
           // Combine bounding boxes
@@ -530,6 +654,7 @@ class MTextRendererExample {
             byBlockColor: 0xffffff
           }
         )
+        this.attachCharBoxOverlay(this.currentMText)
         this.scene.add(this.currentMText)
 
         // Create box around MText using its bounding box only if checkbox is checked
