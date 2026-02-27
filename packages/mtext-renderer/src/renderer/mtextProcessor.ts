@@ -612,10 +612,12 @@ export class MTextProcessor {
     const lineGeometries: THREE.BufferGeometry[] = []
     const meshCharBoxes: CharBox[] = []
     const lineCharBoxes: CharBox[] = []
+    let lastTokenType: TokenType | undefined
 
     const group: THREE.Group = new THREE.Group()
 
     for (const token of tokens) {
+      lastTokenType = token.type
       if (token.type === TokenType.NEW_PARAGRAPH) {
         this.startNewParagraph(
           geometries,
@@ -703,7 +705,23 @@ export class MTextProcessor {
       }
     }
 
+    // Preserve an explicit trailing empty line (e.g. "Unicode\\P" or "\\PUnicode\\P")
+    // by adding one logical line-break marker for the final empty line.
+    if (lastTokenType === TokenType.NEW_PARAGRAPH) {
+      this.recordLineBreak(meshCharBoxes, lineCharBoxes)
+    }
+
     if (geometries.length > 0 || lineGeometries.length > 0) {
+      this.processGeometries(
+        geometries,
+        lineGeometries,
+        meshCharBoxes,
+        lineCharBoxes,
+        group
+      )
+    }
+    // Keep char boxes even when no visible geometry exists (empty lines, spaces only).
+    else if (meshCharBoxes.length > 0 || lineCharBoxes.length > 0) {
       this.processGeometries(
         geometries,
         lineGeometries,
@@ -737,6 +755,15 @@ export class MTextProcessor {
       this._currentLineObjects.push(object)
       geometries.length = 0
       lineGeometries.length = 0
+      meshCharBoxes.length = 0
+      lineCharBoxes.length = 0
+    } else if (meshCharBoxes.length > 0 || lineCharBoxes.length > 0) {
+      const object = new THREE.Object3D()
+      object.userData.bboxIntersectionCheck = true
+      object.userData.charBoxType = charBoxType
+      object.userData.charBoxes = [...meshCharBoxes, ...lineCharBoxes]
+      group.add(object)
+      this._currentLineObjects.push(object)
       meshCharBoxes.length = 0
       lineCharBoxes.length = 0
     }
@@ -1087,8 +1114,16 @@ export class MTextProcessor {
     if (this._options.collectCharBoxes === false) return
     if (!meshCharBoxes || !lineCharBoxes) return
 
-    const point = new THREE.Vector3(this._hOffset, this._vOffset, 0)
-    const box = new THREE.Box3(point.clone(), point.clone())
+    const charY =
+      this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP
+        ? this._vOffset
+        : this._vOffset - this.defaultFontSize
+    // Zero-width vertical marker representing one logical line extent.
+    // Include line spacing so picker/debug regions match actual line layout.
+    const box = new THREE.Box3(
+      new THREE.Vector3(this._hOffset, charY, 0),
+      new THREE.Vector3(this._hOffset, charY + this.currentLineHeight, 0)
+    )
     const target = this.resolveCharBoxTarget(meshCharBoxes, lineCharBoxes)
     if (target === 'mesh') {
       meshCharBoxes.push({

@@ -28,7 +28,7 @@ class MTextRendererExample {
   // Example texts
   private readonly exampleTexts = {
     basic:
-      '{\\C1;Hello World 材料 装车位置}\\P\\P{\\C2;Diameter: %%c50}\\P{\\C3;Temperature: 25%%d}\\P{\\C4;Tolerance: %%p0.1}\\P{\\C6;\\LUnderlined\\l, \\OOverlined\\o, \\KStriked\\k}\\P{\\C7;\\Q15;Oblique 15 deg}\\P{\\C8;\\FArial|b1;Bold Text}\\P{\\C9;\\FArial|i1;Italic Text}\\P{\\C10;\\FArial|b1|i1;Bold Italic Text}\\P{\\C11;Normal height \\H0.16;Absolute font height 0.16}\\PUnicode: \\U+4F60\\U+597D (should display 你好)',
+      '\\P{\\C1;Hello World 材料 装车位置}\\P\\P{\\C2;Diameter: %%c50}\\P{\\C3;Temperature: 25%%d}\\P{\\C4;Tolerance: %%p0.1}\\P{\\C6;\\LUnderlined\\l, \\OOverlined\\o, \\KStriked\\k}\\P{\\C7;\\Q15;Oblique 15 deg}\\P{\\C8;\\FArial|b1;Bold Text}\\P{\\C9;\\FArial|i1;Italic Text}\\P{\\C10;\\FArial|b1|i1;Bold Italic Text}\\P{\\C11;Normal height \\H0.16;Absolute font height 0.16}\\PUnicode: \\U+4F60\\U+597D (should display 你好){\\P}',
     complex:
       '{\\C1;\\W2;Title}\\P{\\C2;This is a paragraph with different styles.}\\P{\\C3;\\W1.5;Subtitle}\\P{\\C4;• First item\\P• Second item\\P• Third item}\\P{\\T2;Absolute character spacing: 2, }{\\T0.2x;Relative character spacing: 0.2}\\P{\\W0.8;Footer text}',
     controlCode:

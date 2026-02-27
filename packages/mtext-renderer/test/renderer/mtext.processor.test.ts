@@ -105,7 +105,10 @@ const TOKEN_PROPERTIES_CHANGED = 9
 
 type FakeFontType = 'mesh' | 'shx'
 
-function createProcessor(fontType: FakeFontType = 'mesh') {
+function createProcessor(
+  fontType: FakeFontType = 'mesh',
+  optionsOverride: Partial<MTextFormatOptions> = {}
+) {
   const style: TextStyle = {
     name: 'default',
     standardFlag: 0,
@@ -129,7 +132,8 @@ function createProcessor(fontType: FakeFontType = 'mesh') {
     byBlockColor: 0x123456,
     byLayerColor: 0xabcdef,
     removeFontExtension: true,
-    collectCharBoxes: false
+    collectCharBoxes: false,
+    ...optionsOverride
   }
 
   const fontManager = {
@@ -186,10 +190,10 @@ function getInternalLineCount(processor: MTextProcessor) {
 }
 
 function getAllCharBoxes(object: THREE.Object3D) {
-  const out: Array<{ type: CharBoxType; char: string }> = []
+  const out: Array<{ type: CharBoxType; char: string; box: THREE.Box3 }> = []
   object.traverse(node => {
     const boxes = node.userData?.charBoxes as
-      | Array<{ type: CharBoxType; char: string }>
+      | Array<{ type: CharBoxType; char: string; box: THREE.Box3 }>
       | undefined
     if (boxes) {
       out.push(...boxes)
@@ -436,5 +440,62 @@ describe('MTextProcessor format state', () => {
 
     expect(processor.totalHeight).toBeCloseTo(60, 3)
     expect(getInternalLineCount(processor)).toBe(2)
+  })
+
+  it('preserves trailing empty line markers for "Unicode\\\\P"', () => {
+    const { processor } = createProcessor('mesh')
+    ;(processor as any)._options.collectCharBoxes = true
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'Unicode' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null }
+    ] as any)
+
+    const paragraphMarkers = getAllCharBoxes(obj).filter(
+      entry => entry.type === CharBoxType.NEW_PARAGRAPH
+    )
+    expect(paragraphMarkers.length).toBe(2)
+    expect(paragraphMarkers[1].box.min.y).toBeLessThan(
+      paragraphMarkers[0].box.min.y
+    )
+  })
+
+  it('keeps leading and trailing empty lines for "\\\\PUnicode\\\\P"', () => {
+    const { processor } = createProcessor('mesh')
+    ;(processor as any)._options.collectCharBoxes = true
+
+    const obj = processor.processText([
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_WORD, ctx: null, data: 'Unicode' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null }
+    ] as any)
+
+    const paragraphMarkers = getAllCharBoxes(obj).filter(
+      entry => entry.type === CharBoxType.NEW_PARAGRAPH
+    )
+    expect(paragraphMarkers.length).toBe(3)
+    expect(processor.totalHeight).toBeCloseTo(72, 3)
+  })
+
+  it('applies lineSpaceFactor to trailing empty-line marker position and height', () => {
+    const { processor } = createProcessor('mesh', { lineSpaceFactor: 0.5 })
+    ;(processor as any)._options.collectCharBoxes = true
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'Unicode' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null }
+    ] as any)
+
+    const paragraphMarkers = getAllCharBoxes(obj).filter(
+      entry => entry.type === CharBoxType.NEW_PARAGRAPH
+    )
+    expect(paragraphMarkers.length).toBe(2)
+
+    const dy = paragraphMarkers[0].box.min.y - paragraphMarkers[1].box.min.y
+    expect(dy).toBeCloseTo(processor.currentLineHeight, 3)
+
+    const markerHeight =
+      paragraphMarkers[1].box.max.y - paragraphMarkers[1].box.min.y
+    expect(markerHeight).toBeCloseTo(processor.currentLineHeight, 3)
   })
 })
