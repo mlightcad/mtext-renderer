@@ -264,10 +264,28 @@ export class MText extends THREE.Object3D {
       mtextData.drawingDirection
     )
 
+    const translateCharBoxEntries = (entries: CharBox[] | undefined) => {
+      if (!entries || entries.length === 0) return
+      const translation = new THREE.Vector3(anchorPoint.x, anchorPoint.y, 0)
+      const translateEntry = (entry: CharBox) => {
+        entry.box?.translate(translation)
+        if (entry.children && entry.children.length > 0) {
+          entry.children.forEach(translateEntry)
+        }
+      }
+      entries.forEach(translateEntry)
+    }
+
     object.traverse(obj => {
       if ('geometry' in obj) {
         const geometry = obj.geometry as THREE.BufferGeometry
         geometry.translate(anchorPoint.x, anchorPoint.y, 0)
+      } else {
+        // Char-box-only placeholder objects (e.g., trailing empty lines)
+        // need the same anchor translation as geometry-bearing objects.
+        translateCharBoxEntries(
+          obj.userData?.charBoxes as CharBox[] | undefined
+        )
       }
       obj.layers.enableAll()
     })
