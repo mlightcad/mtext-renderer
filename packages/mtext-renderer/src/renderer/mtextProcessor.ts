@@ -193,6 +193,8 @@ export class MTextProcessor {
    */
   private _currentHorizontalAlignment: MTextParagraphAlignment
   private _lastCharBoxTarget: 'mesh' | 'line' | undefined
+  private _lineHasRenderableChar: boolean
+  private _pendingEmptyLineFontSizeAdjust?: number
   // Paragraph properties
   private _currentIndent: number = 0
   private _currentLeftMargin: number = 0
@@ -247,6 +249,8 @@ export class MTextProcessor {
     this._maxFontSize = 0
     this._currentHorizontalAlignment = options.horizontalAlignment
     this._lastCharBoxTarget = undefined
+    this._lineHasRenderableChar = false
+    this._pendingEmptyLineFontSizeAdjust = undefined
     // Initialize paragraph properties (as factors, so initial value is 0)
     this._currentIndent = 0
     this._currentLeftMargin = 0
@@ -349,7 +353,12 @@ export class MTextProcessor {
       this.defaultLineSpaceFactor *
       this.currentFontSize *
       LINE_SPACING_SCALE_FACTOR
-    return lineSpace + this.currentMaxFontSize
+    // Empty lines should still advance by current font size plus line spacing.
+    const contentHeight =
+      this.currentMaxFontSize > 0
+        ? this.currentMaxFontSize
+        : this.currentFontSize
+    return lineSpace + contentHeight
   }
 
   /**
@@ -455,7 +464,7 @@ export class MTextProcessor {
         break
       case 'c':
       case 'C':
-        if (item.changes.aci) {
+        if (item.changes.aci !== undefined && item.changes.aci !== null) {
           if (item.changes.aci === 0) {
             this._currentContext.setColorFromHex(this._options.byBlockColor)
           } else if (item.changes.aci === 256) {
@@ -651,14 +660,14 @@ export class MTextProcessor {
 
         const item = token.data as ChangedProperties
         if (item.command === undefined) {
-          // Restore previous context when exiting a formatting group
-          if (this._contextStack.length > 0) {
+          // Restore contexts to match parser depth.
+          while (this._contextStack.length > item.depth) {
             this._currentContext = this._contextStack.pop()!
           }
         } else {
-          // Only push context to stack if this is the first formatting command in a group
-          // We can detect this by checking if the context stack is empty or if we haven't pushed yet
-          if (item.depth > 0) {
+          // Snapshot context once per depth level. Multiple commands in one {}
+          // must share the same base context so restore works correctly.
+          while (this._contextStack.length < item.depth) {
             this._contextStack.push(this._currentContext.clone())
           }
           this.processFormat(item)
@@ -1111,6 +1120,10 @@ export class MTextProcessor {
       return
     }
 
+    if (!this._lineHasRenderableChar) {
+      this.applyPendingEmptyLineYAdjust()
+    }
+
     const geometry = shape.toGeometry()
     geometry.scale(this.currentWidthFactor, 1, 1)
 
@@ -1175,6 +1188,7 @@ export class MTextProcessor {
         shape.width * this.currentWordSpace * this.currentWidthFactor
     }
     geometries.push(geometry)
+    this._lineHasRenderableChar = true
 
     if (this._options.collectCharBoxes !== false) {
       geometry.userData.char = char
@@ -1349,6 +1363,11 @@ export class MTextProcessor {
 
   private advanceToNextLine() {
     this._hOffset = 0
+    if (!this._lineHasRenderableChar) {
+      this._pendingEmptyLineFontSizeAdjust = this.currentFontSize
+    } else {
+      this._pendingEmptyLineFontSizeAdjust = undefined
+    }
     if (this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP) {
       this._vOffset += this.currentLineHeight
     } else {
@@ -1364,6 +1383,21 @@ export class MTextProcessor {
     }
     // Reset maxFontSize for the new line
     this._maxFontSize = 0
+    this._lineHasRenderableChar = false
+  }
+
+  private applyPendingEmptyLineYAdjust() {
+    if (this._pendingEmptyLineFontSizeAdjust === undefined) return
+    const fontDelta =
+      this.currentFontSize - this._pendingEmptyLineFontSizeAdjust
+    if (fontDelta !== 0) {
+      if (this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP) {
+        this._vOffset += fontDelta
+      } else {
+        this._vOffset -= fontDelta
+      }
+    }
+    this._pendingEmptyLineFontSizeAdjust = undefined
   }
 
   private resolveCharBoxTarget(
