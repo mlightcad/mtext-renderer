@@ -59,32 +59,21 @@ class MTextRendererExample {
 
     const width = renderArea.clientWidth
     const height = renderArea.clientHeight
-    const aspect = width / height
-    const frustumSize = 5
-
-    this.camera = new THREE.OrthographicCamera(
-      (frustumSize * aspect) / -2,
-      (frustumSize * aspect) / 2,
-      frustumSize / 2,
-      frustumSize / -2,
-      0.1,
-      1000
-    )
-    this.camera.position.z = 5
+    this.camera = new THREE.OrthographicCamera(0, width, height, 0, -1000, 1000)
+    this.camera.position.set(0, 0, 100)
+    this.camera.lookAt(new THREE.Vector3(0, 0, 0))
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(window.devicePixelRatio)
-    this.renderer.setSize(width, height)
+    this.renderer.setSize(width, height, false)
     renderArea.appendChild(this.renderer.domElement)
 
     // Add orbit controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
-    this.controls.enableDamping = true
-    this.controls.dampingFactor = 0.05
+    this.controls.enableRotate = false
     this.controls.screenSpacePanning = true
-    this.controls.minDistance = 1
-    this.controls.maxDistance = 50
-    this.controls.maxPolarAngle = Math.PI / 2
+    this.controls.minZoom = 0.3
+    this.controls.maxZoom = 5
 
     // Initialize unified renderer (default to main thread)
     this.unifiedRenderer = new UnifiedRenderer('main', {
@@ -152,15 +141,12 @@ class MTextRendererExample {
 
       const width = renderArea.clientWidth
       const height = renderArea.clientHeight
-      const aspect = width / height
-      const frustumSize = 5
-
-      this.camera.left = (frustumSize * aspect) / -2
-      this.camera.right = (frustumSize * aspect) / 2
-      this.camera.top = frustumSize / 2
-      this.camera.bottom = frustumSize / -2
+      this.camera.left = 0
+      this.camera.right = width
+      this.camera.top = height
+      this.camera.bottom = 0
       this.camera.updateProjectionMatrix()
-      this.renderer.setSize(width, height)
+      this.renderer.setSize(width, height, false)
     })
 
     // Render button
@@ -391,39 +377,39 @@ class MTextRendererExample {
     textStyle: TextStyle
   }[] {
     const texts = [
-      '{\\C1;Title Text 1}\\P{\\C2;Subtitle with different colors}',
-      '{\\C3;Title Text 2}\\P{\\C4;Subtitle with different colors}',
-      '{\\C5;Title Text 3}\\P{\\C6;Subtitle with different colors}',
-      '{\\C7;Title Text 4}\\P{\\C8;Subtitle with different colors}',
-      '{\\C9;Title Text 5}\\P{\\C10;Subtitle with different colors}',
-      '{\\C11;Title Text 6}\\P{\\C12;Subtitle with different colors}',
-      '{\\C13;Title Text 7}\\P{\\C14;Subtitle with different colors}',
-      '{\\C15;Title Text 8}\\P{\\C16;Subtitle with different colors}',
-      '{\\C17;Title Text 9}\\P{\\C18;Subtitle with different colors}',
-      '{\\C19;Title Text 10}\\P{\\C20;Subtitle with different colors}'
+      '\\H15.5{\\C1;Title Text 1}\\P{\\C2;Subtitle with different colors}',
+      '\\H15.5{\\C3;Title Text 2}\\P{\\C4;Subtitle with different colors}',
+      '\\H15.5{\\C5;Title Text 3}\\P{\\C6;Subtitle with different colors}',
+      '\\H15.5{\\C7;Title Text 4}\\P{\\C8;Subtitle with different colors}',
+      '\\H15.5{\\C9;Title Text 5}\\P{\\C10;Subtitle with different colors}',
+      '\\H15.5{\\C11;Title Text 6}\\P{\\C12;Subtitle with different colors}',
+      '\\H15.5{\\C13;Title Text 7}\\P{\\C14;Subtitle with different colors}',
+      '\\H15.5{\\C15;Title Text 8}\\P{\\C16;Subtitle with different colors}',
+      '\\H15.5{\\C17;Title Text 9}\\P{\\C18;Subtitle with different colors}',
+      '\\H15.5{\\C19;Title Text 10}\\P{\\C20;Subtitle with different colors}'
     ]
 
     return texts.map((text, index) => {
       const col = index % 3
       const row = Math.floor(index / 3)
-      const x = -2.5 + col * 1.5 // 3 per row horizontally
-      const y = 2 - row * 0.5 // move down per row to fit within frustum
+      const x = 70 + col * 300
+      const y = 530 - row * 120
 
       return {
         mtextData: {
           text,
-          height: 0.08,
-          width: 1.4, // Reduced width to fit better in the grid
+          height: 24,
+          width: 240,
           position: new THREE.Vector3(x, y, 0)
         },
         textStyle: {
           name: 'Standard',
           standardFlag: 0,
-          fixedTextHeight: 0.08,
+          fixedTextHeight: 24,
           widthFactor: 1,
           obliqueAngle: 0,
           textGenerationFlag: 0,
-          lastHeight: 0.08,
+          lastHeight: 24,
           font: this.fontSelect.value,
           bigFont: '',
           color: 0xffffff
@@ -627,19 +613,19 @@ class MTextRendererExample {
         // Render single MText object
         const mtextContent: MTextData = {
           text: content,
-          height: 0.1,
-          width: 5.5,
-          position: new THREE.Vector3(-3, 2, 0)
+          height: 24,
+          width: 820,
+          position: new THREE.Vector3(70, 530, 0)
         }
 
         const textStyle: TextStyle = {
           name: 'Standard',
           standardFlag: 0,
-          fixedTextHeight: 0.1,
+          fixedTextHeight: 24,
           widthFactor: 1,
           obliqueAngle: 0,
           textGenerationFlag: 0,
-          lastHeight: 0.1,
+          lastHeight: 24,
           font: this.fontSelect.value,
           bigFont: '',
           color: 0xffffff
