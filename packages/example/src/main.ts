@@ -1,6 +1,7 @@
 import {
   CharBox,
   CharBoxType,
+  LineLayout,
   MTextData,
   MTextObject,
   RenderMode,
@@ -19,6 +20,7 @@ class MTextRendererExample {
   private currentMText: MTextObject | null = null
   private mtextBox: THREE.LineSegments | null = null
   private charBoxOverlays: THREE.Object3D[] = []
+  private lineBoxOverlays: THREE.Object3D[] = []
 
   // DOM elements
   private mtextInput: HTMLTextAreaElement
@@ -27,6 +29,7 @@ class MTextRendererExample {
   private fontSelect: HTMLSelectElement
   private showBoundingBoxCheckbox: HTMLInputElement
   private showCharBoxesCheckbox: HTMLInputElement
+  private showLineBoxesCheckbox: HTMLInputElement
   private renderModeSelect: HTMLSelectElement
 
   // Example texts
@@ -97,6 +100,9 @@ class MTextRendererExample {
     ) as HTMLInputElement
     this.showCharBoxesCheckbox = document.getElementById(
       'show-char-boxes'
+    ) as HTMLInputElement
+    this.showLineBoxesCheckbox = document.getElementById(
+      'show-line-boxes'
     ) as HTMLInputElement
     this.renderModeSelect = document.getElementById(
       'render-mode'
@@ -195,6 +201,9 @@ class MTextRendererExample {
 
     this.showCharBoxesCheckbox.addEventListener('change', () => {
       this.setCharBoxOverlayVisibility(this.showCharBoxesCheckbox.checked)
+    })
+    this.showLineBoxesCheckbox.addEventListener('change', () => {
+      this.setLineBoxOverlayVisibility(this.showLineBoxesCheckbox.checked)
     })
 
     // Render mode toggle
@@ -424,6 +433,12 @@ class MTextRendererExample {
     })
   }
 
+  private setLineBoxOverlayVisibility(visible: boolean): void {
+    this.lineBoxOverlays.forEach(overlay => {
+      overlay.visible = visible
+    })
+  }
+
   private flattenCharBoxes(charBoxes: CharBox[]): CharBox[] {
     const flattened: CharBox[] = []
     const stack = [...charBoxes]
@@ -510,20 +525,91 @@ class MTextRendererExample {
         isLineBreak ? lineBreakMaterial : charMaterial
       )
       overlay.add(outline)
+    })
 
+    return overlay
+  }
+
+  private createLineBoxOverlay(
+    lineLayouts: LineLayout[],
+    lineMinX: number,
+    lineMaxX: number,
+    z = 0.002
+  ): THREE.Group {
+    const overlay = new THREE.Group()
+    const material = new THREE.LineBasicMaterial({
+      color: 0xff2bd6,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.9
+    })
+
+    lineLayouts.forEach(line => {
+      const minY = line.y - line.height / 2
+      const maxY = line.y + line.height / 2
+      const outlineVertices = [
+        lineMinX,
+        minY,
+        z,
+        lineMaxX,
+        minY,
+        z,
+        lineMaxX,
+        minY,
+        z,
+        lineMaxX,
+        maxY,
+        z,
+        lineMaxX,
+        maxY,
+        z,
+        lineMinX,
+        maxY,
+        z,
+        lineMinX,
+        maxY,
+        z,
+        lineMinX,
+        minY,
+        z
+      ]
+      const outlineGeometry = new THREE.BufferGeometry()
+      outlineGeometry.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(outlineVertices, 3)
+      )
+      const outline = new THREE.LineSegments(outlineGeometry, material)
+      outline.frustumCulled = false
+      overlay.add(outline)
     })
 
     return overlay
   }
 
   private attachCharBoxOverlay(mtextObj: MTextObject): void {
-    if (!mtextObj.charBoxes || mtextObj.charBoxes.length === 0) return
+    if (!mtextObj.layout?.chars || mtextObj.layout.chars.length === 0) return
 
-    const overlay = this.createCharBoxOverlay(mtextObj.charBoxes)
+    const overlay = this.createCharBoxOverlay(mtextObj.layout.chars)
     overlay.visible = this.showCharBoxesCheckbox.checked
     overlay.renderOrder = 999
     mtextObj.add(overlay)
     this.charBoxOverlays.push(overlay)
+  }
+
+  private attachLineBoxOverlay(mtextObj: MTextObject): void {
+    if (!mtextObj.layout?.lines || mtextObj.layout.lines.length === 0) return
+    if (!mtextObj.box || mtextObj.box.isEmpty()) return
+
+    const overlay = this.createLineBoxOverlay(
+      mtextObj.layout.lines,
+      mtextObj.box.min.x,
+      mtextObj.box.max.x
+    )
+    overlay.visible = this.showLineBoxesCheckbox.checked
+    overlay.renderOrder = 998
+    mtextObj.add(overlay)
+    this.lineBoxOverlays.push(overlay)
   }
 
   private async renderMText(content: string): Promise<void> {
@@ -545,6 +631,7 @@ class MTextRendererExample {
         this.mtextBox = null
       }
       this.charBoxOverlays = []
+      this.lineBoxOverlays = []
 
       let renderTime: number
 
@@ -567,6 +654,7 @@ class MTextRendererExample {
 
         mtextObjects.forEach((mtextObj, index) => {
           this.attachCharBoxOverlay(mtextObj)
+          this.attachLineBoxOverlay(mtextObj)
           group.add(mtextObj)
 
           // Combine bounding boxes
@@ -641,6 +729,7 @@ class MTextRendererExample {
           }
         )
         this.attachCharBoxOverlay(this.currentMText)
+        this.attachLineBoxOverlay(this.currentMText)
         this.scene.add(this.currentMText)
 
         // Create box around MText using its bounding box only if checkbox is checked

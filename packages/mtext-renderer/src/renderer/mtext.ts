@@ -15,14 +15,18 @@ import {
   CharBox,
   CharBoxType,
   ColorSettings,
+  LineLayout,
   MTextAttachmentPoint,
   MTextData,
   MTextFlowDirection,
+  MTextLayout,
   Point2d,
   TextStyle
 } from './types'
 
 const tempPoint = /*@__PURE__*/ new THREE.Vector3()
+const tempPoint2 = /*@__PURE__*/ new THREE.Vector3()
+const tempPoint3 = /*@__PURE__*/ new THREE.Vector3()
 const tempVector = /*@__PURE__*/ new THREE.Vector3()
 const tempScale = /*@__PURE__*/ new THREE.Vector3()
 const tempQuaternion = /*@__PURE__*/ new THREE.Quaternion()
@@ -48,8 +52,8 @@ export class MText extends THREE.Object3D {
   private _colorSettings: ColorSettings
   /** The bounding box of the entire MText object */
   private _box: THREE.Box3
-  /** Array of per-character bounding boxes with debug chars */
-  private _charBoxes: CharBox[]
+  /** Aggregated layout data (line geometry + char boxes). */
+  private _layout: MTextLayout
 
   /** Raw mtext data to draw on demand */
   private _mtextData: MTextData
@@ -100,7 +104,7 @@ export class MText extends THREE.Object3D {
       byBlockColor: colorSettings.byBlockColor
     }
     this._box = new THREE.Box3()
-    this._charBoxes = []
+    this._layout = { lines: [], chars: [] }
 
     this._mtextData = text
 
@@ -160,9 +164,9 @@ export class MText extends THREE.Object3D {
   syncDraw() {
     const obj = this.loadMText(this._mtextData, this._style)
     if (obj) {
-      this._charBoxes = []
-      this.getBoxes(obj, this._charBoxes)
-      this._charBoxes.forEach(entry => {
+      this._layout = { lines: [], chars: [] }
+      this.getLayout(obj, this._layout.chars, this._layout.lines)
+      this._layout.chars.forEach(entry => {
         if (entry.box) this.box.union(entry.box)
       })
       this.add(obj)
@@ -197,22 +201,9 @@ export class MText extends THREE.Object3D {
     this._box.copy(box)
   }
 
-  /**
-   * Gets logical text token boxes for picking/debug.
-   *
-   * Token semantics:
-   * - `CHAR`: `char` is the rendered character, `box` is defined, `children` is empty.
-   * - `NEW_PARAGRAPH`: `char` is `\n`. The `box` represents a zero-width vertical
-   *   line whose height equals the current line height. `children` is empty.
-   * - `STACK`: `char` is empty string (`''`), `box` is the union of stack component boxes,
-   *   and `children` contains the stack sub-components.
-   *
-   * Notes:
-   * - Superscript/subscript stacks (`^`) are emitted as regular `CHAR` entries.
-   * - Fraction stacks (`/`, `#`) are emitted as one `STACK` entry.
-   */
-  get charBoxes() {
-    return this._charBoxes
+  /** Gets text layout data for cursor/picking/debug usage. */
+  get layout() {
+    return this._layout
   }
 
   /**
@@ -222,7 +213,7 @@ export class MText extends THREE.Object3D {
    * @param intersects - Array to store intersection results
    */
   raycast(raycaster: THREE.Raycaster, intersects: THREE.Intersection[]) {
-    this._charBoxes.forEach(entry => {
+    this._layout.chars.forEach(entry => {
       if (entry.box && raycaster.ray.intersectBox(entry.box, tempPoint)) {
         const distance = raycaster.ray.origin.distanceTo(tempPoint)
         intersects.push({
@@ -276,6 +267,13 @@ export class MText extends THREE.Object3D {
       entries.forEach(translateEntry)
     }
 
+    const translateLineLayouts = (lines: LineLayout[] | undefined) => {
+      if (!lines || lines.length === 0) return
+      lines.forEach(line => {
+        line.y += anchorPoint.y
+      })
+    }
+
     object.traverse(obj => {
       if ('geometry' in obj) {
         const geometry = obj.geometry as THREE.BufferGeometry
@@ -284,9 +282,12 @@ export class MText extends THREE.Object3D {
         // Char-box-only placeholder objects (e.g., trailing empty lines)
         // need the same anchor translation as geometry-bearing objects.
         translateCharBoxEntries(
-          obj.userData?.charBoxes as CharBox[] | undefined
+          obj.userData?.layout?.chars as CharBox[] | undefined
         )
       }
+      translateLineLayouts(
+        obj.userData?.lineLayouts as LineLayout[] | undefined
+      )
       obj.layers.enableAll()
     })
 
@@ -469,9 +470,35 @@ export class MText extends THREE.Object3D {
    * @param object - The Three.js object to process
    * @param boxes - Array to store the calculated bounding boxes
    */
-  private getBoxes(object: THREE.Object3D, charBoxes: CharBox[]) {
+  private getLayout(
+    object: THREE.Object3D,
+    chars: CharBox[],
+    lines: LineLayout[]
+  ) {
     object.updateWorldMatrix(false, false)
-    const objectCharBoxes = object.userData?.charBoxes as CharBox[] | undefined
+    const objectCharBoxes = object.userData?.layout?.chars as
+      | CharBox[]
+      | undefined
+    const objectLineLayouts = object.userData?.lineLayouts as
+      | LineLayout[]
+      | undefined
+    if (objectLineLayouts && objectLineLayouts.length > 0) {
+      objectLineLayouts.forEach(line => {
+        tempPoint.set(0, line.y, 0).applyMatrix4(object.matrixWorld)
+        tempPoint2
+          .set(0, line.y - line.height / 2, 0)
+          .applyMatrix4(object.matrixWorld)
+        tempPoint3
+          .set(0, line.y + line.height / 2, 0)
+          .applyMatrix4(object.matrixWorld)
+        lines.push({
+          y: tempPoint.y,
+          height: Math.abs(tempPoint3.y - tempPoint2.y),
+          breakIndices: line.breakIndices ? [...line.breakIndices] : undefined
+        })
+      })
+    }
+
     if (objectCharBoxes && objectCharBoxes.length > 0) {
       const charBoxType = object.userData?.charBoxType as
         | CharBoxType
@@ -481,7 +508,7 @@ export class MText extends THREE.Object3D {
         object.matrixWorld,
         charBoxType
       )
-      charBoxes.push(...entries)
+      chars.push(...entries)
       return
     }
 
@@ -493,7 +520,7 @@ export class MText extends THREE.Object3D {
         }
         const box = new THREE.Box3().copy(geometry.boundingBox)
         box.applyMatrix4(object.matrixWorld)
-        charBoxes.push({
+        chars.push({
           type: CharBoxType.CHAR,
           box,
           char: '',
@@ -504,7 +531,7 @@ export class MText extends THREE.Object3D {
 
     const children = object.children
     for (let i = 0, l = children.length; i < l; i++) {
-      this.getBoxes(children[i], charBoxes)
+      this.getLayout(children[i], chars, lines)
     }
   }
 

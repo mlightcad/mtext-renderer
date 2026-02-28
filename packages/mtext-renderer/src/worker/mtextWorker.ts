@@ -3,7 +3,13 @@ import * as THREE from 'three'
 import { FontManager } from '../font'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { MText } from '../renderer/mtext'
-import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
+import {
+  CharBox,
+  ColorSettings,
+  MTextData,
+  MTextLayout,
+  TextStyle
+} from '../renderer/types'
 
 // Worker message types
 interface WorkerMessage {
@@ -180,6 +186,7 @@ function serializeMText(mtext: MText): {
         z: transformedBox.max.z
       }
     },
+    layout: serializeLayout(mtext.layout),
     // Serialize all child objects as JSON
     children
   }
@@ -310,4 +317,48 @@ function serializeChildren(mtext: MText): {
   })
 
   return { children, transferableObjects: allTransferableObjects }
+}
+
+interface SerializedWorkerCharBox {
+  type: CharBox['type']
+  char: string
+  box: {
+    min: { x: number; y: number; z: number }
+    max: { x: number; y: number; z: number }
+  }
+  children: SerializedWorkerCharBox[]
+}
+
+function serializeLayout(layout: MTextLayout): {
+  lines: Array<{ y: number; height: number; breakIndices?: number[] }>
+  chars: SerializedWorkerCharBox[]
+} {
+  return {
+    lines: layout.lines.map(line => ({
+      y: line.y,
+      height: line.height,
+      breakIndices: line.breakIndices ? [...line.breakIndices] : undefined
+    })),
+    chars: serializeCharBoxes(layout.chars)
+  }
+}
+
+function serializeCharBoxes(charBoxes: CharBox[]): SerializedWorkerCharBox[] {
+  return charBoxes.map(entry => ({
+    type: entry.type,
+    char: entry.char,
+    box: {
+      min: {
+        x: entry.box.min.x,
+        y: entry.box.min.y,
+        z: entry.box.min.z
+      },
+      max: {
+        x: entry.box.max.x,
+        y: entry.box.max.y,
+        z: entry.box.max.z
+      }
+    },
+    children: serializeCharBoxes(entry.children ?? [])
+  }))
 }

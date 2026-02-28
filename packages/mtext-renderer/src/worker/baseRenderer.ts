@@ -1,7 +1,12 @@
 import * as THREE from 'three'
 
 import { StyleManager } from '../renderer/styleManager'
-import { CharBox, ColorSettings, MTextData, TextStyle } from '../renderer/types'
+import {
+  ColorSettings,
+  MTextData,
+  MTextLayout,
+  TextStyle
+} from '../renderer/types'
 
 /**
  * Represents a rendered MText object that extends THREE.Object3D with additional MText-specific properties.
@@ -15,10 +20,8 @@ export interface MTextObject extends THREE.Object3D {
    */
   box: THREE.Box3
 
-  /**
-   * The list of bounding boxes for each glyph in the MText object.
-   */
-  charBoxes: CharBox[]
+  /** Text layout details (lines and logical char boxes). */
+  layout: MTextLayout
 }
 
 /**

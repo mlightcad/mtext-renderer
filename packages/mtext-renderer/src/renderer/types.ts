@@ -83,6 +83,44 @@ export interface CharBox {
 }
 
 /**
+ * Per-line layout geometry used by text cursor and line hit-testing.
+ */
+export interface LineLayout {
+  /** Line center Y used for cursor placement and hit-testing. */
+  y: number
+  /** Line height used for cursor size and vertical hit area. */
+  height: number
+  /**
+   * Explicit visual line-break indices in `MTextLayout.chars`.
+   * Index `i` means a break between char `i - 1` and char `i`.
+   *
+   * This is line-boundary data (rendered rows), not paragraph structure.
+   * If your editor model is paragraph-based, convert paragraph boundaries to
+   * visual line boundaries before using this field.
+   *
+   * Notes:
+   * - Duplicated indices are meaningful and represent empty lines.
+   * - `0` and `charCount` are allowed for leading/trailing empty lines.
+   *
+   * Examples (`charCount = 4`):
+   * - `[2]` => lines: `[0..1]`, `[2..3]`
+   * - `[2, 2]` => lines: `[0..1]`, `empty`, `[2..3]`
+   * - `[0, 2, 4]` => lines: `empty`, `[0..1]`, `[2..3]`, `empty`
+   */
+  breakIndices?: number[]
+}
+
+/**
+ * Aggregated layout output for rendered MText.
+ */
+export interface MTextLayout {
+  /** Per-line layout entries. */
+  lines: LineLayout[]
+  /** Logical text token boxes for picking/debug. */
+  chars: CharBox[]
+}
+
+/**
  * Type of logical token emitted in {@link CharBox} output.
  */
 export enum CharBoxType {

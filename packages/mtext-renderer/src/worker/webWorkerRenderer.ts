@@ -3,7 +3,13 @@ import * as THREE from 'three'
 import { FontManager } from '../font'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { StyleManager } from '../renderer/styleManager'
-import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
+import {
+  CharBox,
+  ColorSettings,
+  LineLayout,
+  MTextData,
+  TextStyle
+} from '../renderer/types'
 import { MTextBaseRenderer, MTextObject } from './baseRenderer'
 
 /**
@@ -117,7 +123,21 @@ interface SerializedMText {
     min: { x: number; y: number; z: number }
     max: { x: number; y: number; z: number }
   }
+  layout: {
+    lines: LineLayout[]
+    chars: SerializedCharBox[]
+  }
   children: SerializedChild[]
+}
+
+interface SerializedCharBox {
+  type: string
+  char: string
+  box: {
+    min: { x: number; y: number; z: number }
+    max: { x: number; y: number; z: number }
+  }
+  children: SerializedCharBox[]
 }
 
 interface SerializedChild {
@@ -589,8 +609,28 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
         serializedData.box.max.z
       )
     )
+    ;(group as unknown as MTextObject).layout = {
+      lines: (serializedData.layout?.lines ?? []).map(line => ({
+        y: line.y,
+        height: line.height,
+        breakIndices: line.breakIndices ? [...line.breakIndices] : undefined
+      })),
+      chars: this.deserializeCharBoxes(serializedData.layout?.chars ?? [])
+    }
 
     return group as unknown as MTextObject
+  }
+
+  private deserializeCharBoxes(serialized: SerializedCharBox[]): CharBox[] {
+    return serialized.map(entry => ({
+      type: entry.type as CharBox['type'],
+      char: entry.char,
+      box: new THREE.Box3(
+        new THREE.Vector3(entry.box.min.x, entry.box.min.y, entry.box.min.z),
+        new THREE.Vector3(entry.box.max.x, entry.box.max.y, entry.box.max.z)
+      ),
+      children: this.deserializeCharBoxes(entry.children ?? [])
+    }))
   }
 
   /**

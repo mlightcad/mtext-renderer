@@ -14,6 +14,7 @@ import { StyleManager } from './styleManager'
 import {
   CharBox,
   CharBoxType,
+  LineLayout,
   MTextFlowDirection,
   STACK_DIVIDER_CHAR,
   TextStyle
@@ -195,6 +196,9 @@ export class MTextProcessor {
   private _lastCharBoxTarget: 'mesh' | 'line' | undefined
   private _lineHasRenderableChar: boolean
   private _pendingEmptyLineFontSizeAdjust?: number
+  private _lineLayouts: LineLayout[]
+  private _lineBreakIndices: number[]
+  private _processedCharCount: number
   // Paragraph properties
   private _currentIndent: number = 0
   private _currentLeftMargin: number = 0
@@ -251,6 +255,9 @@ export class MTextProcessor {
     this._lastCharBoxTarget = undefined
     this._lineHasRenderableChar = false
     this._pendingEmptyLineFontSizeAdjust = undefined
+    this._lineLayouts = []
+    this._lineBreakIndices = []
+    this._processedCharCount = 0
     // Initialize paragraph properties (as factors, so initial value is 0)
     this._currentIndent = 0
     this._currentLeftMargin = 0
@@ -392,6 +399,10 @@ export class MTextProcessor {
    */
   get currentLineObjects() {
     return this._currentLineObjects
+  }
+
+  get lineLayouts() {
+    return this._lineLayouts
   }
 
   /**
@@ -596,7 +607,7 @@ export class MTextProcessor {
       lineCharBoxes,
       group
     )
-    this.advanceToNextLine() // Mark as first line of paragraph, apply indent
+    this.advanceToNextLine(false) // Mark as first line of paragraph, apply indent
 
     // Reset paragraph properties to defaults at the start of a new paragraph
     this.resetParagraphProperties()
@@ -732,6 +743,11 @@ export class MTextProcessor {
     }
 
     this.processLastLine()
+    this.recordCurrentLineLayout()
+    group.userData.lineLayouts = this._lineLayouts.map(line => ({
+      ...line,
+      breakIndices: [...this._lineBreakIndices]
+    }))
     return group
   }
 
@@ -743,6 +759,12 @@ export class MTextProcessor {
     group: THREE.Group,
     charBoxType: CharBoxType = CharBoxType.CHAR
   ) {
+    const finalCharCount = this.countFinalCharBoxes(
+      meshCharBoxes,
+      lineCharBoxes,
+      charBoxType
+    )
+
     if (geometries.length > 0 || lineGeometries.length > 0) {
       const object = this.toThreeObject(
         geometries,
@@ -757,15 +779,19 @@ export class MTextProcessor {
       lineGeometries.length = 0
       meshCharBoxes.length = 0
       lineCharBoxes.length = 0
+      this._processedCharCount += finalCharCount
     } else if (meshCharBoxes.length > 0 || lineCharBoxes.length > 0) {
       const object = new THREE.Object3D()
       object.userData.bboxIntersectionCheck = true
       object.userData.charBoxType = charBoxType
-      object.userData.charBoxes = [...meshCharBoxes, ...lineCharBoxes]
+      object.userData.layout = {
+        chars: [...meshCharBoxes, ...lineCharBoxes]
+      }
       group.add(object)
       this._currentLineObjects.push(object)
       meshCharBoxes.length = 0
       lineCharBoxes.length = 0
+      this._processedCharCount += finalCharCount
     }
   }
 
@@ -801,7 +827,8 @@ export class MTextProcessor {
       if (this._vOffset <= 0 && this._currentLineObjects.length <= 0) {
         // Do nothing
       } else {
-        this.advanceToNextLine() // Start a new line for wrapped words
+        this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
+        this.advanceToNextLine(false) // Start a new line for wrapped words
       }
     }
     // 3. Render the word character by character
@@ -1140,6 +1167,34 @@ export class MTextProcessor {
         children: []
       })
     }
+
+    this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
+  }
+
+  private recordVisualLineBreak(
+    meshCharBoxes?: CharBox[],
+    lineCharBoxes?: CharBox[]
+  ) {
+    const breakIndex =
+      this._processedCharCount +
+      this.countFinalCharBoxes(
+        meshCharBoxes ?? [],
+        lineCharBoxes ?? [],
+        CharBoxType.CHAR
+      )
+    this._lineBreakIndices.push(breakIndex)
+  }
+
+  private recordCurrentLineLayout() {
+    const yBase =
+      this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP
+        ? this._vOffset
+        : this._vOffset - this.defaultFontSize
+    const height = this.currentLineHeight
+    this._lineLayouts.push({
+      y: yBase + height / 2,
+      height
+    })
   }
 
   private processChar(
@@ -1201,7 +1256,8 @@ export class MTextProcessor {
     }
 
     if (this.hOffset > (this.maxLineWidth || Infinity)) {
-      this.advanceToNextLine()
+      this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
+      this.advanceToNextLine(false)
     }
 
     const charX = this.hOffset
@@ -1391,7 +1447,11 @@ export class MTextProcessor {
     return shape
   }
 
-  private advanceToNextLine() {
+  private advanceToNextLine(collectBreakIndex = true) {
+    if (collectBreakIndex) {
+      this.recordVisualLineBreak()
+    }
+    this.recordCurrentLineLayout()
     this._hOffset = 0
     if (!this._lineHasRenderableChar) {
       this._pendingEmptyLineFontSizeAdjust = this.currentFontSize
@@ -1414,6 +1474,38 @@ export class MTextProcessor {
     // Reset maxFontSize for the new line
     this._maxFontSize = 0
     this._lineHasRenderableChar = false
+  }
+
+  private countFinalCharBoxes(
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[],
+    charBoxType: CharBoxType
+  ): number {
+    const entries = [...meshCharBoxes, ...lineCharBoxes].filter(
+      entry => entry.char !== STACK_DIVIDER_CHAR
+    )
+    if (charBoxType !== CharBoxType.STACK) {
+      return entries.length
+    }
+
+    const isSpaceChar = (entry: CharBox) =>
+      entry.type === CharBoxType.CHAR && entry.char.trim().length === 0
+    const isContentChar = (entry: CharBox) =>
+      entry.type === CharBoxType.CHAR && entry.char.trim().length > 0
+    const firstContentIdx = entries.findIndex(isContentChar)
+    if (firstContentIdx < 0) return entries.filter(isSpaceChar).length
+
+    let lastContentIdx = -1
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (isContentChar(entries[i])) {
+        lastContentIdx = i
+        break
+      }
+    }
+
+    const prefixTokens = entries.slice(0, firstContentIdx).filter(isSpaceChar)
+    const suffixTokens = entries.slice(lastContentIdx + 1).filter(isSpaceChar)
+    return prefixTokens.length + 1 + suffixTokens.length
   }
 
   private applyPendingEmptyLineYAdjust() {
@@ -1478,7 +1570,7 @@ export class MTextProcessor {
     const resolvedBBox = bbox
     const size = resolvedBBox.getSize(tempVector)
     const translateCharBoxes = (owner: THREE.Object3D, dx: number) => {
-      const charBoxes = owner.userData?.charBoxes as CharBox[] | undefined
+      const charBoxes = owner.userData?.layout?.chars as CharBox[] | undefined
 
       if (charBoxes && charBoxes.length > 0) {
         const translation = new THREE.Vector3(dx, 0, 0)
@@ -1609,7 +1701,7 @@ export class MTextProcessor {
       mesh.userData.bboxIntersectionCheck = true
       mesh.userData.charBoxType = charBoxType
       if (shouldCollectCharBoxes && meshCharBoxes.length > 0) {
-        mesh.userData.charBoxes = meshCharBoxes.slice()
+        mesh.userData.layout = { chars: meshCharBoxes.slice() }
       }
 
       meshGroup.add(mesh)
@@ -1629,7 +1721,7 @@ export class MTextProcessor {
       lineMesh.userData.bboxIntersectionCheck = true
       lineMesh.userData.charBoxType = charBoxType
       if (shouldCollectCharBoxes && lineCharBoxes.length > 0) {
-        lineMesh.userData.charBoxes = lineCharBoxes.slice()
+        lineMesh.userData.layout = { chars: lineCharBoxes.slice() }
       }
 
       meshGroup.add(lineMesh)
