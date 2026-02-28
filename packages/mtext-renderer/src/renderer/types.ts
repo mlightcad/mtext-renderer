@@ -67,8 +67,6 @@ export enum MTextAttachmentPoint {
  *
  * Semantics by {@link CharBoxType}:
  * - `CHAR`: `char` is the rendered character, `box` is defined, `children` is empty.
- * - `NEW_PARAGRAPH`: `char` is `\n`. The `box` represents a zero-width vertical
- *   line whose height equals the current line height. `children` is empty.
  * - `STACK`: `char` is `''`, `box` is the union box of stack components, `children` contains stack parts.
  */
 export interface CharBox {
@@ -76,7 +74,7 @@ export interface CharBox {
   type: CharBoxType
   /** Token bounding box in local MText coordinates. */
   box: THREE.Box3
-  /** Token character payload (`''` for `STACK`, `\n` for `NEW_PARAGRAPH`). */
+  /** Token character payload (`''` for `STACK`). */
   char: string
   /** Nested token components (currently used by `STACK`). */
   children: CharBox[]
@@ -91,23 +89,15 @@ export interface LineLayout {
   /** Line height used for cursor size and vertical hit area. */
   height: number
   /**
-   * Explicit visual line-break indices in `MTextLayout.chars`.
+   * Visual line-break index in `MTextLayout.chars` for this line.
    * Index `i` means a break between char `i - 1` and char `i`.
    *
    * This is line-boundary data (rendered rows), not paragraph structure.
-   * If your editor model is paragraph-based, convert paragraph boundaries to
-   * visual line boundaries before using this field.
+   * Duplicated indices are meaningful and represent empty lines.
    *
-   * Notes:
-   * - Duplicated indices are meaningful and represent empty lines.
-   * - `0` and `charCount` are allowed for leading/trailing empty lines.
-   *
-   * Examples (`charCount = 4`):
-   * - `[2]` => lines: `[0..1]`, `[2..3]`
-   * - `[2, 2]` => lines: `[0..1]`, `empty`, `[2..3]`
-   * - `[0, 2, 4]` => lines: `empty`, `[0..1]`, `[2..3]`, `empty`
+   * This field is `undefined` for the last rendered line.
    */
-  breakIndices?: number[]
+  breakIndex?: number
 }
 
 /**
@@ -126,8 +116,6 @@ export interface MTextLayout {
 export enum CharBoxType {
   /** Regular rendered character token. */
   CHAR = 'CHAR',
-  /** Explicit paragraph break token. */
-  NEW_PARAGRAPH = 'NEW_PARAGRAPH',
   /** Stack token (for fraction-style stacked expressions). */
   STACK = 'STACK'
 }

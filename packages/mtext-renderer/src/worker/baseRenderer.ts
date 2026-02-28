@@ -20,8 +20,11 @@ export interface MTextObject extends THREE.Object3D {
    */
   box: THREE.Box3
 
-  /** Text layout details (lines and logical char boxes). */
-  layout: MTextLayout
+  /**
+   * Create text layout details (lines and logical char boxes) on demand.
+   * The result may be internally cached and reused by subsequent calls.
+   */
+  createLayoutData(): MTextLayout
 }
 
 /**

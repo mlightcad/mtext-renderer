@@ -52,8 +52,8 @@ export class MText extends THREE.Object3D {
   private _colorSettings: ColorSettings
   /** The bounding box of the entire MText object */
   private _box: THREE.Box3
-  /** Aggregated layout data (line geometry + char boxes). */
-  private _layout: MTextLayout
+  /** Lazily built layout data (line geometry + char boxes). */
+  private _layoutData: MTextLayout | undefined
 
   /** Raw mtext data to draw on demand */
   private _mtextData: MTextData
@@ -104,7 +104,7 @@ export class MText extends THREE.Object3D {
       byBlockColor: colorSettings.byBlockColor
     }
     this._box = new THREE.Box3()
-    this._layout = { lines: [], chars: [] }
+    this._layoutData = undefined
 
     this._mtextData = text
 
@@ -164,11 +164,27 @@ export class MText extends THREE.Object3D {
   syncDraw() {
     const obj = this.loadMText(this._mtextData, this._style)
     if (obj) {
-      this._layout = { lines: [], chars: [] }
-      this.getLayout(obj, this._layout.chars, this._layout.lines)
-      this._layout.chars.forEach(entry => {
-        if (entry.box) this.box.union(entry.box)
-      })
+      this._layoutData = undefined
+      this._box.makeEmpty()
+      const lineBounds = {
+        hasLine: false,
+        minX: Infinity,
+        maxX: -Infinity,
+        minY: Infinity,
+        maxY: -Infinity,
+        minZ: Infinity,
+        maxZ: -Infinity
+      }
+      this.updateBoxFromObject(obj, lineBounds)
+      if (lineBounds.hasLine) {
+        if (this.box.isEmpty()) {
+          this.box.min.set(lineBounds.minX, lineBounds.minY, lineBounds.minZ)
+          this.box.max.set(lineBounds.maxX, lineBounds.maxY, lineBounds.maxZ)
+        } else {
+          this.box.min.y = Math.min(this.box.min.y, lineBounds.minY)
+          this.box.max.y = Math.max(this.box.max.y, lineBounds.maxY)
+        }
+      }
       this.add(obj)
     }
   }
@@ -201,9 +217,17 @@ export class MText extends THREE.Object3D {
     this._box.copy(box)
   }
 
-  /** Gets text layout data for cursor/picking/debug usage. */
-  get layout() {
-    return this._layout
+  /** Creates text layout data for cursor/picking/debug usage on demand. */
+  createLayoutData(): MTextLayout {
+    if (this._layoutData) {
+      return this._layoutData
+    }
+
+    const layout: MTextLayout = { lines: [], chars: [] }
+    this.updateWorldMatrix(true, true)
+    this.getLayout(this, layout.chars, layout.lines)
+    this._layoutData = layout
+    return layout
   }
 
   /**
@@ -213,7 +237,8 @@ export class MText extends THREE.Object3D {
    * @param intersects - Array to store intersection results
    */
   raycast(raycaster: THREE.Raycaster, intersects: THREE.Intersection[]) {
-    this._layout.chars.forEach(entry => {
+    const layout = this.createLayoutData()
+    layout.chars.forEach(entry => {
       if (entry.box && raycaster.ray.intersectBox(entry.box, tempPoint)) {
         const distance = raycaster.ray.origin.distanceTo(tempPoint)
         intersects.push({
@@ -494,7 +519,7 @@ export class MText extends THREE.Object3D {
         lines.push({
           y: tempPoint.y,
           height: Math.abs(tempPoint3.y - tempPoint2.y),
-          breakIndices: line.breakIndices ? [...line.breakIndices] : undefined
+          breakIndex: line.breakIndex
         })
       })
     }
@@ -532,6 +557,77 @@ export class MText extends THREE.Object3D {
     const children = object.children
     for (let i = 0, l = children.length; i < l; i++) {
       this.getLayout(children[i], chars, lines)
+    }
+  }
+
+  private updateBoxFromObject(
+    object: THREE.Object3D,
+    lineBounds: {
+      hasLine: boolean
+      minX: number
+      maxX: number
+      minY: number
+      maxY: number
+      minZ: number
+      maxZ: number
+    }
+  ) {
+    object.updateWorldMatrix(false, false)
+
+    const objectLineLayouts = object.userData?.lineLayouts as
+      | LineLayout[]
+      | undefined
+    if (objectLineLayouts && objectLineLayouts.length > 0) {
+      objectLineLayouts.forEach(line => {
+        tempPoint2
+          .set(0, line.y - line.height / 2, 0)
+          .applyMatrix4(object.matrixWorld)
+        tempPoint3
+          .set(0, line.y + line.height / 2, 0)
+          .applyMatrix4(object.matrixWorld)
+        lineBounds.hasLine = true
+        lineBounds.minX = Math.min(lineBounds.minX, tempPoint2.x, tempPoint3.x)
+        lineBounds.maxX = Math.max(lineBounds.maxX, tempPoint2.x, tempPoint3.x)
+        lineBounds.minY = Math.min(lineBounds.minY, tempPoint2.y, tempPoint3.y)
+        lineBounds.maxY = Math.max(lineBounds.maxY, tempPoint2.y, tempPoint3.y)
+        lineBounds.minZ = Math.min(lineBounds.minZ, tempPoint2.z, tempPoint3.z)
+        lineBounds.maxZ = Math.max(lineBounds.maxZ, tempPoint2.z, tempPoint3.z)
+      })
+    }
+
+    const objectCharBoxes = object.userData?.layout?.chars as
+      | CharBox[]
+      | undefined
+    if (objectCharBoxes && objectCharBoxes.length > 0) {
+      const charBoxType = object.userData?.charBoxType as
+        | CharBoxType
+        | undefined
+      const entries = buildCharBoxesFromObject(
+        objectCharBoxes,
+        object.matrixWorld,
+        charBoxType
+      )
+      entries.forEach(entry => {
+        if (entry.box) this.box.union(entry.box)
+      })
+      return
+    }
+
+    if (object instanceof THREE.Line || object instanceof THREE.Mesh) {
+      const geometry = object.geometry
+      if (!geometry.userData?.isDecoration) {
+        if (geometry.boundingBox === null) {
+          geometry.computeBoundingBox()
+        }
+        const box = new THREE.Box3().copy(geometry.boundingBox)
+        box.applyMatrix4(object.matrixWorld)
+        this.box.union(box)
+      }
+    }
+
+    const children = object.children
+    for (let i = 0, l = children.length; i < l; i++) {
+      this.updateBoxFromObject(children[i], lineBounds)
     }
   }
 

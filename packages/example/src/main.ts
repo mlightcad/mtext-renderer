@@ -445,10 +445,7 @@ class MTextRendererExample {
 
     while (stack.length > 0) {
       const entry = stack.pop()!
-      if (
-        entry.type === CharBoxType.CHAR ||
-        entry.type === CharBoxType.NEW_PARAGRAPH
-      ) {
+      if (entry.type === CharBoxType.CHAR) {
         flattened.push(entry)
       }
 
@@ -468,12 +465,6 @@ class MTextRendererExample {
 
     const charMaterial = new THREE.LineBasicMaterial({
       color: 0x00cfff,
-      depthTest: false,
-      transparent: true,
-      opacity: 0.95
-    })
-    const lineBreakMaterial = new THREE.LineBasicMaterial({
-      color: 0xff8a00,
       depthTest: false,
       transparent: true,
       opacity: 0.95
@@ -519,11 +510,7 @@ class MTextRendererExample {
         new THREE.Float32BufferAttribute(outlineVertices, 3)
       )
 
-      const isLineBreak = entry.type === CharBoxType.NEW_PARAGRAPH
-      const outline = new THREE.LineSegments(
-        outlineGeometry,
-        isLineBreak ? lineBreakMaterial : charMaterial
-      )
+      const outline = new THREE.LineSegments(outlineGeometry, charMaterial)
       overlay.add(outline)
     })
 
@@ -588,9 +575,10 @@ class MTextRendererExample {
   }
 
   private attachCharBoxOverlay(mtextObj: MTextObject): void {
-    if (!mtextObj.layout?.chars || mtextObj.layout.chars.length === 0) return
+    const layout = mtextObj.createLayoutData()
+    if (!layout.chars || layout.chars.length === 0) return
 
-    const overlay = this.createCharBoxOverlay(mtextObj.layout.chars)
+    const overlay = this.createCharBoxOverlay(layout.chars)
     overlay.visible = this.showCharBoxesCheckbox.checked
     overlay.renderOrder = 999
     mtextObj.add(overlay)
@@ -598,11 +586,12 @@ class MTextRendererExample {
   }
 
   private attachLineBoxOverlay(mtextObj: MTextObject): void {
-    if (!mtextObj.layout?.lines || mtextObj.layout.lines.length === 0) return
+    const layout = mtextObj.createLayoutData()
+    if (!layout.lines || layout.lines.length === 0) return
     if (!mtextObj.box || mtextObj.box.isEmpty()) return
 
     const overlay = this.createLineBoxOverlay(
-      mtextObj.layout.lines,
+      layout.lines,
       mtextObj.box.min.x,
       mtextObj.box.max.x
     )

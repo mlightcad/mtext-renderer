@@ -599,7 +599,7 @@ export class MTextProcessor {
     lineCharBoxes: CharBox[],
     group: THREE.Group
   ) {
-    this.recordLineBreak(meshCharBoxes, lineCharBoxes)
+    this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
     this.processGeometries(
       geometries,
       lineGeometries,
@@ -623,12 +623,10 @@ export class MTextProcessor {
     const lineGeometries: THREE.BufferGeometry[] = []
     const meshCharBoxes: CharBox[] = []
     const lineCharBoxes: CharBox[] = []
-    let lastTokenType: TokenType | undefined
 
     const group: THREE.Group = new THREE.Group()
 
     for (const token of tokens) {
-      lastTokenType = token.type
       if (token.type === TokenType.NEW_PARAGRAPH) {
         this.startNewParagraph(
           geometries,
@@ -716,12 +714,6 @@ export class MTextProcessor {
       }
     }
 
-    // Preserve an explicit trailing empty line (e.g. "Unicode\\P" or "\\PUnicode\\P")
-    // by adding one logical line-break marker for the final empty line.
-    if (lastTokenType === TokenType.NEW_PARAGRAPH) {
-      this.recordLineBreak(meshCharBoxes, lineCharBoxes)
-    }
-
     if (geometries.length > 0 || lineGeometries.length > 0) {
       this.processGeometries(
         geometries,
@@ -744,9 +736,12 @@ export class MTextProcessor {
 
     this.processLastLine()
     this.recordCurrentLineLayout()
-    group.userData.lineLayouts = this._lineLayouts.map(line => ({
+    group.userData.lineLayouts = this._lineLayouts.map((line, index) => ({
       ...line,
-      breakIndices: [...this._lineBreakIndices]
+      breakIndex:
+        index < this._lineLayouts.length - 1
+          ? this._lineBreakIndices[index]
+          : undefined
     }))
     return group
   }
@@ -1132,43 +1127,6 @@ export class MTextProcessor {
       }
     }
     this._hOffset += this._currentContext.blankWidth
-  }
-
-  private recordLineBreak(
-    meshCharBoxes?: CharBox[],
-    lineCharBoxes?: CharBox[]
-  ) {
-    if (this._options.collectCharBoxes === false) return
-    if (!meshCharBoxes || !lineCharBoxes) return
-
-    const charY =
-      this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP
-        ? this._vOffset
-        : this._vOffset - this.defaultFontSize
-    // Zero-width vertical marker representing one logical line extent.
-    // Include line spacing so picker/debug regions match actual line layout.
-    const box = new THREE.Box3(
-      new THREE.Vector3(this._hOffset, charY, 0),
-      new THREE.Vector3(this._hOffset, charY + this.currentLineHeight, 0)
-    )
-    const target = this.resolveCharBoxTarget(meshCharBoxes, lineCharBoxes)
-    if (target === 'mesh') {
-      meshCharBoxes.push({
-        type: CharBoxType.NEW_PARAGRAPH,
-        box: box,
-        char: '\n',
-        children: []
-      })
-    } else {
-      lineCharBoxes.push({
-        type: CharBoxType.NEW_PARAGRAPH,
-        box: box,
-        char: '\n',
-        children: []
-      })
-    }
-
-    this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
   }
 
   private recordVisualLineBreak(

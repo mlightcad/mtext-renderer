@@ -30,12 +30,9 @@ export function buildCharBoxesFromObject(
       )
       if (!transformedBox) return
       transformedEntries.push({
-        type:
-          entry.type === CharBoxType.NEW_PARAGRAPH
-            ? CharBoxType.NEW_PARAGRAPH
-            : CharBoxType.CHAR,
+        type: CharBoxType.CHAR,
         box: transformedBox,
-        char: entry.type === CharBoxType.NEW_PARAGRAPH ? '\n' : entry.char,
+        char: entry.char,
         children: []
       })
     })

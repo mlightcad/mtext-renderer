@@ -6,8 +6,8 @@ import { MText } from '../renderer/mtext'
 import {
   CharBox,
   ColorSettings,
+  LineLayout,
   MTextData,
-  MTextLayout,
   TextStyle
 } from '../renderer/types'
 
@@ -186,7 +186,6 @@ function serializeMText(mtext: MText): {
         z: transformedBox.max.z
       }
     },
-    layout: serializeLayout(mtext.layout),
     // Serialize all child objects as JSON
     children
   }
@@ -308,7 +307,16 @@ function serializeChildren(mtext: MText): {
             attributes,
             index: indexData
           },
-          material: materialData
+          material: materialData,
+          charBoxType: child.userData?.charBoxType as
+            | CharBox['type']
+            | undefined,
+          lineLayouts: Array.isArray(child.userData?.lineLayouts)
+            ? serializeLineLayouts(child.userData.lineLayouts as LineLayout[])
+            : undefined,
+          charBoxes: Array.isArray(child.userData?.layout?.chars)
+            ? serializeCharBoxes(child.userData.layout.chars as CharBox[])
+            : undefined
         }
 
         children.push(childData)
@@ -329,20 +337,6 @@ interface SerializedWorkerCharBox {
   children: SerializedWorkerCharBox[]
 }
 
-function serializeLayout(layout: MTextLayout): {
-  lines: Array<{ y: number; height: number; breakIndices?: number[] }>
-  chars: SerializedWorkerCharBox[]
-} {
-  return {
-    lines: layout.lines.map(line => ({
-      y: line.y,
-      height: line.height,
-      breakIndices: line.breakIndices ? [...line.breakIndices] : undefined
-    })),
-    chars: serializeCharBoxes(layout.chars)
-  }
-}
-
 function serializeCharBoxes(charBoxes: CharBox[]): SerializedWorkerCharBox[] {
   return charBoxes.map(entry => ({
     type: entry.type,
@@ -360,5 +354,15 @@ function serializeCharBoxes(charBoxes: CharBox[]): SerializedWorkerCharBox[] {
       }
     },
     children: serializeCharBoxes(entry.children ?? [])
+  }))
+}
+
+function serializeLineLayouts(
+  lines: LineLayout[]
+): Array<{ y: number; height: number; breakIndex?: number }> {
+  return lines.map(line => ({
+    y: line.y,
+    height: line.height,
+    breakIndex: line.breakIndex
   }))
 }
