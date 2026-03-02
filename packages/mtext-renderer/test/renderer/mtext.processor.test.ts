@@ -192,7 +192,7 @@ function getInternalLineCount(processor: MTextProcessor) {
 function getAllCharBoxes(object: THREE.Object3D) {
   const out: Array<{ type: CharBoxType; char: string; box: THREE.Box3 }> = []
   object.traverse(node => {
-    const boxes = node.userData?.charBoxes as
+    const boxes = node.userData?.layout?.chars as
       | Array<{ type: CharBoxType; char: string; box: THREE.Box3 }>
       | undefined
     if (boxes) {
@@ -210,6 +210,14 @@ function getCharBoxTypes(object: THREE.Object3D) {
     }
   })
   return out
+}
+
+function getLineLayouts(object: THREE.Object3D) {
+  return (
+    (object.userData?.lineLayouts as
+      | Array<{ y: number; height: number; breakIndex?: number }>
+      | undefined) ?? []
+  )
 }
 
 describe('MTextProcessor format state', () => {
@@ -364,7 +372,7 @@ describe('MTextProcessor format state', () => {
     expect(chars).not.toContain(STACK_DIVIDER_CHAR)
   })
 
-  it('records NEW_PARAGRAPH char box marker on paragraph break', () => {
+  it('does not store paragraph-break char boxes on paragraph break', () => {
     const { processor } = createProcessor('mesh')
     ;(processor as any)._options.collectCharBoxes = true
 
@@ -373,10 +381,9 @@ describe('MTextProcessor format state', () => {
       { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null }
     ] as any)
 
-    const paragraphMarkers = getAllCharBoxes(obj).filter(
-      entry => entry.type === CharBoxType.NEW_PARAGRAPH && entry.char === '\n'
-    )
-    expect(paragraphMarkers.length).toBeGreaterThan(0)
+    const chars = getAllCharBoxes(obj).map(entry => entry.char)
+    expect(chars).toContain('A')
+    expect(chars).not.toContain('\n')
   })
 
   it('advances offset by blank width when processing SPACE token', () => {
@@ -400,7 +407,7 @@ describe('MTextProcessor format state', () => {
     expect(processor.totalHeight).toBeCloseTo(72, 3)
   })
 
-  it('keeps empty-line paragraph markers between words', () => {
+  it('does not add paragraph marker char boxes between words', () => {
     const { processor } = createProcessor('mesh')
     ;(processor as any)._options.collectCharBoxes = true
 
@@ -411,10 +418,10 @@ describe('MTextProcessor format state', () => {
       { type: TOKEN_WORD, ctx: null, data: 'B' }
     ] as any)
 
-    const paragraphMarkers = getAllCharBoxes(obj).filter(
-      entry => entry.type === CharBoxType.NEW_PARAGRAPH
-    )
-    expect(paragraphMarkers.length).toBe(2)
+    const chars = getAllCharBoxes(obj).map(entry => entry.char)
+    expect(chars).toContain('A')
+    expect(chars).toContain('B')
+    expect(chars).not.toContain('\n')
   })
 
   it('resets horizontal offset after explicit line break', () => {
@@ -442,7 +449,7 @@ describe('MTextProcessor format state', () => {
     expect(getInternalLineCount(processor)).toBe(2)
   })
 
-  it('preserves trailing empty line markers for "Unicode\\\\P"', () => {
+  it('keeps no trailing empty-line paragraph marker chars for "Unicode\\\\P"', () => {
     const { processor } = createProcessor('mesh')
     ;(processor as any)._options.collectCharBoxes = true
 
@@ -451,16 +458,12 @@ describe('MTextProcessor format state', () => {
       { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null }
     ] as any)
 
-    const paragraphMarkers = getAllCharBoxes(obj).filter(
-      entry => entry.type === CharBoxType.NEW_PARAGRAPH
-    )
-    expect(paragraphMarkers.length).toBe(2)
-    expect(paragraphMarkers[1].box.min.y).toBeLessThan(
-      paragraphMarkers[0].box.min.y
-    )
+    const chars = getAllCharBoxes(obj).map(entry => entry.char)
+    expect(chars).toContain('U')
+    expect(chars).not.toContain('\n')
   })
 
-  it('keeps leading and trailing empty lines for "\\\\PUnicode\\\\P"', () => {
+  it('keeps leading and trailing empty lines without paragraph marker chars', () => {
     const { processor } = createProcessor('mesh')
     ;(processor as any)._options.collectCharBoxes = true
 
@@ -470,14 +473,13 @@ describe('MTextProcessor format state', () => {
       { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null }
     ] as any)
 
-    const paragraphMarkers = getAllCharBoxes(obj).filter(
-      entry => entry.type === CharBoxType.NEW_PARAGRAPH
-    )
-    expect(paragraphMarkers.length).toBe(3)
+    const chars = getAllCharBoxes(obj).map(entry => entry.char)
+    expect(chars).toContain('U')
+    expect(chars).not.toContain('\n')
     expect(processor.totalHeight).toBeCloseTo(72, 3)
   })
 
-  it('applies lineSpaceFactor to trailing empty-line marker position and height', () => {
+  it('applies lineSpaceFactor to trailing empty lines without marker chars', () => {
     const { processor } = createProcessor('mesh', { lineSpaceFactor: 0.5 })
     ;(processor as any)._options.collectCharBoxes = true
 
@@ -486,16 +488,86 @@ describe('MTextProcessor format state', () => {
       { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null }
     ] as any)
 
-    const paragraphMarkers = getAllCharBoxes(obj).filter(
-      entry => entry.type === CharBoxType.NEW_PARAGRAPH
-    )
-    expect(paragraphMarkers.length).toBe(2)
+    const chars = getAllCharBoxes(obj).map(entry => entry.char)
+    expect(chars).toContain('U')
+    expect(chars).not.toContain('\n')
+    const lines = getLineLayouts(obj)
+    expect(lines).toHaveLength(2)
+    expect(lines[0].height).toBeCloseTo(processor.currentLineHeight, 3)
+    expect(lines[1].height).toBeCloseTo(processor.currentLineHeight, 3)
+  })
 
-    const dy = paragraphMarkers[0].box.min.y - paragraphMarkers[1].box.min.y
-    expect(dy).toBeCloseTo(processor.currentLineHeight, 3)
+  it('stores one line layout entry for single-line text', () => {
+    const { processor } = createProcessor('mesh')
 
-    const markerHeight =
-      paragraphMarkers[1].box.max.y - paragraphMarkers[1].box.min.y
-    expect(markerHeight).toBeCloseTo(processor.currentLineHeight, 3)
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'A' }
+    ] as any)
+    const lines = getLineLayouts(obj)
+
+    expect(lines).toHaveLength(1)
+    expect(lines[0].height).toBeCloseTo(processor.currentLineHeight, 3)
+    expect(lines[0].y).toBeCloseTo(-6, 3)
+  })
+
+  it('stores line layouts for explicit empty lines', () => {
+    const { processor } = createProcessor('mesh')
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'A' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_WORD, ctx: null, data: 'B' }
+    ] as any)
+    const lines = getLineLayouts(obj)
+
+    expect(lines).toHaveLength(3)
+    expect(lines[0].height).toBeCloseTo(processor.currentLineHeight, 3)
+    expect(lines[1].height).toBeCloseTo(processor.currentLineHeight, 3)
+    expect(lines[2].height).toBeCloseTo(processor.currentLineHeight, 3)
+    expect(lines[0].y - lines[1].y).toBeCloseTo(processor.currentLineHeight, 3)
+    expect(lines[1].y - lines[2].y).toBeCloseTo(processor.currentLineHeight, 3)
+  })
+
+  it('stores per-line breakIndex on line layouts', () => {
+    const { processor } = createProcessor('mesh')
+    ;(processor as any)._options.collectCharBoxes = true
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'A' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_WORD, ctx: null, data: 'B' }
+    ] as any)
+
+    const lines = getLineLayouts(obj)
+    const charCount = getAllCharBoxes(obj).length
+
+    expect(lines).toHaveLength(2)
+    expect(lines[0].breakIndex).toBeDefined()
+    expect(lines[0].breakIndex!).toBeGreaterThan(0)
+    expect(lines[0].breakIndex!).toBeLessThanOrEqual(charCount)
+    expect(lines[1].breakIndex).toBeUndefined()
+  })
+
+  it('stores non-decreasing breakIndex values with explicit empty lines', () => {
+    const { processor } = createProcessor('mesh')
+    ;(processor as any)._options.collectCharBoxes = true
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'A' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_WORD, ctx: null, data: 'B' }
+    ] as any)
+
+    const lines = getLineLayouts(obj)
+    const breakIndices = lines
+      .map(line => line.breakIndex)
+      .filter((value): value is number => value !== undefined)
+
+    expect(lines).toHaveLength(3)
+    expect(breakIndices).toHaveLength(2)
+    expect(breakIndices[0]).toBeLessThanOrEqual(breakIndices[1])
+    expect(lines[2].breakIndex).toBeUndefined()
   })
 })

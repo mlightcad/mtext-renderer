@@ -1,4 +1,7 @@
 import {
+  CharBox,
+  CharBoxType,
+  LineLayout,
   MTextData,
   MTextObject,
   RenderMode,
@@ -16,6 +19,8 @@ class MTextRendererExample {
   private unifiedRenderer: UnifiedRenderer
   private currentMText: MTextObject | null = null
   private mtextBox: THREE.LineSegments | null = null
+  private charBoxOverlays: THREE.Object3D[] = []
+  private lineBoxOverlays: THREE.Object3D[] = []
 
   // DOM elements
   private mtextInput: HTMLTextAreaElement
@@ -23,6 +28,8 @@ class MTextRendererExample {
   private statusDiv: HTMLDivElement
   private fontSelect: HTMLSelectElement
   private showBoundingBoxCheckbox: HTMLInputElement
+  private showCharBoxesCheckbox: HTMLInputElement
+  private showLineBoxesCheckbox: HTMLInputElement
   private renderModeSelect: HTMLSelectElement
 
   // Example texts
@@ -55,36 +62,28 @@ class MTextRendererExample {
 
     const width = renderArea.clientWidth
     const height = renderArea.clientHeight
-    const aspect = width / height
-    const frustumSize = 5
-
-    this.camera = new THREE.OrthographicCamera(
-      (frustumSize * aspect) / -2,
-      (frustumSize * aspect) / 2,
-      frustumSize / 2,
-      frustumSize / -2,
-      0.1,
-      1000
-    )
-    this.camera.position.z = 5
+    this.camera = new THREE.OrthographicCamera(0, width, height, 0, -1000, 1000)
+    this.camera.position.set(0, 0, 100)
+    this.camera.lookAt(new THREE.Vector3(0, 0, 0))
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(window.devicePixelRatio)
-    this.renderer.setSize(width, height)
+    this.renderer.setSize(width, height, false)
     renderArea.appendChild(this.renderer.domElement)
 
     // Add orbit controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
-    this.controls.enableDamping = true
-    this.controls.dampingFactor = 0.05
+    this.controls.enableRotate = false
     this.controls.screenSpacePanning = true
-    this.controls.minDistance = 1
-    this.controls.maxDistance = 50
-    this.controls.maxPolarAngle = Math.PI / 2
+    this.controls.minZoom = 0.3
+    this.controls.maxZoom = 5
 
     // Initialize unified renderer (default to main thread)
     this.unifiedRenderer = new UnifiedRenderer('main', {
-      workerUrl: './assets/mtext-renderer-worker.js'
+      workerUrl: new URL(
+        '../../mtext-renderer/src/worker/index.ts',
+        import.meta.url
+      )
     })
 
     // Get DOM elements
@@ -98,6 +97,12 @@ class MTextRendererExample {
     ) as HTMLSelectElement
     this.showBoundingBoxCheckbox = document.getElementById(
       'show-bounding-box'
+    ) as HTMLInputElement
+    this.showCharBoxesCheckbox = document.getElementById(
+      'show-char-boxes'
+    ) as HTMLInputElement
+    this.showLineBoxesCheckbox = document.getElementById(
+      'show-line-boxes'
     ) as HTMLInputElement
     this.renderModeSelect = document.getElementById(
       'render-mode'
@@ -142,15 +147,12 @@ class MTextRendererExample {
 
       const width = renderArea.clientWidth
       const height = renderArea.clientHeight
-      const aspect = width / height
-      const frustumSize = 5
-
-      this.camera.left = (frustumSize * aspect) / -2
-      this.camera.right = (frustumSize * aspect) / 2
-      this.camera.top = frustumSize / 2
-      this.camera.bottom = frustumSize / -2
+      this.camera.left = 0
+      this.camera.right = width
+      this.camera.top = height
+      this.camera.bottom = 0
       this.camera.updateProjectionMatrix()
-      this.renderer.setSize(width, height)
+      this.renderer.setSize(width, height, false)
     })
 
     // Render button
@@ -195,6 +197,13 @@ class MTextRendererExample {
       if (this.mtextBox) {
         this.mtextBox.visible = this.showBoundingBoxCheckbox.checked
       }
+    })
+
+    this.showCharBoxesCheckbox.addEventListener('change', () => {
+      this.setCharBoxOverlayVisibility(this.showCharBoxesCheckbox.checked)
+    })
+    this.showLineBoxesCheckbox.addEventListener('change', () => {
+      this.setLineBoxOverlayVisibility(this.showLineBoxesCheckbox.checked)
     })
 
     // Render mode toggle
@@ -377,45 +386,219 @@ class MTextRendererExample {
     textStyle: TextStyle
   }[] {
     const texts = [
-      '{\\C1;Title Text 1}\\P{\\C2;Subtitle with different colors}',
-      '{\\C3;Title Text 2}\\P{\\C4;Subtitle with different colors}',
-      '{\\C5;Title Text 3}\\P{\\C6;Subtitle with different colors}',
-      '{\\C7;Title Text 4}\\P{\\C8;Subtitle with different colors}',
-      '{\\C9;Title Text 5}\\P{\\C10;Subtitle with different colors}',
-      '{\\C11;Title Text 6}\\P{\\C12;Subtitle with different colors}',
-      '{\\C13;Title Text 7}\\P{\\C14;Subtitle with different colors}',
-      '{\\C15;Title Text 8}\\P{\\C16;Subtitle with different colors}',
-      '{\\C17;Title Text 9}\\P{\\C18;Subtitle with different colors}',
-      '{\\C19;Title Text 10}\\P{\\C20;Subtitle with different colors}'
+      '\\H15.5{\\C1;Title Text 1}\\P{\\C2;Subtitle with different colors}',
+      '\\H15.5{\\C3;Title Text 2}\\P{\\C4;Subtitle with different colors}',
+      '\\H15.5{\\C5;Title Text 3}\\P{\\C6;Subtitle with different colors}',
+      '\\H15.5{\\C7;Title Text 4}\\P{\\C8;Subtitle with different colors}',
+      '\\H15.5{\\C9;Title Text 5}\\P{\\C10;Subtitle with different colors}',
+      '\\H15.5{\\C11;Title Text 6}\\P{\\C12;Subtitle with different colors}',
+      '\\H15.5{\\C13;Title Text 7}\\P{\\C14;Subtitle with different colors}',
+      '\\H15.5{\\C15;Title Text 8}\\P{\\C16;Subtitle with different colors}',
+      '\\H15.5{\\C17;Title Text 9}\\P{\\C18;Subtitle with different colors}',
+      '\\H15.5{\\C19;Title Text 10}\\P{\\C20;Subtitle with different colors}'
     ]
 
     return texts.map((text, index) => {
       const col = index % 3
       const row = Math.floor(index / 3)
-      const x = -2.5 + col * 1.5 // 3 per row horizontally
-      const y = 2 - row * 0.5 // move down per row to fit within frustum
+      const x = 70 + col * 300
+      const y = 530 - row * 120
 
       return {
         mtextData: {
           text,
-          height: 0.08,
-          width: 1.4, // Reduced width to fit better in the grid
+          height: 24,
+          width: 240,
           position: new THREE.Vector3(x, y, 0)
         },
         textStyle: {
           name: 'Standard',
           standardFlag: 0,
-          fixedTextHeight: 0.08,
+          fixedTextHeight: 24,
           widthFactor: 1,
           obliqueAngle: 0,
           textGenerationFlag: 0,
-          lastHeight: 0.08,
+          lastHeight: 24,
           font: this.fontSelect.value,
           bigFont: '',
           color: 0xffffff
         }
       }
     })
+  }
+
+  private setCharBoxOverlayVisibility(visible: boolean): void {
+    this.charBoxOverlays.forEach(overlay => {
+      overlay.visible = visible
+    })
+  }
+
+  private setLineBoxOverlayVisibility(visible: boolean): void {
+    this.lineBoxOverlays.forEach(overlay => {
+      overlay.visible = visible
+    })
+  }
+
+  private flattenCharBoxes(charBoxes: CharBox[]): CharBox[] {
+    const flattened: CharBox[] = []
+    const stack = [...charBoxes]
+
+    while (stack.length > 0) {
+      const entry = stack.pop()!
+      if (entry.type === CharBoxType.CHAR) {
+        flattened.push(entry)
+      }
+
+      if (entry.children && entry.children.length > 0) {
+        for (let i = entry.children.length - 1; i >= 0; i--) {
+          stack.push(entry.children[i])
+        }
+      }
+    }
+
+    return flattened
+  }
+
+  private createCharBoxOverlay(charBoxes: CharBox[]): THREE.Group {
+    const overlay = new THREE.Group()
+    const renderableCharBoxes = this.flattenCharBoxes(charBoxes)
+
+    const charMaterial = new THREE.LineBasicMaterial({
+      color: 0x00cfff,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.95
+    })
+
+    renderableCharBoxes.forEach(entry => {
+      const minX = entry.box.min.x
+      const minY = entry.box.min.y
+      const maxX = entry.box.max.x
+      const maxY = entry.box.max.y
+      const z = Math.max(entry.box.max.z, 0) + 0.001
+
+      const outlineVertices = [
+        minX,
+        minY,
+        z,
+        maxX,
+        minY,
+        z,
+        maxX,
+        minY,
+        z,
+        maxX,
+        maxY,
+        z,
+        maxX,
+        maxY,
+        z,
+        minX,
+        maxY,
+        z,
+        minX,
+        maxY,
+        z,
+        minX,
+        minY,
+        z
+      ]
+
+      const outlineGeometry = new THREE.BufferGeometry()
+      outlineGeometry.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(outlineVertices, 3)
+      )
+
+      const outline = new THREE.LineSegments(outlineGeometry, charMaterial)
+      overlay.add(outline)
+    })
+
+    return overlay
+  }
+
+  private createLineBoxOverlay(
+    lineLayouts: LineLayout[],
+    lineMinX: number,
+    lineMaxX: number,
+    z = 0.002
+  ): THREE.Group {
+    const overlay = new THREE.Group()
+    const material = new THREE.LineBasicMaterial({
+      color: 0xff2bd6,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.9
+    })
+
+    lineLayouts.forEach(line => {
+      const minY = line.y - line.height / 2
+      const maxY = line.y + line.height / 2
+      const outlineVertices = [
+        lineMinX,
+        minY,
+        z,
+        lineMaxX,
+        minY,
+        z,
+        lineMaxX,
+        minY,
+        z,
+        lineMaxX,
+        maxY,
+        z,
+        lineMaxX,
+        maxY,
+        z,
+        lineMinX,
+        maxY,
+        z,
+        lineMinX,
+        maxY,
+        z,
+        lineMinX,
+        minY,
+        z
+      ]
+      const outlineGeometry = new THREE.BufferGeometry()
+      outlineGeometry.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(outlineVertices, 3)
+      )
+      const outline = new THREE.LineSegments(outlineGeometry, material)
+      outline.frustumCulled = false
+      overlay.add(outline)
+    })
+
+    return overlay
+  }
+
+  private attachCharBoxOverlay(mtextObj: MTextObject): void {
+    const layout = mtextObj.createLayoutData()
+    if (!layout.chars || layout.chars.length === 0) return
+
+    const overlay = this.createCharBoxOverlay(layout.chars)
+    overlay.visible = this.showCharBoxesCheckbox.checked
+    overlay.renderOrder = 999
+    mtextObj.add(overlay)
+    this.charBoxOverlays.push(overlay)
+  }
+
+  private attachLineBoxOverlay(mtextObj: MTextObject): void {
+    const layout = mtextObj.createLayoutData()
+    if (!layout.lines || layout.lines.length === 0) return
+    if (!mtextObj.box || mtextObj.box.isEmpty()) return
+
+    const overlay = this.createLineBoxOverlay(
+      layout.lines,
+      mtextObj.box.min.x,
+      mtextObj.box.max.x
+    )
+    overlay.visible = this.showLineBoxesCheckbox.checked
+    overlay.renderOrder = 998
+    mtextObj.add(overlay)
+    this.lineBoxOverlays.push(overlay)
   }
 
   private async renderMText(content: string): Promise<void> {
@@ -436,6 +619,8 @@ class MTextRendererExample {
         this.scene.remove(this.mtextBox)
         this.mtextBox = null
       }
+      this.charBoxOverlays = []
+      this.lineBoxOverlays = []
 
       let renderTime: number
 
@@ -457,6 +642,8 @@ class MTextRendererExample {
         let combinedBox: THREE.Box3 | null = null
 
         mtextObjects.forEach((mtextObj, index) => {
+          this.attachCharBoxOverlay(mtextObj)
+          this.attachLineBoxOverlay(mtextObj)
           group.add(mtextObj)
 
           // Combine bounding boxes
@@ -503,19 +690,19 @@ class MTextRendererExample {
         // Render single MText object
         const mtextContent: MTextData = {
           text: content,
-          height: 0.1,
-          width: 5.5,
-          position: new THREE.Vector3(-3, 2, 0)
+          height: 24,
+          width: 820,
+          position: new THREE.Vector3(70, 530, 0)
         }
 
         const textStyle: TextStyle = {
           name: 'Standard',
           standardFlag: 0,
-          fixedTextHeight: 0.1,
+          fixedTextHeight: 24,
           widthFactor: 1,
           obliqueAngle: 0,
           textGenerationFlag: 0,
-          lastHeight: 0.1,
+          lastHeight: 24,
           font: this.fontSelect.value,
           bigFont: '',
           color: 0xffffff
@@ -530,6 +717,8 @@ class MTextRendererExample {
             byBlockColor: 0xffffff
           }
         )
+        this.attachCharBoxOverlay(this.currentMText)
+        this.attachLineBoxOverlay(this.currentMText)
         this.scene.add(this.currentMText)
 
         // Create box around MText using its bounding box only if checkbox is checked

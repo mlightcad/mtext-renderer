@@ -1,9 +1,18 @@
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
+import { buildCharBoxesFromObject } from '../renderer/charBoxUtils'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { StyleManager } from '../renderer/styleManager'
-import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
+import {
+  CharBox,
+  CharBoxType,
+  ColorSettings,
+  LineLayout,
+  MTextData,
+  MTextLayout,
+  TextStyle
+} from '../renderer/types'
 import { MTextBaseRenderer, MTextObject } from './baseRenderer'
 
 /**
@@ -120,6 +129,16 @@ interface SerializedMText {
   children: SerializedChild[]
 }
 
+interface SerializedCharBox {
+  type: string
+  char: string
+  box: {
+    min: { x: number; y: number; z: number }
+    max: { x: number; y: number; z: number }
+  }
+  children: SerializedCharBox[]
+}
+
 interface SerializedChild {
   type: 'mesh' | 'line'
   position: { x: number; y: number; z: number }
@@ -150,7 +169,14 @@ interface SerializedChild {
     side?: number
     linewidth?: number
   }
+  charBoxType?: CharBox['type']
+  lineLayouts?: Array<{ y: number; height: number; breakIndex?: number }>
+  charBoxes?: SerializedCharBox[]
 }
+
+const tempPoint = /*@__PURE__*/ new THREE.Vector3()
+const tempPoint2 = /*@__PURE__*/ new THREE.Vector3()
+const tempPoint3 = /*@__PURE__*/ new THREE.Vector3()
 
 /**
  * Manages communication with the MText web worker
@@ -573,6 +599,22 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
 
       object.scale.set(childData.scale.x, childData.scale.y, childData.scale.z)
 
+      if (childData.charBoxType) {
+        object.userData.charBoxType = childData.charBoxType
+      }
+      if (childData.lineLayouts && childData.lineLayouts.length > 0) {
+        object.userData.lineLayouts = childData.lineLayouts.map(line => ({
+          y: line.y,
+          height: line.height,
+          breakIndex: line.breakIndex
+        }))
+      }
+      if (childData.charBoxes && childData.charBoxes.length > 0) {
+        object.userData.layout = {
+          chars: this.deserializeCharBoxes(childData.charBoxes)
+        }
+      }
+
       group.add(object)
     })
 
@@ -589,8 +631,98 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
         serializedData.box.max.z
       )
     )
+    const mtextObject = group as unknown as MTextObject
+    mtextObject.createLayoutData = () => {
+      const cached = group.userData?.layoutCache as MTextLayout | undefined
+      if (cached) {
+        return cached
+      }
+      const layout: MTextLayout = { lines: [], chars: [] }
+      group.updateWorldMatrix(true, true)
+      this.collectLayout(group, layout.chars, layout.lines)
+      group.userData.layoutCache = layout
+      return layout
+    }
 
-    return group as unknown as MTextObject
+    return mtextObject
+  }
+
+  private deserializeCharBoxes(serialized: SerializedCharBox[]): CharBox[] {
+    return serialized.map(entry => ({
+      type: entry.type as CharBox['type'],
+      char: entry.char,
+      box: new THREE.Box3(
+        new THREE.Vector3(entry.box.min.x, entry.box.min.y, entry.box.min.z),
+        new THREE.Vector3(entry.box.max.x, entry.box.max.y, entry.box.max.z)
+      ),
+      children: this.deserializeCharBoxes(entry.children ?? [])
+    }))
+  }
+
+  private collectLayout(
+    object: THREE.Object3D,
+    chars: CharBox[],
+    lines: LineLayout[]
+  ) {
+    object.updateWorldMatrix(false, false)
+
+    const objectCharBoxes = object.userData?.layout?.chars as
+      | CharBox[]
+      | undefined
+    const objectLineLayouts = object.userData?.lineLayouts as
+      | LineLayout[]
+      | undefined
+    if (objectLineLayouts && objectLineLayouts.length > 0) {
+      objectLineLayouts.forEach(line => {
+        tempPoint.set(0, line.y, 0).applyMatrix4(object.matrixWorld)
+        tempPoint2
+          .set(0, line.y - line.height / 2, 0)
+          .applyMatrix4(object.matrixWorld)
+        tempPoint3
+          .set(0, line.y + line.height / 2, 0)
+          .applyMatrix4(object.matrixWorld)
+        lines.push({
+          y: tempPoint.y,
+          height: Math.abs(tempPoint3.y - tempPoint2.y),
+          breakIndex: line.breakIndex
+        })
+      })
+    }
+
+    if (objectCharBoxes && objectCharBoxes.length > 0) {
+      const charBoxType = object.userData?.charBoxType as
+        | CharBoxType
+        | undefined
+      const entries = buildCharBoxesFromObject(
+        objectCharBoxes,
+        object.matrixWorld,
+        charBoxType
+      )
+      chars.push(...entries)
+      return
+    }
+
+    if (object instanceof THREE.Line || object instanceof THREE.Mesh) {
+      const geometry = object.geometry
+      if (!geometry.userData?.isDecoration) {
+        if (geometry.boundingBox === null) {
+          geometry.computeBoundingBox()
+        }
+        const box = new THREE.Box3().copy(geometry.boundingBox)
+        box.applyMatrix4(object.matrixWorld)
+        chars.push({
+          type: CharBoxType.CHAR,
+          box,
+          char: '',
+          children: []
+        })
+      }
+    }
+
+    const children = object.children
+    for (let i = 0, l = children.length; i < l; i++) {
+      this.collectLayout(children[i], chars, lines)
+    }
   }
 
   /**

@@ -67,8 +67,6 @@ export enum MTextAttachmentPoint {
  *
  * Semantics by {@link CharBoxType}:
  * - `CHAR`: `char` is the rendered character, `box` is defined, `children` is empty.
- * - `NEW_PARAGRAPH`: `char` is `\n`. The `box` represents a zero-width vertical
- *   line whose height equals the current line height. `children` is empty.
  * - `STACK`: `char` is `''`, `box` is the union box of stack components, `children` contains stack parts.
  */
 export interface CharBox {
@@ -76,10 +74,40 @@ export interface CharBox {
   type: CharBoxType
   /** Token bounding box in local MText coordinates. */
   box: THREE.Box3
-  /** Token character payload (`''` for `STACK`, `\n` for `NEW_PARAGRAPH`). */
+  /** Token character payload (`''` for `STACK`). */
   char: string
   /** Nested token components (currently used by `STACK`). */
   children: CharBox[]
+}
+
+/**
+ * Per-line layout geometry used by text cursor and line hit-testing.
+ */
+export interface LineLayout {
+  /** Line center Y used for cursor placement and hit-testing. */
+  y: number
+  /** Line height used for cursor size and vertical hit area. */
+  height: number
+  /**
+   * Visual line-break index in `MTextLayout.chars` for this line.
+   * Index `i` means a break between char `i - 1` and char `i`.
+   *
+   * This is line-boundary data (rendered rows), not paragraph structure.
+   * Duplicated indices are meaningful and represent empty lines.
+   *
+   * This field is `undefined` for the last rendered line.
+   */
+  breakIndex?: number
+}
+
+/**
+ * Aggregated layout output for rendered MText.
+ */
+export interface MTextLayout {
+  /** Per-line layout entries. */
+  lines: LineLayout[]
+  /** Logical text token boxes for picking/debug. */
+  chars: CharBox[]
 }
 
 /**
@@ -88,8 +116,6 @@ export interface CharBox {
 export enum CharBoxType {
   /** Regular rendered character token. */
   CHAR = 'CHAR',
-  /** Explicit paragraph break token. */
-  NEW_PARAGRAPH = 'NEW_PARAGRAPH',
   /** Stack token (for fraction-style stacked expressions). */
   STACK = 'STACK'
 }
