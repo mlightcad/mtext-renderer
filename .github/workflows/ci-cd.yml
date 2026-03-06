@@ -3,12 +3,15 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -18,16 +21,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v2
         with:
           version: 9
       
       # Cache node_modules
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'pnpm'
+          registry-url: https://registry.npmjs.org
        
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -40,6 +46,22 @@ jobs:
         
       - name: Build the package
         run: pnpm build
+
+      - name: Publish packages to npm
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cp README.md packages/mtext-renderer/README.md
+          pnpm publish:renderer
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
