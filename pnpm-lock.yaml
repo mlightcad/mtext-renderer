@@ -85,8 +85,8 @@ importers:
   packages/mtext-renderer:
     dependencies:
       '@mlightcad/mtext-parser':
-        specifier: ^1.4.0
-        version: 1.4.0
+        specifier: ^1.4.1
+        version: 1.4.1
       '@mlightcad/shx-parser':
         specifier: ^1.3.2
         version: 1.3.2
@@ -992,8 +992,8 @@ packages:
   '@microsoft/tsdoc@0.15.1':
     resolution: {integrity: sha512-4aErSrCR/On/e5G2hDP0wjooqDdauzEbIq8hIkIe5pXV0rtWJZvdCEKL0ykZxex+IxIwBp0eGeV48hQN07dXtw==}
 
-  '@mlightcad/mtext-parser@1.4.0':
-    resolution: {integrity: sha512-FwAaSK78tMeVMzpFYgc0g5G5wBLPLII5Ek8tsG2PrPAPTxZWJKrHwZcrbYiNmtkh3AG+8ZJO9RNsFrkv3F8MOA==}
+  '@mlightcad/mtext-parser@1.4.1':
+    resolution: {integrity: sha512-PU7D5H/k25vZpTERabpdn5HVAs8+SBNRqgi08wRPiplxTE1eB/zBZRNRrSwHqyWx6xMeQmZ9mhh9DPNpte3gYQ==}
 
   '@mlightcad/shx-parser@1.3.2':
     resolution: {integrity: sha512-j84hqbWOVMDuepLEjVsYvxeiCXOVxHyJhl4gM4HtgXZ6ChgTLsuSnqs2bNOt2SwriTvFOsv3QLsOu2iJh857JA==}
@@ -4457,7 +4457,7 @@ snapshots:
 
   '@microsoft/tsdoc@0.15.1': {}
 
-  '@mlightcad/mtext-parser@1.4.0': {}
+  '@mlightcad/mtext-parser@1.4.1': {}
 
   '@mlightcad/shx-parser@1.3.2': {}
 
