@@ -447,6 +447,15 @@ export class MTextProcessor {
    * @param item Input mtext inline codes
    */
   processFormat(item: ChangedProperties) {
+    // When leaving a formatting group `{}`, parser emits a restore token with
+    // `command === undefined` and a full snapshot of properties to restore.
+    // We must apply these changes explicitly, otherwise the render context
+    // won't match the parser's restored state.
+    if (item.command === undefined) {
+      this.applyPropertyChanges(item.changes)
+      return
+    }
+
     switch (item.command) {
       case 'f':
       case 'F':
@@ -571,7 +580,127 @@ export class MTextProcessor {
         break
       default:
         // TODO: handle psm, underscore, overscore, and etc.
+        // For unknown commands, do nothing — properties may still be applied
+        // via `command === undefined` restore tokens.
         break
+    }
+  }
+
+  /**
+   * Applies a full property snapshot from the parser to the current render context.
+   *
+   * This is used when the parser emits a restore token (`command === undefined`)
+   * after exiting a formatting group `{}`. The `changes` object in that case is
+   * not a delta for a specific command; it is the complete property state that
+   * should be active after the restore.
+   *
+   * The method updates:
+   * - font face + derived bold/italic/oblique settings
+   * - ACI/RGB color and ByLayer/ByBlock resolution
+   * - width/height/tracking factors
+   * - paragraph alignment and margins
+   * - underline/overline/strike-through flags
+   */
+  private applyPropertyChanges(changes: ChangedProperties['changes']) {
+    if (changes.fontFace) {
+      this.changeFont(changes.fontFace.family)
+      const fontType = this.fontManager.getFontType(
+        this._currentContext.fontFace.family
+      )
+      if (fontType === 'mesh') {
+        this._currentContext.italic = changes.fontFace.style === 'Italic'
+        this._currentContext.bold = (changes.fontFace.weight || 400) >= 700
+        this._currentContext.oblique = this.textStyle.obliqueAngle || 0
+      } else {
+        this._currentContext.italic = false
+        this._currentContext.bold = false
+        if (changes.fontFace.style === 'Italic') {
+          this._currentContext.oblique = 15
+        } else {
+          this._currentContext.oblique = this.textStyle.obliqueAngle || 0
+        }
+      }
+    }
+
+    if (changes.aci !== undefined) {
+      if (changes.aci === null) {
+        this._currentContext.color.aci = null
+      } else if (changes.aci === 0) {
+        this._currentContext.setColorFromHex(this._options.byBlockColor)
+      } else if (changes.aci === 256) {
+        this._currentContext.setColorFromHex(this._options.byLayerColor)
+      } else {
+        this._currentContext.color.aci = changes.aci
+      }
+    }
+
+    if (changes.rgb) {
+      this._currentContext.color.rgb = changes.rgb
+    }
+
+    if (changes.widthFactor) {
+      if (changes.widthFactor.isRelative) {
+        this._currentContext.widthFactor = {
+          value: changes.widthFactor.value * this.maxWidth,
+          isRelative: false
+        }
+      } else {
+        this._currentContext.widthFactor = {
+          value: changes.widthFactor.value * 0.93,
+          isRelative: false
+        }
+      }
+    }
+
+    if (changes.capHeight) {
+      if (changes.capHeight.isRelative) {
+        this.changeFontSizeScaleFactor(changes.capHeight.value)
+      } else {
+        this.changeFontHeight(changes.capHeight.value)
+      }
+    }
+
+    if (changes.charTrackingFactor) {
+      if (changes.charTrackingFactor.isRelative) {
+        this._currentContext.charTrackingFactor = {
+          value: changes.charTrackingFactor.value + 1,
+          isRelative: false
+        }
+      } else {
+        this._currentContext.charTrackingFactor = {
+          value: changes.charTrackingFactor.value,
+          isRelative: false
+        }
+      }
+    }
+
+    if (changes.paragraph) {
+      if (changes.paragraph.align) {
+        this._currentHorizontalAlignment = changes.paragraph.align
+      }
+      if (typeof changes.paragraph.indent === 'number') {
+        this._currentIndent = changes.paragraph.indent * this.defaultFontSize
+        this._hOffset += this._currentIndent
+      }
+      if (typeof changes.paragraph.left === 'number') {
+        this._currentLeftMargin = changes.paragraph.left * this.defaultFontSize
+      }
+      if (typeof changes.paragraph.right === 'number') {
+        this._currentRightMargin = changes.paragraph.right * this.defaultFontSize
+      }
+    }
+
+    if (typeof changes.underline === 'boolean') {
+      this._currentContext.underline = changes.underline
+    }
+    if (typeof changes.overline === 'boolean') {
+      this._currentContext.overline = changes.overline
+    }
+    if (typeof changes.strikeThrough === 'boolean') {
+      this._currentContext.strikeThrough = changes.strikeThrough
+    }
+    if (changes.oblique !== undefined) {
+      this._currentContext.oblique = changes.oblique
     }
   }
 
@@ -675,6 +804,7 @@ export class MTextProcessor {
           while (this._contextStack.length > item.depth) {
             this._currentContext = this._contextStack.pop()!
           }
+          this.processFormat(item)
         } else {
           // Snapshot context once per depth level. Multiple commands in one {}
           // must share the same base context so restore works correctly.

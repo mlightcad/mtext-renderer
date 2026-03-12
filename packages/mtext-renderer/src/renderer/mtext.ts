@@ -395,7 +395,7 @@ export class MText extends THREE.Object3D {
 
     const context = new MTextContext()
     context.fontFace.family = style.font
-    context.capHeight = { value: mtextData.height || 1.0, isRelative: true }
+    context.capHeight = { value: mtextData.height, isRelative: false }
     context.widthFactor = {
       value: mtextData.widthFactor ?? 1.0,
       isRelative: true
