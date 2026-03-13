@@ -459,101 +459,23 @@ export class MTextProcessor {
     switch (item.command) {
       case 'f':
       case 'F':
-        if (item.changes.fontFace) {
-          this.changeFont(item.changes.fontFace.family)
-          // Handle style and weight for mesh fonts only
-          const fontType = this.fontManager.getFontType(
-            this._currentContext.fontFace.family
-          )
-          if (fontType === 'mesh') {
-            this._currentContext.italic =
-              item.changes.fontFace.style === 'Italic'
-            this._currentContext.bold =
-              (item.changes.fontFace.weight || 400) >= 700
-            this._currentContext.oblique = this.textStyle.obliqueAngle || 0
-          } else {
-            this._currentContext.italic = false
-            this._currentContext.bold = false
-            if (item.changes.fontFace.style === 'Italic') {
-              this._currentContext.oblique = 15
-            } else {
-              this._currentContext.oblique = this.textStyle.obliqueAngle || 0
-            }
-          }
-        }
+        this.applyFontFaceChange(item.changes.fontFace)
         break
       case 'c':
       case 'C':
-        if (item.changes.aci !== undefined && item.changes.aci !== null) {
-          if (item.changes.aci === 0) {
-            this._currentContext.setColorFromHex(this._options.byBlockColor)
-          } else if (item.changes.aci === 256) {
-            this._currentContext.setColorFromHex(this._options.byLayerColor)
-          } else {
-            this._currentContext.color.aci = item.changes.aci
-          }
-        } else if (item.changes.rgb) {
-          this._currentContext.color.rgb = item.changes.rgb
-        }
+        this.applyColorCommandChanges(item.changes)
         break
       case 'W':
-        if (item.changes.widthFactor) {
-          if (item.changes.widthFactor.isRelative) {
-            this._currentContext.widthFactor = {
-              value: item.changes.widthFactor.value * this.maxWidth,
-              isRelative: false
-            }
-          } else {
-            this._currentContext.widthFactor = {
-              value: item.changes.widthFactor.value * 0.93,
-              isRelative: false
-            }
-          }
-        }
+        this.applyWidthFactorChange(item.changes.widthFactor)
         break
       case 'H':
-        if (item.changes.capHeight) {
-          if (item.changes.capHeight.isRelative) {
-            this.changeFontSizeScaleFactor(item.changes.capHeight.value)
-          } else {
-            this.changeFontHeight(item.changes.capHeight.value)
-          }
-        }
+        this.applyCapHeightChange(item.changes.capHeight)
         break
       case 'T':
-        if (item.changes.charTrackingFactor) {
-          if (item.changes.charTrackingFactor.isRelative) {
-            this._currentContext.charTrackingFactor = {
-              value: item.changes.charTrackingFactor.value + 1,
-              isRelative: false
-            }
-          } else {
-            this._currentContext.charTrackingFactor = {
-              value: item.changes.charTrackingFactor.value,
-              isRelative: false
-            }
-          }
-        }
+        this.applyCharTrackingChange(item.changes.charTrackingFactor)
         break
       case 'p':
-        if (item.changes.paragraph) {
-          if (item.changes.paragraph.align) {
-            this._currentHorizontalAlignment = item.changes.paragraph.align
-          }
-          if (typeof item.changes.paragraph.indent === 'number') {
-            this._currentIndent =
-              item.changes.paragraph.indent * this.defaultFontSize
-            this._hOffset += this._currentIndent
-          }
-          if (typeof item.changes.paragraph.left === 'number') {
-            this._currentLeftMargin =
-              item.changes.paragraph.left * this.defaultFontSize
-          }
-          if (typeof item.changes.paragraph.right === 'number') {
-            this._currentRightMargin =
-              item.changes.paragraph.right * this.defaultFontSize
-          }
-        }
+        this.applyParagraphChange(item.changes.paragraph)
         break
       case 'L':
         this._currentContext.underline = true
@@ -602,93 +524,12 @@ export class MTextProcessor {
    * - underline/overline/strike-through flags
    */
   private applyPropertyChanges(changes: ChangedProperties['changes']) {
-    if (changes.fontFace) {
-      this.changeFont(changes.fontFace.family)
-      const fontType = this.fontManager.getFontType(
-        this._currentContext.fontFace.family
-      )
-      if (fontType === 'mesh') {
-        this._currentContext.italic = changes.fontFace.style === 'Italic'
-        this._currentContext.bold = (changes.fontFace.weight || 400) >= 700
-        this._currentContext.oblique = this.textStyle.obliqueAngle || 0
-      } else {
-        this._currentContext.italic = false
-        this._currentContext.bold = false
-        if (changes.fontFace.style === 'Italic') {
-          this._currentContext.oblique = 15
-        } else {
-          this._currentContext.oblique = this.textStyle.obliqueAngle || 0
-        }
-      }
-    }
-
-    if (changes.aci !== undefined) {
-      if (changes.aci === null) {
-        this._currentContext.color.aci = null
-      } else if (changes.aci === 0) {
-        this._currentContext.setColorFromHex(this._options.byBlockColor)
-      } else if (changes.aci === 256) {
-        this._currentContext.setColorFromHex(this._options.byLayerColor)
-      } else {
-        this._currentContext.color.aci = changes.aci
-      }
-    }
-
-    if (changes.rgb) {
-      this._currentContext.color.rgb = changes.rgb
-    }
-
-    if (changes.widthFactor) {
-      if (changes.widthFactor.isRelative) {
-        this._currentContext.widthFactor = {
-          value: changes.widthFactor.value * this.maxWidth,
-          isRelative: false
-        }
-      } else {
-        this._currentContext.widthFactor = {
-          value: changes.widthFactor.value * 0.93,
-          isRelative: false
-        }
-      }
-    }
-
-    if (changes.capHeight) {
-      if (changes.capHeight.isRelative) {
-        this.changeFontSizeScaleFactor(changes.capHeight.value)
-      } else {
-        this.changeFontHeight(changes.capHeight.value)
-      }
-    }
-
-    if (changes.charTrackingFactor) {
-      if (changes.charTrackingFactor.isRelative) {
-        this._currentContext.charTrackingFactor = {
-          value: changes.charTrackingFactor.value + 1,
-          isRelative: false
-        }
-      } else {
-        this._currentContext.charTrackingFactor = {
-          value: changes.charTrackingFactor.value,
-          isRelative: false
-        }
-      }
-    }
-
-    if (changes.paragraph) {
-      if (changes.paragraph.align) {
-        this._currentHorizontalAlignment = changes.paragraph.align
-      }
-      if (typeof changes.paragraph.indent === 'number') {
-        this._currentIndent = changes.paragraph.indent * this.defaultFontSize
-        this._hOffset += this._currentIndent
-      }
-      if (typeof changes.paragraph.left === 'number') {
-        this._currentLeftMargin = changes.paragraph.left * this.defaultFontSize
-      }
-      if (typeof changes.paragraph.right === 'number') {
-        this._currentRightMargin = changes.paragraph.right * this.defaultFontSize
-      }
-    }
+    this.applyFontFaceChange(changes.fontFace)
+    this.applyColorCommandChanges(changes)
+    this.applyWidthFactorChange(changes.widthFactor)
+    this.applyCapHeightChange(changes.capHeight)
+    this.applyCharTrackingChange(changes.charTrackingFactor)
+    this.applyParagraphChange(changes.paragraph)
 
     if (typeof changes.underline === 'boolean') {
       this._currentContext.underline = changes.underline
@@ -701,6 +542,157 @@ export class MTextProcessor {
     }
     if (changes.oblique !== undefined) {
       this._currentContext.oblique = changes.oblique
+    }
+  }
+
+  /**
+   * Apply a font face change to the current render context, including
+   * derived bold/italic/oblique settings based on font type.
+   * @param fontFace The font face change data from the parser.
+   */
+  private applyFontFaceChange(
+    fontFace: ChangedProperties['changes']['fontFace']
+  ) {
+    if (!fontFace) return
+    this.changeFont(fontFace.family)
+    const fontType = this.fontManager.getFontType(
+      this._currentContext.fontFace.family
+    )
+    if (fontType === 'mesh') {
+      this._currentContext.italic = fontFace.style === 'Italic'
+      this._currentContext.bold = (fontFace.weight || 400) >= 700
+      this._currentContext.oblique = this.textStyle.obliqueAngle || 0
+    } else {
+      this._currentContext.italic = false
+      this._currentContext.bold = false
+      if (fontFace.style === 'Italic') {
+        this._currentContext.oblique = 15
+      } else {
+        this._currentContext.oblique = this.textStyle.obliqueAngle || 0
+      }
+    }
+  }
+
+  /**
+   * Apply color changes for the inline color command (\c).
+   * This variant ignores null ACI and only applies explicit RGB when provided.
+   * @param changes The full change object for the current command.
+   */
+  private applyColorCommandChanges(changes: ChangedProperties['changes']) {
+    if (changes.aci !== undefined && changes.aci !== null) {
+      if (changes.aci === 0) {
+        this._currentContext.setColorFromHex(this._options.byBlockColor)
+      } else if (changes.aci === 256) {
+        this._currentContext.setColorFromHex(this._options.byLayerColor)
+      } else {
+        this._currentContext.color.aci = changes.aci
+      }
+    } else if (changes.rgb) {
+      this._currentContext.color.rgb = changes.rgb
+    }
+  }
+
+  /**
+   * Apply color changes from a full snapshot restore.
+   * This variant accepts null to switch back to ACI-based color.
+   * @param changes The full snapshot of properties to restore.
+   */
+  private applyColorSnapshotChanges(changes: ChangedProperties['changes']) {
+    if (changes.aci !== undefined) {
+      if (changes.aci === null) {
+        this._currentContext.color.aci = null
+      } else if (changes.aci === 0) {
+        this._currentContext.setColorFromHex(this._options.byBlockColor)
+      } else if (changes.aci === 256) {
+        this._currentContext.setColorFromHex(this._options.byLayerColor)
+      } else {
+        this._currentContext.color.aci = changes.aci
+      }
+    }
+
+    if (changes.rgb !== undefined) {
+      // rgb can be null to indicate switching back to ACI-based color
+      this._currentContext.color.rgb = changes.rgb
+    }
+  }
+
+  /**
+   * Apply width factor changes, resolving relative factors to absolute values.
+   * @param widthFactor Width factor change data.
+   */
+  private applyWidthFactorChange(
+    widthFactor: ChangedProperties['changes']['widthFactor']
+  ) {
+    if (!widthFactor) return
+    if (widthFactor.isRelative) {
+      this._currentContext.widthFactor = {
+        value: widthFactor.value * this.maxWidth,
+        isRelative: false
+      }
+    } else {
+      this._currentContext.widthFactor = {
+        value: widthFactor.value * 0.93,
+        isRelative: false
+      }
+    }
+  }
+
+  /**
+   * Apply cap height changes, either as a relative scale or absolute font height.
+   * @param capHeight Cap height change data.
+   */
+  private applyCapHeightChange(
+    capHeight: ChangedProperties['changes']['capHeight']
+  ) {
+    if (!capHeight) return
+    if (capHeight.isRelative) {
+      this.changeFontSizeScaleFactor(capHeight.value)
+    } else {
+      this.changeFontHeight(capHeight.value)
+    }
+  }
+
+  /**
+   * Apply character tracking (spacing) changes.
+   * @param charTrackingFactor Character tracking change data.
+   */
+  private applyCharTrackingChange(
+    charTrackingFactor: ChangedProperties['changes']['charTrackingFactor']
+  ) {
+    if (!charTrackingFactor) return
+    if (charTrackingFactor.isRelative) {
+      this._currentContext.charTrackingFactor = {
+        value: charTrackingFactor.value + 1,
+        isRelative: false
+      }
+    } else {
+      this._currentContext.charTrackingFactor = {
+        value: charTrackingFactor.value,
+        isRelative: false
+      }
+    }
+  }
+
+  /**
+   * Apply paragraph-level changes such as alignment and margins.
+   * @param paragraph Paragraph change data.
+   */
+  private applyParagraphChange(
+    paragraph: ChangedProperties['changes']['paragraph']
+  ) {
+    if (!paragraph) return
+    if (paragraph.align) {
+      this._currentHorizontalAlignment = paragraph.align
+    }
+    if (typeof paragraph.indent === 'number') {
+      this._currentIndent = paragraph.indent * this.defaultFontSize
+      this._hOffset += this._currentIndent
+    }
+    if (typeof paragraph.left === 'number') {
+      this._currentLeftMargin = paragraph.left * this.defaultFontSize
+    }
+    if (typeof paragraph.right === 'number') {
+      this._currentRightMargin = paragraph.right * this.defaultFontSize
     }
   }
 
