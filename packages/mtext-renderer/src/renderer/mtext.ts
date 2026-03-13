@@ -395,10 +395,19 @@ export class MText extends THREE.Object3D {
 
     const context = new MTextContext()
     context.fontFace.family = style.font
-    context.capHeight = { value: mtextData.height || 1.0, isRelative: true }
+    context.capHeight = {
+      value: mtextData.height ?? style.fixedTextHeight,
+      isRelative: false
+    }
+    // Absolute value (\Wvalue;)
+    // – Sets the text width factor directly to the specified value, overriding the current
+    // width factor from the text style or previous formatting.
+    // Relative value (\Wvaluex;)
+    // – Multiplies the current width factor by the specified value, scaling it relative to
+    // the existing width setting.
     context.widthFactor = {
-      value: mtextData.widthFactor ?? 1.0,
-      isRelative: true
+      value: mtextData.widthFactor ?? style.widthFactor,
+      isRelative: false
     }
     context.align = verticalAlignment
     context.paragraph.align = horizontalAlignment

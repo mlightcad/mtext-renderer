@@ -31,6 +31,8 @@ class MTextRendererExample {
   private showCharBoxesCheckbox: HTMLInputElement
   private showLineBoxesCheckbox: HTMLInputElement
   private renderModeSelect: HTMLSelectElement
+  private byLayerColorInput: HTMLInputElement
+  private byBlockColorInput: HTMLInputElement
 
   // Example texts
   private readonly exampleTexts = {
@@ -107,6 +109,12 @@ class MTextRendererExample {
     this.renderModeSelect = document.getElementById(
       'render-mode'
     ) as HTMLSelectElement
+    this.byLayerColorInput = document.getElementById(
+      'by-layer-color'
+    ) as HTMLInputElement
+    this.byBlockColorInput = document.getElementById(
+      'by-block-color'
+    ) as HTMLInputElement
 
     // Add lights
     this.setupLights()
@@ -217,6 +225,14 @@ class MTextRendererExample {
       await this.initializeFonts(false)
 
       // Re-render with current content to reflect the new mode
+      await this.renderMText(this.mtextInput.value)
+    })
+
+    // Color settings
+    this.byLayerColorInput.addEventListener('change', async () => {
+      await this.renderMText(this.mtextInput.value)
+    })
+    this.byBlockColorInput.addEventListener('change', async () => {
       await this.renderMText(this.mtextInput.value)
     })
   }
@@ -601,6 +617,22 @@ class MTextRendererExample {
     this.lineBoxOverlays.push(overlay)
   }
 
+  private parseColorInput(input: HTMLInputElement, fallback: number): number {
+    const value = input.value?.trim()
+    if (!value) return fallback
+
+    const normalized = value.startsWith('#') ? value.slice(1) : value
+    const parsed = Number.parseInt(normalized, 16)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  private getColorSettings(): { byLayerColor: number; byBlockColor: number } {
+    return {
+      byLayerColor: this.parseColorInput(this.byLayerColorInput, 0xffffff),
+      byBlockColor: this.parseColorInput(this.byBlockColorInput, 0xffffff)
+    }
+  }
+
   private async renderMText(content: string): Promise<void> {
     try {
       const startTime = performance.now()
@@ -623,16 +655,18 @@ class MTextRendererExample {
       this.lineBoxOverlays = []
 
       let renderTime: number
+      const colorSettings = this.getColorSettings()
 
       if (content === 'multiple') {
         // Render multiple MText objects
         const multipleData = this.createMultipleMTextData()
 
         const renderPromises = multipleData.map(({ mtextData, textStyle }) => {
-          return this.unifiedRenderer.asyncRenderMText(mtextData, textStyle, {
-            byLayerColor: 0xffffff,
-            byBlockColor: 0xffffff
-          })
+          return this.unifiedRenderer.asyncRenderMText(
+            mtextData,
+            textStyle,
+            colorSettings
+          )
         })
 
         const mtextObjects: MTextObject[] = await Promise.all(renderPromises)
@@ -712,10 +746,7 @@ class MTextRendererExample {
         this.currentMText = await this.unifiedRenderer.asyncRenderMText(
           mtextContent,
           textStyle,
-          {
-            byLayerColor: 0xffffff,
-            byBlockColor: 0xffffff
-          }
+          colorSettings
         )
         this.attachCharBoxOverlay(this.currentMText)
         this.attachLineBoxOverlay(this.currentMText)

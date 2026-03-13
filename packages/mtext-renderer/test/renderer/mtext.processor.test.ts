@@ -256,7 +256,7 @@ describe('MTextProcessor format state', () => {
   })
 
   it('restores context after a grouped color+font change', () => {
-    const { processor, style } = createProcessor('mesh')
+    const { processor, options } = createProcessor('mesh')
 
     const tokens = [
       {
@@ -292,7 +292,7 @@ describe('MTextProcessor format state', () => {
     processor.processText(tokens as any)
 
     const context = getCurrentContext(processor)
-    expect(context.getColorAsHex()).toBe(style.color)
+    expect(context.getColorAsHex()).toBe(options.byLayerColor)
     expect(getContextStackSize(processor)).toBe(0)
   })
 
