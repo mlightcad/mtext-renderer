@@ -1,5 +1,10 @@
 import { StyleManager } from '../renderer'
-import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
+import {
+  ColorSettings,
+  createDefaultColorSettings,
+  MTextData,
+  TextStyle
+} from '../renderer/types'
 import { MTextBaseRenderer, MTextObject } from './baseRenderer'
 import { MainThreadRenderer } from './mainThreadRenderer'
 import { WebWorkerRenderer, WebWorkerRendererConfig } from './webWorkerRenderer'
@@ -75,15 +80,13 @@ export class UnifiedRenderer {
 
   /**
    * Render MText using the current mode asynchronously.
+   * @param colorSettings - Optional color context (ByLayer, ByBlock colors).
    * @param mode - Rendering mode used. If undefined, the default rendering mode is used.
    */
   async asyncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = {
-      byLayerColor: 0xffffff,
-      byBlockColor: 0xffffff
-    },
+    colorSettings: ColorSettings = createDefaultColorSettings(),
     mode?: RenderMode
   ): Promise<MTextObject> {
     if (mode) {
@@ -102,14 +105,12 @@ export class UnifiedRenderer {
   /**
    * Render MText using the current mode synchronously. Main thread render is always used
    * for this function because web worker renderer doesn't support rendering synchronously.
+   * @param colorSettings - Optional color context (ByLayer, ByBlock colors).
    */
   syncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = {
-      byLayerColor: 0xffffff,
-      byBlockColor: 0xffffff
-    }
+    colorSettings: ColorSettings = createDefaultColorSettings()
   ): MTextObject {
     return this.mainThreadRenderer.syncRenderMText(
       mtextContent,

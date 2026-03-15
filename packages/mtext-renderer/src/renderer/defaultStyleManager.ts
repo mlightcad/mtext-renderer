@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 
+import { resolveMTextColor } from './colorUtils'
 import { StyleManager } from './styleManager'
-import { StyleTraits } from './types'
+import { ColorSettings } from './types'
 
 /**
  * Class to manage basic text style
@@ -11,21 +12,23 @@ export class DefaultStyleManager implements StyleManager {
   private meshBasicMaterials: { [key: string]: THREE.Material } = {}
   public unsupportedTextStyles: Record<string, number> = {}
 
-  getMeshBasicMaterial(traits: StyleTraits): THREE.Material {
-    const key = this.buildKey(traits)
+  getMeshBasicMaterial(colorSettings: ColorSettings): THREE.Material {
+    const key = this.buildKey(colorSettings)
     if (!this.meshBasicMaterials[key]) {
+      const color = resolveMTextColor(colorSettings)
       this.meshBasicMaterials[key] = new THREE.MeshBasicMaterial({
-        color: traits.color
+        color
       })
     }
     return this.meshBasicMaterials[key]
   }
 
-  getLineBasicMaterial(traits: StyleTraits): THREE.Material {
-    const key = this.buildKey(traits)
+  getLineBasicMaterial(colorSettings: ColorSettings): THREE.Material {
+    const key = this.buildKey(colorSettings)
     if (!this.lineBasicMaterials[key]) {
+      const color = resolveMTextColor(colorSettings)
       this.lineBasicMaterials[key] = new THREE.LineBasicMaterial({
-        color: traits.color
+        color
       })
     }
     return this.lineBasicMaterials[key]
@@ -35,9 +38,11 @@ export class DefaultStyleManager implements StyleManager {
    * Builds a stable material key from traits.
    * Key differs for shader vs basic, ByLayer vs ByEntity.
    */
-  protected buildKey(traits: StyleTraits): string {
-    return traits.isByLayer && traits.layer
-      ? `layer_${traits.layer}_${traits.color}`
-      : `entity_${traits.color}`
+  protected buildKey(colorSettings: ColorSettings): string {
+    const isByLayer = colorSettings.color.aci === 256
+    const resolvedColor = resolveMTextColor(colorSettings)
+    return isByLayer && colorSettings.layer
+      ? `layer_${colorSettings.layer}_${resolvedColor}`
+      : `entity_${resolvedColor}`
   }
 }

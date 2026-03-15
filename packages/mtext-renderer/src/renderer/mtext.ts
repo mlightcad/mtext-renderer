@@ -15,6 +15,7 @@ import {
   CharBox,
   CharBoxType,
   ColorSettings,
+  createDefaultColorSettings,
   LineLayout,
   MTextAttachmentPoint,
   MTextData,
@@ -90,10 +91,7 @@ export class MText extends THREE.Object3D {
     style: TextStyle,
     styleManager: StyleManager,
     fontManager: FontManager,
-    colorSettings: ColorSettings = {
-      byLayerColor: 0xffffff,
-      byBlockColor: 0xffffff
-    }
+    colorSettings: ColorSettings = createDefaultColorSettings()
   ) {
     super()
     this._style = style
@@ -101,7 +99,9 @@ export class MText extends THREE.Object3D {
     this._fontManager = fontManager
     this._colorSettings = {
       byLayerColor: colorSettings.byLayerColor,
-      byBlockColor: colorSettings.byBlockColor
+      byBlockColor: colorSettings.byBlockColor,
+      layer: colorSettings.layer,
+      color: colorSettings.color.copy()
     }
     this._box = new THREE.Box3()
     this._layoutData = undefined
@@ -413,6 +413,7 @@ export class MText extends THREE.Object3D {
     context.paragraph.align = horizontalAlignment
     const textLine = new MTextProcessor(
       style,
+      this._colorSettings,
       this.styleManager,
       this.fontManager,
       textLineFormatOptions
