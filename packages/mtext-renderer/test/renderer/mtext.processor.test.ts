@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
+import { MTextColor } from '@mlightcad/mtext-parser'
 
 vi.mock('@mlightcad/mtext-parser', () => {
   class FakeColor {
@@ -58,6 +59,7 @@ vi.mock('@mlightcad/mtext-parser', () => {
   }
 
   return {
+    MTextColor: FakeColor,
     MTextContext,
     MTextParagraphAlignment: {
       DEFAULT: 0,
@@ -118,8 +120,7 @@ function createProcessor(
     textGenerationFlag: 0,
     lastHeight: 24,
     font: 'simkai',
-    bigFont: '',
-    color: 0xffffff
+    bigFont: ''
   }
 
   const options: MTextFormatOptions = {
@@ -134,6 +135,13 @@ function createProcessor(
     removeFontExtension: true,
     collectCharBoxes: false,
     ...optionsOverride
+  }
+
+  const colorSettings = {
+    byBlockColor: options.byBlockColor,
+    byLayerColor: options.byLayerColor,
+    layer: '0',
+    color: new MTextColor(256)
   }
 
   const fontManager = {
@@ -169,6 +177,7 @@ function createProcessor(
 
   const processor = new MTextProcessor(
     style,
+    colorSettings as any,
     styleManager as any,
     fontManager as any,
     options
