@@ -1,20 +1,24 @@
 import { getColorByIndex } from '../common'
 import { ColorSettings } from './types'
 
+function normalizeColorNumber(color: number): number {
+  return Math.max(0, Math.min(0xffffff, Math.round(color)))
+}
+
 export function resolveMTextColor(colorSettings: ColorSettings): number {
   const color = colorSettings.color
   const aci = color.aci
   if (aci === 0) {
-    return colorSettings.byBlockColor
+    return normalizeColorNumber(colorSettings.byBlockColor)
   }
   if (aci === 256) {
-    return colorSettings.byLayerColor
+    return normalizeColorNumber(colorSettings.byLayerColor)
   }
   if (aci !== null && aci !== undefined) {
     return getColorByIndex(aci)
   }
   if (color.rgbValue !== null) {
-    return color.rgbValue
+    return normalizeColorNumber(color.rgbValue)
   }
-  return colorSettings.byLayerColor
+  return normalizeColorNumber(colorSettings.byLayerColor)
 }
