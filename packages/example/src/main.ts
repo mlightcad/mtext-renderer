@@ -85,7 +85,7 @@ class MTextRendererExample {
     // Initialize unified renderer (default to main thread)
     this.unifiedRenderer = new UnifiedRenderer('main', {
       workerUrl: new URL(
-        '../../mtext-renderer/src/worker/index.ts',
+        '../../mtext-renderer/src/worker/mtextWorker.ts',
         import.meta.url
       )
     })
