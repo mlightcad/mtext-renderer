@@ -636,7 +636,7 @@ export class MTextProcessor {
       }
     } else {
       this._currentContext.widthFactor = {
-        value: widthFactor.value * 0.93,
+        value: widthFactor.value * 0.85,
         isRelative: false
       }
     }
