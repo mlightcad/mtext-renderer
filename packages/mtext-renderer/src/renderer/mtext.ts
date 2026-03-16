@@ -15,6 +15,7 @@ import {
   CharBox,
   CharBoxType,
   ColorSettings,
+  createDefaultColorSettings,
   LineLayout,
   MTextAttachmentPoint,
   MTextData,
@@ -90,10 +91,7 @@ export class MText extends THREE.Object3D {
     style: TextStyle,
     styleManager: StyleManager,
     fontManager: FontManager,
-    colorSettings: ColorSettings = {
-      byLayerColor: 0xffffff,
-      byBlockColor: 0xffffff
-    }
+    colorSettings: ColorSettings = createDefaultColorSettings()
   ) {
     super()
     this._style = style
@@ -101,7 +99,9 @@ export class MText extends THREE.Object3D {
     this._fontManager = fontManager
     this._colorSettings = {
       byLayerColor: colorSettings.byLayerColor,
-      byBlockColor: colorSettings.byBlockColor
+      byBlockColor: colorSettings.byBlockColor,
+      layer: colorSettings.layer,
+      color: colorSettings.color.copy()
     }
     this._box = new THREE.Box3()
     this._layoutData = undefined
@@ -376,13 +376,14 @@ export class MText extends THREE.Object3D {
       }
     }
 
-    const defaultFontSize = mtextData.height || 0
+    const defaultFontSize = mtextData.height || style.fixedTextHeight || 0
+    const defaultWidthFactor = mtextData.widthFactor || style.widthFactor || 1.0
     const defaultLineSpaceFactor = mtextData.lineSpaceFactor || 0.3
     const flowDirection =
       mtextData.drawingDirection ?? MTextFlowDirection.LEFT_TO_RIGHT
     const textLineFormatOptions: MTextFormatOptions = {
       fontSize: defaultFontSize,
-      widthFactor: mtextData.widthFactor ?? 1,
+      widthFactor: defaultWidthFactor,
       lineSpaceFactor: defaultLineSpaceFactor,
       horizontalAlignment: horizontalAlignment,
       maxWidth: maxWidth,
@@ -396,7 +397,7 @@ export class MText extends THREE.Object3D {
     const context = new MTextContext()
     context.fontFace.family = style.font
     context.capHeight = {
-      value: mtextData.height ?? style.fixedTextHeight,
+      value: defaultFontSize,
       isRelative: false
     }
     // Absolute value (\Wvalue;)
@@ -406,13 +407,14 @@ export class MText extends THREE.Object3D {
     // – Multiplies the current width factor by the specified value, scaling it relative to
     // the existing width setting.
     context.widthFactor = {
-      value: mtextData.widthFactor ?? style.widthFactor,
+      value: defaultWidthFactor,
       isRelative: false
     }
     context.align = verticalAlignment
     context.paragraph.align = horizontalAlignment
     const textLine = new MTextProcessor(
       style,
+      this._colorSettings,
       this.styleManager,
       this.fontManager,
       textLineFormatOptions

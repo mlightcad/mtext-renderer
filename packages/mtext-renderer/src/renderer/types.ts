@@ -1,3 +1,4 @@
+import { MTextColor } from '@mlightcad/mtext-parser'
 import * as THREE from 'three'
 
 /**
@@ -125,22 +126,32 @@ export enum CharBoxType {
  */
 export const STACK_DIVIDER_CHAR = '\uE000'
 
-export interface StyleTraits {
-  /**
-   * Optional layer name. Material is identified by layer and color. So it means different
-   * materials are created for the same color and differnt layer.
-   */
+/**
+ * Defines color settings for text rendering, including layer/material resolution
+ * and ByLayer/ByBlock fallback colors.
+ */
+export interface ColorSettings {
+  /** The color value to use when text is set to "by layer" color mode */
+  byLayerColor: number
+  /** The color value to use when text is set to "by block" color mode */
+  byBlockColor: number
+  /** Optional layer name used when resolving materials */
   layer?: string
   /**
-   * The color of material
+   * Default text color. Use `MTextColor.aci === 256` to indicate ByLayer.
    */
-  color: number
-  /**
-   * One flag to indicate whether the color is by layer. If it is true, it means that the
-   * material become invalid once layer color changed.
-   */
-  isByLayer?: boolean
+  color: MTextColor
 }
+
+/**
+ * Create default color settings (ByLayer + white fallback).
+ */
+export const createDefaultColorSettings = (): ColorSettings => ({
+  byLayerColor: 0xffffff,
+  byBlockColor: 0xffffff,
+  layer: '0',
+  color: new MTextColor()
+})
 
 /**
  * Represents the data structure for multiline text (MText) entities.
@@ -176,7 +187,7 @@ export interface MTextData {
  * This interface contains properties that control various aspects of text rendering including font,
  * dimensions, and display characteristics.
  */
-export interface TextStyle extends StyleTraits {
+export interface TextStyle {
   /** The unique name identifier for this text style */
   name: string
   /** Flag indicating standard text style settings. Controls various text generation behaviors */
@@ -197,16 +208,4 @@ export interface TextStyle extends StyleTraits {
   bigFont: string
   /** Optional extended font settings or alternative font specification */
   extendedFont?: string
-}
-
-/**
- * Defines the default color settings for special color modes in text rendering.
- * These settings are used to resolve color values when text uses layer-dependent
- * or block-dependent coloring.
- */
-export interface ColorSettings {
-  /** The color value to use when text is set to "by layer" color mode */
-  byLayerColor: number
-  /** The color value to use when text is set to "by block" color mode */
-  byBlockColor: number
 }

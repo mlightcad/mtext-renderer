@@ -10,10 +10,12 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 
 import { getColorByIndex } from '../common'
 import { FontManager } from '../font'
+import { resolveMTextColor } from './colorUtils'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
   CharBoxType,
+  ColorSettings,
   LineLayout,
   MTextFlowDirection,
   STACK_DIVIDER_CHAR,
@@ -172,6 +174,7 @@ class RenderContext extends MTextContext {
  */
 export class MTextProcessor {
   private _style: TextStyle
+  private _colorSettings: ColorSettings
   private _styleManager: StyleManager
   private _fontManager: FontManager
   private _options: MTextFormatOptions
@@ -213,11 +216,13 @@ export class MTextProcessor {
    */
   constructor(
     style: TextStyle,
+    colorSettings: ColorSettings,
     styleManager: StyleManager,
     fontManager: FontManager,
     options: MTextFormatOptions
   ) {
     this._style = style
+    this._colorSettings = colorSettings
     this._styleManager = styleManager
     this._fontManager = fontManager
     this._options = options
@@ -240,7 +245,7 @@ export class MTextProcessor {
       )
     })
     // Set initial color
-    this._currentContext.setColorFromHex(style.color)
+    this._currentContext.setColorFromHex(this.resolveBaseColor())
     // Set initial font face
     this._currentContext.fontFace.family = this.textStyle.font.toLowerCase()
     // Set initial width factor
@@ -631,7 +636,7 @@ export class MTextProcessor {
       }
     } else {
       this._currentContext.widthFactor = {
-        value: widthFactor.value * 0.93,
+        value: widthFactor.value * 0.85,
         isRelative: false
       }
     }
@@ -1756,18 +1761,14 @@ export class MTextProcessor {
     charBoxType: CharBoxType
   ) {
     const meshGroup = new THREE.Group()
-    const color = this._currentContext.getColorAsHex()
 
-    const meshMaterial = this.styleManager.getMeshBasicMaterial({
-      layer: this._style.layer,
-      isByLayer: this._style.isByLayer,
-      color
-    })
-    const lineMaterial = this.styleManager.getLineBasicMaterial({
-      layer: this._style.layer,
-      isByLayer: this._style.isByLayer,
-      color
-    })
+    const materialColorSettings = this.getMaterialColorSettings()
+    const meshMaterial = this.styleManager.getMeshBasicMaterial(
+      materialColorSettings
+    )
+    const lineMaterial = this.styleManager.getLineBasicMaterial(
+      materialColorSettings
+    )
 
     const shouldCollectCharBoxes = this._options.collectCharBoxes !== false
 
@@ -1822,5 +1823,18 @@ export class MTextProcessor {
 
   private changeFontHeight(value: number) {
     this.calcuateLineParams(value)
+  }
+
+  private resolveBaseColor(): number {
+    return resolveMTextColor(this._colorSettings)
+  }
+
+  private getMaterialColorSettings(): ColorSettings {
+    return {
+      byLayerColor: this._colorSettings.byLayerColor,
+      byBlockColor: this._colorSettings.byBlockColor,
+      layer: this._colorSettings.layer,
+      color: this._currentContext.color.copy()
+    }
   }
 }

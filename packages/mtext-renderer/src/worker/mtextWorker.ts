@@ -1,3 +1,4 @@
+import { MTextColor } from '@mlightcad/mtext-parser'
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
@@ -49,6 +50,7 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
           textStyle: TextStyle
           colorSettings: ColorSettings
         }
+        const normalizedColorSettings = normalizeColorSettings(colorSettings)
 
         // Create MText instance and draw (loads fonts on demand)
         let mtext = new MText(
@@ -56,7 +58,7 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
           textStyle,
           styleManager,
           fontManager,
-          colorSettings
+          normalizedColorSettings
         )
         await mtext.asyncDraw()
         mtext.updateMatrixWorld(true)
@@ -132,6 +134,39 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
     } as WorkerResponse)
   }
 })
+
+function normalizeColorSettings(colorSettings: ColorSettings): ColorSettings {
+  const fallback: ColorSettings = {
+    byLayerColor: 0xffffff,
+    byBlockColor: 0xffffff,
+    layer: '0',
+    color: new MTextColor()
+  }
+
+  const base = colorSettings ?? fallback
+  const incomingColor = base.color as unknown
+  if (incomingColor instanceof MTextColor) {
+    return base
+  }
+
+  const revived = new MTextColor()
+  if (incomingColor && typeof incomingColor === 'object') {
+    const partial = incomingColor as { aci?: number; rgbValue?: number }
+    if (typeof partial.aci === 'number') {
+      revived.aci = partial.aci
+    }
+    if (typeof partial.rgbValue === 'number') {
+      revived.rgbValue = partial.rgbValue
+    }
+  }
+
+  return {
+    byLayerColor: base.byLayerColor,
+    byBlockColor: base.byBlockColor,
+    layer: base.layer,
+    color: revived
+  }
+}
 
 // Serialize MText object for transfer to main thread using JSON and transferable objects
 function serializeMText(mtext: MText): {

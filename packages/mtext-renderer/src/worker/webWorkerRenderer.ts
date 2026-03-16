@@ -1,3 +1,4 @@
+import { MTextColor } from '@mlightcad/mtext-parser'
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
@@ -8,6 +9,7 @@ import {
   CharBox,
   CharBoxType,
   ColorSettings,
+  createDefaultColorSettings,
   LineLayout,
   MTextData,
   MTextLayout,
@@ -411,10 +413,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   async asyncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = {
-      byLayerColor: 0xffffff,
-      byBlockColor: 0xffffff
-    }
+    colorSettings: ColorSettings = createDefaultColorSettings()
   ): Promise<MTextObject> {
     await this.ensureInitialized()
 
@@ -426,7 +425,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       data: { mtextContent, textStyle, colorSettings }
     })
 
-    return this.reconstructMText(serialized, textStyle)
+    return this.reconstructMText(serialized, colorSettings)
   }
 
   /**
@@ -436,10 +435,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   syncRenderMText(
     _mtextContent: MTextData,
     _textStyle: TextStyle,
-    _colorSettings: ColorSettings = {
-      byLayerColor: 0xffffff,
-      byBlockColor: 0xffffff
-    }
+    _colorSettings: ColorSettings = createDefaultColorSettings()
   ): MTextObject {
     throw new Error(
       'Fuction \'syncRenderMText\' isn\'t supported in \'WebWorkerRenderer\'!'
@@ -480,8 +476,9 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
    */
   reconstructMText(
     serializedData: SerializedMText,
-    textStyle: TextStyle
+    colorSettings: ColorSettings
   ): MTextObject {
+    const baseByLayer = colorSettings.color.aci === 256
     const group = new THREE.Group()
 
     // Reconstruct all child objects
@@ -529,10 +526,13 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       // Create material using StyleManager for proper material reuse
       let material: THREE.Material
       if (childData.type === 'mesh') {
+        const materialColorSettings = this.buildMaterialColorSettings(
+          colorSettings,
+          childData.material.color,
+          baseByLayer
+        )
         material = this.defaultStyleManager.getMeshBasicMaterial({
-          layer: textStyle.layer,
-          isByLayer: textStyle.isByLayer,
-          color: childData.material.color
+          ...materialColorSettings
         })
         // Apply additional properties if they differ from defaults
         if (childData.material.transparent !== undefined) {
@@ -545,10 +545,13 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
           material.side = childData.material.side as THREE.Side
         }
       } else {
+        const materialColorSettings = this.buildMaterialColorSettings(
+          colorSettings,
+          childData.material.color,
+          baseByLayer
+        )
         material = this.defaultStyleManager.getLineBasicMaterial({
-          layer: textStyle.layer,
-          isByLayer: textStyle.isByLayer,
-          color: childData.material.color
+          ...materialColorSettings
         })
         // Apply additional properties if they differ from defaults
         if (childData.material.transparent !== undefined) {
@@ -645,6 +648,26 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     }
 
     return mtextObject
+  }
+
+  private buildMaterialColorSettings(
+    base: ColorSettings,
+    resolvedColor: number,
+    baseByLayer: boolean
+  ): ColorSettings {
+    const color = new MTextColor()
+    if (baseByLayer && resolvedColor === base.byLayerColor) {
+      color.aci = 256
+    } else {
+      color.rgbValue = resolvedColor
+    }
+
+    return {
+      byLayerColor: base.byLayerColor,
+      byBlockColor: base.byBlockColor,
+      layer: base.layer,
+      color
+    }
   }
 
   private deserializeCharBoxes(serialized: SerializedCharBox[]): CharBox[] {

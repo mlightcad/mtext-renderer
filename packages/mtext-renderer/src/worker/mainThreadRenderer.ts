@@ -2,7 +2,12 @@ import { FontManager } from '../font'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { MText } from '../renderer/mtext'
 import { StyleManager } from '../renderer/styleManager'
-import { ColorSettings, MTextData, TextStyle } from '../renderer/types'
+import {
+  ColorSettings,
+  createDefaultColorSettings,
+  MTextData,
+  TextStyle
+} from '../renderer/types'
 import { MTextBaseRenderer, MTextObject } from './baseRenderer'
 
 /**
@@ -45,10 +50,7 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   async asyncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = {
-      byLayerColor: 0xffffff,
-      byBlockColor: 0xffffff
-    }
+    colorSettings: ColorSettings = createDefaultColorSettings()
   ): Promise<MTextObject> {
     await this.ensureInitialized()
     const mtext = new MText(
@@ -70,10 +72,7 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   syncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = {
-      byLayerColor: 0xffffff,
-      byBlockColor: 0xffffff
-    }
+    colorSettings: ColorSettings = createDefaultColorSettings()
   ): MTextObject {
     const mtext = new MText(
       mtextContent,

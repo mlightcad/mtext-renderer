@@ -332,7 +332,7 @@ classDiagram
 
 ```typescript
 import * as THREE from 'three';
-import { FontManager, MText, StyleManager } from '@mlightcad/mtext-renderer';
+import { FontManager, MText, MTextColor, StyleManager } from '@mlightcad/mtext-renderer';
 
 // Initialize core components
 const fontManager = FontManager.instance;
@@ -349,6 +349,13 @@ const mtextContent = {
   position: new THREE.Vector3(0, 0, 0),
 };
 
+const colorSettings = {
+  layer: '0',
+  color: new MTextColor(256),
+  byLayerColor: 0xffffff,
+  byBlockColor: 0xffffff,
+};
+
 // Create MText instance with style
 const mtext = new MText(
   mtextContent,
@@ -362,10 +369,10 @@ const mtext = new MText(
     lastHeight: 0.1,
     font: 'Standard',
     bigFont: '',
-    color: 0xffffff,
   },
   styleManager,
-  fontManager
+  fontManager,
+  colorSettings
 );
 
 // Build geometry and load fonts on demand
@@ -381,7 +388,14 @@ scene.add(mtext);
 // Ensure required fonts are loaded beforehand
 await fontManager.loadFontsByNames(['simsun']);
 
-const mtext = new MText(mtextContent, textStyle, styleManager, fontManager);
+const colorSettings = {
+  layer: '0',
+  color: new MTextColor(256),
+  byLayerColor: 0xffffff,
+  byBlockColor: 0xffffff,
+};
+
+const mtext = new MText(mtextContent, textStyle, styleManager, fontManager, colorSettings);
 
 // Build geometry synchronously (no awaits here)
 mtext.syncDraw();
@@ -393,16 +407,23 @@ scene.add(mtext);
 ### Using MainThreadRenderer
 
 ```typescript
-import { MainThreadRenderer } from '@mlightcad/mtext-renderer';
+import { MainThreadRenderer, MTextColor } from '@mlightcad/mtext-renderer';
 
 // Create main thread renderer
 const renderer = new MainThreadRenderer();
+
+const colorSettings = {
+  layer: '0',
+  color: new MTextColor(256),
+  byLayerColor: 0xffffff,
+  byBlockColor: 0xffffff,
+};
 
 // Render MText content asynchronously (fonts are loaded on demand)
 const mtextObject = await renderer.asyncRenderMText(
   mtextContent,
   textStyle,
-  { byLayerColor: 0xffffff, byBlockColor: 0xffffff }
+  colorSettings
 );
 
 // Add to scene
@@ -413,7 +434,7 @@ scene.add(mtextObject);
 const syncObject = renderer.syncRenderMText(
   mtextContent,
   textStyle,
-  { byLayerColor: 0xffffff, byBlockColor: 0xffffff }
+  colorSettings
 );
 scene.add(syncObject);
 ```
@@ -421,10 +442,17 @@ scene.add(syncObject);
 ### Using WebWorkerRenderer
 
 ```typescript
-import { WebWorkerRenderer } from '@mlightcad/mtext-renderer';
+import { WebWorkerRenderer, MTextColor } from '@mlightcad/mtext-renderer';
 
 // Create worker renderer with custom pool size
 const workerRenderer = new WebWorkerRenderer({ poolSize: 4 }); // 4 workers
+
+const colorSettings = {
+  layer: '0',
+  color: new MTextColor(256),
+  byLayerColor: 0xffffff,
+  byBlockColor: 0xffffff,
+};
 
 // Optionally preload fonts once via a coordinator to avoid duplicate concurrent loads
 // await workerRenderer.loadFonts(['simsun', 'arial']);
@@ -433,7 +461,7 @@ const workerRenderer = new WebWorkerRenderer({ poolSize: 4 }); // 4 workers
 const mtextObject = await workerRenderer.asyncRenderMText(
   mtextContent,
   textStyle,
-  { byLayerColor: 0xffffff, byBlockColor: 0xffffff }
+  colorSettings
 );
 
 // Add to scene
@@ -448,16 +476,23 @@ Note: Synchronous rendering is not supported in worker mode.
 ### Using UnifiedRenderer
 
 ```typescript
-import { UnifiedRenderer } from '@mlightcad/mtext-renderer';
+import { UnifiedRenderer, MTextColor } from '@mlightcad/mtext-renderer';
 
 // Create unified renderer with default mode 'main' (optional worker config as second param)
 const unifiedRenderer = new UnifiedRenderer('main');
+
+const colorSettings = {
+  layer: '0',
+  color: new MTextColor(256),
+  byLayerColor: 0xffffff,
+  byBlockColor: 0xffffff,
+};
 
 // Render using default mode (main) asynchronously (fonts loaded on demand)
 let mtextObject = await unifiedRenderer.asyncRenderMText(
   mtextContent,
   textStyle,
-  { byLayerColor: 0xffffff, byBlockColor: 0xffffff }
+  colorSettings
 );
 
 scene.add(mtextObject);
@@ -470,7 +505,7 @@ unifiedRenderer.setDefaultMode('worker');
 mtextObject = await unifiedRenderer.asyncRenderMText(
   heavyMtextContent,
   textStyle,
-  { byLayerColor: 0xffffff, byBlockColor: 0xffffff },
+  colorSettings,
   'worker'
 );
 

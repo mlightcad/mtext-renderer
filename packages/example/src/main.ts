@@ -2,6 +2,7 @@ import {
   CharBox,
   CharBoxType,
   LineLayout,
+  MTextColor,
   MTextData,
   MTextObject,
   RenderMode,
@@ -33,6 +34,7 @@ class MTextRendererExample {
   private renderModeSelect: HTMLSelectElement
   private byLayerColorInput: HTMLInputElement
   private byBlockColorInput: HTMLInputElement
+  private readonly defaultLayerName = '0'
 
   // Example texts
   private readonly exampleTexts = {
@@ -83,7 +85,7 @@ class MTextRendererExample {
     // Initialize unified renderer (default to main thread)
     this.unifiedRenderer = new UnifiedRenderer('main', {
       workerUrl: new URL(
-        '../../mtext-renderer/src/worker/index.ts',
+        '../../mtext-renderer/src/worker/mtextWorker.ts',
         import.meta.url
       )
     })
@@ -436,8 +438,7 @@ class MTextRendererExample {
           textGenerationFlag: 0,
           lastHeight: 24,
           font: this.fontSelect.value,
-          bigFont: '',
-          color: 0xffffff
+          bigFont: ''
         }
       }
     })
@@ -626,10 +627,12 @@ class MTextRendererExample {
     return Number.isFinite(parsed) ? parsed : fallback
   }
 
-  private getColorSettings(): { byLayerColor: number; byBlockColor: number } {
+  private getColorSettings() {
     return {
       byLayerColor: this.parseColorInput(this.byLayerColorInput, 0xffffff),
-      byBlockColor: this.parseColorInput(this.byBlockColorInput, 0xffffff)
+      byBlockColor: this.parseColorInput(this.byBlockColorInput, 0xffffff),
+      layer: this.defaultLayerName,
+      color: new MTextColor(256)
     }
   }
 
@@ -738,8 +741,7 @@ class MTextRendererExample {
           textGenerationFlag: 0,
           lastHeight: 24,
           font: this.fontSelect.value,
-          bigFont: '',
-          color: 0xffffff
+          bigFont: ''
         }
 
         // Render MText using unified renderer
