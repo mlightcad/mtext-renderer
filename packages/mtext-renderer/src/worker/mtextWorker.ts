@@ -135,6 +135,24 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
   }
 })
 
+/**
+ * Normalize `ColorSettings` coming from the main thread so it is safe to use
+ * inside the worker.
+ *
+ * Why this exists:
+ * - `MTextColor` is a class with getters/setters (`aci`, `rgbValue`) and methods.
+ * - When data crosses the `postMessage` boundary, class instances are
+ *   structured-cloned into plain objects.
+ * - For `MTextColor`, the clone only keeps its internal fields (`_aci`,
+ *   `_rgbValue`) and loses the prototype, accessors, and all methods.
+ *
+ * That means downstream code sees a plain object and can no longer rely on
+ * `instanceof MTextColor`, nor on the `aci` / `rgbValue` properties behaving
+ * correctly. We "revive" the object by constructing a new `MTextColor` and
+ * re-applying the preserved internal values, restoring the proper prototype and
+ * behavior. This is critical inside the worker because rendering logic expects
+ * a real `MTextColor` instance, not a plain object.
+ */
 function normalizeColorSettings(colorSettings: ColorSettings): ColorSettings {
   const fallback: ColorSettings = {
     byLayerColor: 0xffffff,
@@ -151,12 +169,12 @@ function normalizeColorSettings(colorSettings: ColorSettings): ColorSettings {
 
   const revived = new MTextColor()
   if (incomingColor && typeof incomingColor === 'object') {
-    const partial = incomingColor as { aci?: number; rgbValue?: number }
-    if (typeof partial.aci === 'number') {
-      revived.aci = partial.aci
+    const partial = incomingColor as { _aci?: number; _rgbValue?: number }
+    if (typeof partial._aci === 'number') {
+      revived.aci = partial._aci
     }
-    if (typeof partial.rgbValue === 'number') {
-      revived.rgbValue = partial.rgbValue
+    if (typeof partial._rgbValue === 'number') {
+      revived.rgbValue = partial._rgbValue
     }
   }
 
