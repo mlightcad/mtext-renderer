@@ -658,6 +658,8 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     const color = new MTextColor()
     if (baseByLayer && resolvedColor === base.byLayerColor) {
       color.aci = 256
+    } else if (base.color.isAci && base.color.aci !== null) {
+      color.aci = base.color.aci
     } else {
       color.rgbValue = resolvedColor
     }
