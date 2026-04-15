@@ -40,11 +40,18 @@ export class UnifiedRenderer {
   }
 
   /**
-   * Sets one new style manager to override the default style manager
+   * Sets one new style manager to override the default style manager.
+   *
+   * Both renderers receive the override so that `syncRenderMText`
+   * (which always uses `mainThreadRenderer`) and `asyncRenderMText`
+   * (which may use either renderer) produce materials from the same
+   * manager.
+   *
    * @param value - New style manager
    */
   setStyleManager(value: StyleManager) {
-    this.renderer.styleManager = value
+    this.mainThreadRenderer.styleManager = value
+    this.webWorkerRenderer.styleManager = value
   }
 
   /**
