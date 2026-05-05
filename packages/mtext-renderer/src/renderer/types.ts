@@ -41,6 +41,13 @@ export enum MTextFlowDirection {
 
 /**
  * Anchor position used to align rendered MText relative to its insertion point.
+ *
+ * Values 1-9 mirror DXF MText attachment points (group code 71). Values
+ * 10-12 are extensions used for AutoCAD TEXT/ATTRIB entities whose vertical
+ * alignment is the typographic baseline (DXF group 73 = 0). The baseline
+ * sits slightly above the bbox bottom by the descender height; using
+ * `Bottom*` for these cases offsets the text by the descender (~10% of cap
+ * height for SHX fonts).
  */
 export enum MTextAttachmentPoint {
   /** Top-left corner. */
@@ -60,7 +67,13 @@ export enum MTextAttachmentPoint {
   /** Bottom-center point. */
   BottomCenter = 8,
   /** Bottom-right corner. */
-  BottomRight = 9
+  BottomRight = 9,
+  /** Baseline-left point (for DXF TEXT/ATTRIB with valign=BASELINE). */
+  BaselineLeft = 10,
+  /** Baseline-center point. */
+  BaselineCenter = 11,
+  /** Baseline-right point. */
+  BaselineRight = 12
 }
 
 /**

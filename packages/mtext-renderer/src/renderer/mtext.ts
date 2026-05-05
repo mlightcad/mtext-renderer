@@ -272,7 +272,20 @@ export class MText extends THREE.Object3D {
       object.matrix.compose(tempVector, tempQuaternion, tempScale)
     }
 
-    const width = mtextData.width
+    // When the caller does not pre-declare the text width (e.g. AcDbText
+    // and AcDbAttribute, which let the renderer's own font metrics drive
+    // layout), `mtextData.width` is `Infinity`. Using that value verbatim
+    // in `calculateAnchorPoint` would yield NaN for any centered/right
+    // attachment. Measure the bbox of the just-built object so the anchor
+    // is computed from the *real* rendered glyph extent — independent of
+    // font, kerning, or character composition.
+    let width = mtextData.width
+    if (!Number.isFinite(width)) {
+      object.updateWorldMatrix(true, true)
+      const bbox = new THREE.Box3().setFromObject(object)
+      const measured = bbox.max.x - bbox.min.x
+      width = Number.isFinite(measured) && measured > 0 ? measured : 0
+    }
     const anchorPoint = this.calculateAnchorPoint(
       width,
       height,
@@ -354,24 +367,68 @@ export class MText extends THREE.Object3D {
     }
 
     const maxWidth = mtextData.width || 0
+    // Internal paragraph alignment: only meaningful for multi-line MText
+    // with a declared FINITE `width`. For unconstrained text (Infinity,
+    // used by AcDbText/AcDbAttribute), forcing LEFT avoids generating
+    // `Infinity - size.x` in the CENTER/RIGHT/DISTRIBUTED branches of the
+    // layout pass — which translates to `geometry.translate(Infinity,…)`
+    // and contaminates every vertex with NaN.
+    const widthIsFinite = Number.isFinite(maxWidth) && maxWidth > 0
     let horizontalAlignment = MTextParagraphAlignment.LEFT
-    if (mtextData.width && mtextData.attachmentPoint) {
-      if ([1, 4, 7].includes(mtextData.attachmentPoint)) {
+    if (widthIsFinite && mtextData.attachmentPoint) {
+      // Left column: TopLeft, MiddleLeft, BottomLeft, BaselineLeft
+      if (
+        [
+          MTextAttachmentPoint.TopLeft,
+          MTextAttachmentPoint.MiddleLeft,
+          MTextAttachmentPoint.BottomLeft,
+          MTextAttachmentPoint.BaselineLeft
+        ].includes(mtextData.attachmentPoint)
+      ) {
         horizontalAlignment = MTextParagraphAlignment.LEFT
-      } else if ([2, 5, 8].includes(mtextData.attachmentPoint)) {
+      } else if (
+        [
+          MTextAttachmentPoint.TopCenter,
+          MTextAttachmentPoint.MiddleCenter,
+          MTextAttachmentPoint.BottomCenter,
+          MTextAttachmentPoint.BaselineCenter
+        ].includes(mtextData.attachmentPoint)
+      ) {
         horizontalAlignment = MTextParagraphAlignment.CENTER
-      } else if ([3, 6, 9].includes(mtextData.attachmentPoint)) {
+      } else if (
+        [
+          MTextAttachmentPoint.TopRight,
+          MTextAttachmentPoint.MiddleRight,
+          MTextAttachmentPoint.BottomRight,
+          MTextAttachmentPoint.BaselineRight
+        ].includes(mtextData.attachmentPoint)
+      ) {
         horizontalAlignment = MTextParagraphAlignment.RIGHT
       }
     }
 
     let verticalAlignment = MTextLineAlignment.BOTTOM
     if (mtextData.attachmentPoint) {
-      if ([1, 2, 3].includes(mtextData.attachmentPoint)) {
+      if (
+        [
+          MTextAttachmentPoint.TopLeft,
+          MTextAttachmentPoint.TopCenter,
+          MTextAttachmentPoint.TopRight
+        ].includes(mtextData.attachmentPoint)
+      ) {
         verticalAlignment = MTextLineAlignment.TOP
-      } else if ([4, 5, 6].includes(mtextData.attachmentPoint)) {
+      } else if (
+        [
+          MTextAttachmentPoint.MiddleLeft,
+          MTextAttachmentPoint.MiddleCenter,
+          MTextAttachmentPoint.MiddleRight
+        ].includes(mtextData.attachmentPoint)
+      ) {
         verticalAlignment = MTextLineAlignment.MIDDLE
-      } else if ([7, 8, 9].includes(mtextData.attachmentPoint)) {
+      } else {
+        // Bottom* and Baseline* both map to BOTTOM internally — the
+        // baseline-vs-bottom distinction is only meaningful for the
+        // anchor offset, not the line layout pass.
         verticalAlignment = MTextLineAlignment.BOTTOM
       }
     }
@@ -449,48 +506,45 @@ export class MText extends THREE.Object3D {
       anchorY = 0
     switch (attachmentPoint) {
       case undefined:
-      case 1:
-        // Top Left
+      case MTextAttachmentPoint.TopLeft:
         anchorX = 0
         anchorY = 0
         break
-      case 2:
-        // Top Center
+      case MTextAttachmentPoint.TopCenter:
         anchorX -= width / 2
         anchorY = 0
         break
-      case 3:
-        // Top Right
+      case MTextAttachmentPoint.TopRight:
         anchorX -= width
         anchorY = 0
         break
-      case 4:
-        // Middle Left
+      case MTextAttachmentPoint.MiddleLeft:
         anchorX = 0
         anchorY += height / 2
         break
-      case 5:
-        // Middle Center
+      case MTextAttachmentPoint.MiddleCenter:
         anchorX -= width / 2
         anchorY += height / 2
         break
-      case 6:
-        // Middle Right
+      case MTextAttachmentPoint.MiddleRight:
         anchorX -= width
         anchorY += height / 2
         break
-      case 7:
-        // Bottom Left
+      case MTextAttachmentPoint.BottomLeft:
+      case MTextAttachmentPoint.BaselineLeft:
+        // Baseline ≈ Bottom for SHX/single-line text where descender is
+        // negligible. Treating them identically keeps the public API
+        // expressive without requiring per-font descender metrics.
         anchorX = 0
         anchorY += height
         break
-      case 8:
-        // Bottom Center
+      case MTextAttachmentPoint.BottomCenter:
+      case MTextAttachmentPoint.BaselineCenter:
         anchorX -= width / 2
         anchorY += height
         break
-      case 9:
-        // Bottom Right
+      case MTextAttachmentPoint.BottomRight:
+      case MTextAttachmentPoint.BaselineRight:
         anchorX -= width
         anchorY += height
         break
