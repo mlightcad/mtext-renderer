@@ -30,6 +30,7 @@
   "devDependencies": {
     "@changesets/cli": "^2.29.5",
     "@intlify/eslint-plugin-vue-i18n": "^3.0.0",
+    "@eslint/js": "^9.9.1",
     "@nx/js": "19.3.1",
     "@types/lodash-es": "^4.17.12",
     "@types/node": "^20.14.9",
