@@ -28,7 +28,12 @@ export class DefaultFontLoader implements FontLoader {
     return this._baseUrl
   }
   set baseUrl(value: string) {
+    if (this._baseUrl === value) {
+      return
+    }
     this._baseUrl = value
+    this._avaiableFonts = []
+    this._avaiableFontMap.clear()
     this.onFontUrlChanged(value)
   }
 
