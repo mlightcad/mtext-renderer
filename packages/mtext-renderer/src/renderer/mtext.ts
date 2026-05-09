@@ -260,7 +260,10 @@ export class MText extends THREE.Object3D {
    * @returns The created Three.js object, or undefined if creation fails
    */
   private loadMText(mtextData: MTextData, style: TextStyle) {
-    const { object, height } = this.createMTextGroup(mtextData, style)
+    const { object, height: layoutHeight } = this.createMTextGroup(
+      mtextData,
+      style
+    )
     if (!object) {
       return undefined
     }
@@ -280,9 +283,16 @@ export class MText extends THREE.Object3D {
     // is computed from the *real* rendered glyph extent — independent of
     // font, kerning, or character composition.
     let width = mtextData.width
+    let height = layoutHeight
+    object.updateWorldMatrix(true, true)
+    const bbox = new THREE.Box3().setFromObject(object)
+    if (!bbox.isEmpty()) {
+      const measuredHeight = bbox.max.y - bbox.min.y
+      if (Number.isFinite(measuredHeight) && measuredHeight > 0) {
+        height = measuredHeight
+      }
+    }
     if (!Number.isFinite(width)) {
-      object.updateWorldMatrix(true, true)
-      const bbox = new THREE.Box3().setFromObject(object)
       const measured = bbox.max.x - bbox.min.x
       width = Number.isFinite(measured) && measured > 0 ? measured : 0
     }

@@ -109,7 +109,8 @@ type FakeFontType = 'mesh' | 'shx'
 
 function createProcessor(
   fontType: FakeFontType = 'mesh',
-  optionsOverride: Partial<MTextFormatOptions> = {}
+  optionsOverride: Partial<MTextFormatOptions> = {},
+  fontScaleFactor = 1
 ) {
   const style: TextStyle = {
     name: 'default',
@@ -145,7 +146,7 @@ function createProcessor(
   }
 
   const fontManager = {
-    getFontScaleFactor: () => 1,
+    getFontScaleFactor: () => fontScaleFactor,
     getFontType: () => fontType,
     findAndReplaceFont: (name: string) => name,
     getCharShape: (char: string) => {
@@ -517,6 +518,38 @@ describe('MTextProcessor format state', () => {
     expect(lines).toHaveLength(1)
     expect(lines[0].height).toBeCloseTo(processor.currentLineHeight, 3)
     expect(lines[0].y).toBeCloseTo(-6, 3)
+  })
+
+  it('keeps glyph placement height separate from scaled line advance', () => {
+    const { processor } = createProcessor('mesh', {}, 2)
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'A' }
+    ] as any)
+    const lines = getLineLayouts(obj)
+
+    expect(processor.currentFontSize).toBeCloseTo(48, 3)
+    expect(processor.currentLayoutFontSize).toBeCloseTo(24, 3)
+    expect(processor.currentLineHeight).toBeCloseTo(72, 3)
+    expect(processor.totalHeight).toBeCloseTo(48, 3)
+    expect(lines[0].height).toBeCloseTo(72, 3)
+    expect(lines[0].y).toBeCloseTo(12, 3)
+  })
+
+  it('preserves scaled line advance for multiline text', () => {
+    const { processor } = createProcessor('mesh', {}, 2)
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'A' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_WORD, ctx: null, data: 'B' }
+    ] as any)
+    const lines = getLineLayouts(obj)
+
+    expect(lines).toHaveLength(2)
+    expect(lines[0].height).toBeCloseTo(72, 3)
+    expect(lines[1].height).toBeCloseTo(72, 3)
+    expect(lines[0].y - lines[1].y).toBeCloseTo(72, 3)
   })
 
   it('stores line layouts for explicit empty lines', () => {

@@ -358,6 +358,20 @@ export class MTextProcessor {
   }
 
   /**
+   * The drawing-space text height used for layout calculations.
+   *
+   * `currentFontSize` includes a font-specific scale factor so glyph outlines
+   * from different font formats render at comparable visual sizes.  That scale
+   * must not leak into CAD layout metrics such as line height and attachment
+   * offsets, otherwise middle/bottom aligned text shifts vertically depending
+   * on the active font.
+   */
+  get currentLayoutFontSize() {
+    const scaleFactor = this._currentContext.fontScaleFactor || 1
+    return this._currentContext.fontSize / scaleFactor
+  }
+
+  /**
    * The height of current line of texts
    */
   get currentLineHeight() {
@@ -978,7 +992,7 @@ export class MTextProcessor {
     const currentHOffset = this._hOffset
     const currentVOffset = this._vOffset
     const currentWordSpace = this._currentContext.charTrackingFactor.value
-    const currentFontSize = this._currentContext.fontSize
+    const currentLayoutFontSize = this.currentLayoutFontSize
     const currentFontSizeScaleFactor = this._currentContext.fontSizeScaleFactor
 
     // First pass: calculate widths
@@ -1021,8 +1035,8 @@ export class MTextProcessor {
 
         this._hOffset = currentHOffset
         this._vOffset = this.convertTopAlignedVOffset(
-          currentVOffset + currentFontSize * 0.1,
-          this.currentFontSize
+          currentVOffset + currentLayoutFontSize * 0.1,
+          this.currentLayoutFontSize
         )
         for (let i = 0; i < numerator.length; i++) {
           this.processChar(
@@ -1049,8 +1063,8 @@ export class MTextProcessor {
 
         this._hOffset = currentHOffset
         this._vOffset = this.convertTopAlignedVOffset(
-          currentVOffset - currentFontSize * 0.6,
-          this.currentFontSize
+          currentVOffset - currentLayoutFontSize * 0.6,
+          this.currentLayoutFontSize
         )
         for (let i = 0; i < denominator.length; i++) {
           this.processChar(
@@ -1081,8 +1095,8 @@ export class MTextProcessor {
 
       this._hOffset = currentHOffset + numeratorOffset
       this._vOffset = this.convertTopAlignedVOffset(
-        currentVOffset + this.currentFontSize * 0.3,
-        this.currentFontSize
+        currentVOffset + this.currentLayoutFontSize * 0.3,
+        this.currentLayoutFontSize
       )
       for (let i = 0; i < numerator.length; i++) {
         this.processChar(
@@ -1117,8 +1131,8 @@ export class MTextProcessor {
 
       this._hOffset = currentHOffset + denominatorOffset
       this._vOffset = this.convertTopAlignedVOffset(
-        currentVOffset - this.currentFontSize * 0.6,
-        this.currentFontSize
+        currentVOffset - this.currentLayoutFontSize * 0.6,
+        this.currentLayoutFontSize
       )
       for (let i = 0; i < denominator.length; i++) {
         this.processChar(
@@ -1140,12 +1154,12 @@ export class MTextProcessor {
         const lineVertices = new Float32Array([
           currentHOffset,
           currentVOffset -
-            this.currentFontSize * 0.8 +
+            this.currentLayoutFontSize * 0.8 +
             this.defaultFontSize * STACK_VERTICAL_SHIFT_FACTOR,
           0,
           currentHOffset + fractionWidth,
           currentVOffset -
-            this.currentFontSize * 0.8 +
+            this.currentLayoutFontSize * 0.8 +
             this.defaultFontSize * STACK_VERTICAL_SHIFT_FACTOR,
           0
         ])
@@ -1180,7 +1194,7 @@ export class MTextProcessor {
 
     const y =
       currentVOffset -
-      this.currentFontSize * 0.8 +
+      this.currentLayoutFontSize * 0.8 +
       this.defaultFontSize * STACK_VERTICAL_SHIFT_FACTOR
     const box = new THREE.Box3(
       new THREE.Vector3(startX, y, 0),
@@ -1227,12 +1241,12 @@ export class MTextProcessor {
       const charY =
         this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP
           ? this._vOffset
-          : this._vOffset - this.defaultFontSize
+          : this._vOffset - this.currentLayoutFontSize
       const box = new THREE.Box3(
         new THREE.Vector3(charX, charY, 0),
         new THREE.Vector3(
           charX + this._currentContext.blankWidth,
-          charY + this.currentFontSize,
+          charY + this.currentLayoutFontSize,
           0
         )
       )
@@ -1349,9 +1363,9 @@ export class MTextProcessor {
     const charY =
       this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP
         ? this.vOffset
-        : this.vOffset - this.defaultFontSize
+        : this.vOffset - this.currentLayoutFontSize
     const charWidth = shape.width * this.currentWidthFactor
-    const charHeight = this.currentFontSize
+    const charHeight = this.currentLayoutFontSize
 
     geometry.translate(charX, charY, 0)
 
@@ -1476,11 +1490,11 @@ export class MTextProcessor {
     }
     this._currentContext.fontFace.family =
       this.fontManager.findAndReplaceFont(processedFontName)
+    this.calcuateLineParams()
     this._currentContext.blankWidth = this.calculateBlankWidthForFont(
       this._currentContext.fontFace.family,
-      this._currentContext.fontSize
+      this.currentLayoutFontSize
     )
-    this.calcuateLineParams()
   }
 
   /**
