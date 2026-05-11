@@ -361,6 +361,27 @@ describe('MTextProcessor format state', () => {
     expect(chars).toContain(STACK_DIVIDER_CHAR)
   })
 
+  it('positions stack divider with scaled font metrics', () => {
+    const { processor } = createProcessor('mesh', {}, 2)
+    ;(processor as any)._options.collectCharBoxes = true
+
+    const obj = processor.processText([
+      {
+        type: TOKEN_STACK,
+        ctx: null,
+        data: ['1', '2', '/']
+      }
+    ] as any)
+
+    const divider = getAllCharBoxes(obj).find(
+      entry => entry.char === STACK_DIVIDER_CHAR
+    )
+
+    expect(divider).toBeDefined()
+    expect(divider?.box.min.y).toBeCloseTo(-31.2, 3)
+    expect(divider?.box.max.y).toBeCloseTo(-31.2, 3)
+  })
+
   it('treats superscript stack as CHAR and does not add divider marker', () => {
     const { processor } = createProcessor('mesh')
     ;(processor as any)._options.collectCharBoxes = true
