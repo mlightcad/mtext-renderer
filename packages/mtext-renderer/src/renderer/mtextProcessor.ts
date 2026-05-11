@@ -992,7 +992,7 @@ export class MTextProcessor {
     const currentHOffset = this._hOffset
     const currentVOffset = this._vOffset
     const currentWordSpace = this._currentContext.charTrackingFactor.value
-    const currentLayoutFontSize = this.currentLayoutFontSize
+    const currentStackFontSize = this.currentFontSize
     const currentFontSizeScaleFactor = this._currentContext.fontSizeScaleFactor
 
     // First pass: calculate widths
@@ -1035,8 +1035,8 @@ export class MTextProcessor {
 
         this._hOffset = currentHOffset
         this._vOffset = this.convertTopAlignedVOffset(
-          currentVOffset + currentLayoutFontSize * 0.1,
-          this.currentLayoutFontSize
+          currentVOffset + currentStackFontSize * 0.1,
+          this.currentFontSize
         )
         for (let i = 0; i < numerator.length; i++) {
           this.processChar(
@@ -1063,8 +1063,8 @@ export class MTextProcessor {
 
         this._hOffset = currentHOffset
         this._vOffset = this.convertTopAlignedVOffset(
-          currentVOffset - currentLayoutFontSize * 0.6,
-          this.currentLayoutFontSize
+          currentVOffset - currentStackFontSize * 0.6,
+          this.currentFontSize
         )
         for (let i = 0; i < denominator.length; i++) {
           this.processChar(
@@ -1095,8 +1095,8 @@ export class MTextProcessor {
 
       this._hOffset = currentHOffset + numeratorOffset
       this._vOffset = this.convertTopAlignedVOffset(
-        currentVOffset + this.currentLayoutFontSize * 0.3,
-        this.currentLayoutFontSize
+        currentVOffset + this.currentFontSize * 0.3,
+        this.currentFontSize
       )
       for (let i = 0; i < numerator.length; i++) {
         this.processChar(
@@ -1131,8 +1131,8 @@ export class MTextProcessor {
 
       this._hOffset = currentHOffset + denominatorOffset
       this._vOffset = this.convertTopAlignedVOffset(
-        currentVOffset - this.currentLayoutFontSize * 0.6,
-        this.currentLayoutFontSize
+        currentVOffset - this.currentFontSize * 0.6,
+        this.currentFontSize
       )
       for (let i = 0; i < denominator.length; i++) {
         this.processChar(
@@ -1154,12 +1154,12 @@ export class MTextProcessor {
         const lineVertices = new Float32Array([
           currentHOffset,
           currentVOffset -
-            this.currentLayoutFontSize * 0.8 +
+            this.currentFontSize * 0.8 +
             this.defaultFontSize * STACK_VERTICAL_SHIFT_FACTOR,
           0,
           currentHOffset + fractionWidth,
           currentVOffset -
-            this.currentLayoutFontSize * 0.8 +
+            this.currentFontSize * 0.8 +
             this.defaultFontSize * STACK_VERTICAL_SHIFT_FACTOR,
           0
         ])
@@ -1194,7 +1194,7 @@ export class MTextProcessor {
 
     const y =
       currentVOffset -
-      this.currentLayoutFontSize * 0.8 +
+      this.currentFontSize * 0.8 +
       this.defaultFontSize * STACK_VERTICAL_SHIFT_FACTOR
     const box = new THREE.Box3(
       new THREE.Vector3(startX, y, 0),
