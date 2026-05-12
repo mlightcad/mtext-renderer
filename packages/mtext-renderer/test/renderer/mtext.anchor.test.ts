@@ -70,8 +70,7 @@ describe('MText attachment anchoring', () => {
       findAndReplaceFont: (name: string) => name,
       getCharShape: (_char: string, _fontName: string, size: number) => ({
         width: 10,
-        toGeometry: () =>
-          createShapeGeometry(10, size / fontScaleFactor)
+        toGeometry: () => createShapeGeometry(10, size / fontScaleFactor)
       }),
       getNotFoundTextShape: () => undefined
     }

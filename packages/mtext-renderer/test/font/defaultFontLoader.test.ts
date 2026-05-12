@@ -183,7 +183,9 @@ describe('DefaultFontLoader', () => {
   })
 
   it('throws a contextual error when font metadata cannot be loaded', async () => {
-    vi.mocked(fetch).mockReset().mockRejectedValueOnce(new Error('network down'))
+    vi.mocked(fetch)
+      .mockReset()
+      .mockRejectedValueOnce(new Error('network down'))
     const loader = new DefaultFontLoader()
     loader.baseUrl = 'https://cdn.example.com/fonts/'
 
