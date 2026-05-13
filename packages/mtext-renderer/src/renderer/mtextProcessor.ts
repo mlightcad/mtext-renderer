@@ -24,8 +24,10 @@ import {
 
 const tempVector = /*@__PURE__*/ new THREE.Vector3()
 
-// The property palette of mtext can display line spacing. This magic number is inferred from value
-// displayed in property palette of mtext.
+/**
+ * Scale applied with `lineSpaceFactor` when computing the extra vertical gap
+ * between MTEXT lines in {@link MTextProcessor}.
+ */
 const LINE_SPACING_SCALE_FACTOR = 1.666666
 // Vertical compensation needed after switching normal glyph placement from
 // top-anchored to baseline-anchored coordinates.
@@ -548,7 +550,7 @@ export class MTextProcessor {
     this.applyWidthFactorChange(changes.widthFactor)
     this.applyCapHeightChange(changes.capHeight)
     this.applyCharTrackingChange(changes.charTrackingFactor)
-    this.applyParagraphChange(changes.paragraph)
+    this.applyParagraphMarginsOnly(changes.paragraph)
 
     if (typeof changes.underline === 'boolean') {
       this._currentContext.underline = changes.underline
@@ -693,6 +695,30 @@ export class MTextProcessor {
   }
 
   /**
+   * Applies indent and margins from a paragraph snapshot only.
+   *
+   * Used when exiting `{}` formatting groups: the parser restores full context
+   * including `paragraph.align`, but paragraph alignment is not scoped to `{}`
+   * (see class comment on `_currentHorizontalAlignment`). Restoring align here
+   * would undo an active `\\p...` alignment before the line is finalized.
+   */
+  private applyParagraphMarginsOnly(
+    paragraph: ChangedProperties['changes']['paragraph']
+  ) {
+    if (!paragraph) return
+    if (typeof paragraph.indent === 'number') {
+      this._currentIndent = paragraph.indent * this.defaultFontSize
+      this._hOffset += this._currentIndent
+    }
+    if (typeof paragraph.left === 'number') {
+      this._currentLeftMargin = paragraph.left * this.defaultFontSize
+    }
+    if (typeof paragraph.right === 'number') {
+      this._currentRightMargin = paragraph.right * this.defaultFontSize
+    }
+  }
+
+  /**
    * Apply paragraph-level changes such as alignment and margins.
    * @param paragraph Paragraph change data.
    */
@@ -700,8 +726,8 @@ export class MTextProcessor {
     paragraph: ChangedProperties['changes']['paragraph']
   ) {
     if (!paragraph) return
-    if (paragraph.align) {
-      this._currentHorizontalAlignment = paragraph.align
+    if ('align' in paragraph) {
+      this._currentHorizontalAlignment = paragraph.align as MTextParagraphAlignment
     }
     if (typeof paragraph.indent === 'number') {
       this._currentIndent = paragraph.indent * this.defaultFontSize
@@ -1678,7 +1704,8 @@ export class MTextProcessor {
     }
 
     switch (this.currentHorizontalAlignment) {
-      case MTextParagraphAlignment.LEFT: {
+      case MTextParagraphAlignment.LEFT:
+      case MTextParagraphAlignment.JUSTIFIED: {
         const dx = this._currentLeftMargin - resolvedBBox.min.x
 
         const translated = new Set<THREE.Object3D>()
