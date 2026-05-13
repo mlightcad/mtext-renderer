@@ -11,6 +11,10 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { getColorByIndex } from '../common'
 import { FontManager } from '../font'
 import { resolveMTextColor } from './colorUtils'
+import {
+  LINE_SPACING_SCALE_FACTOR,
+  STACK_VERTICAL_SHIFT_FACTOR
+} from './constants'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
@@ -25,13 +29,8 @@ import {
 const tempVector = /*@__PURE__*/ new THREE.Vector3()
 
 /**
- * Scale applied with `lineSpaceFactor` when computing the extra vertical gap
- * between MTEXT lines in {@link MTextProcessor}.
+ * Options for formatting MText.
  */
-const LINE_SPACING_SCALE_FACTOR = 1.666666
-// Vertical compensation needed after switching normal glyph placement from
-// top-anchored to baseline-anchored coordinates.
-const STACK_VERTICAL_SHIFT_FACTOR = 0.3
 export interface MTextFormatOptions {
   /**
    * Font size.
@@ -727,7 +726,8 @@ export class MTextProcessor {
   ) {
     if (!paragraph) return
     if ('align' in paragraph) {
-      this._currentHorizontalAlignment = paragraph.align as MTextParagraphAlignment
+      this._currentHorizontalAlignment =
+        paragraph.align as MTextParagraphAlignment
     }
     if (typeof paragraph.indent === 'number') {
       this._currentIndent = paragraph.indent * this.defaultFontSize
