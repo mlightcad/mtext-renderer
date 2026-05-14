@@ -36,6 +36,60 @@ const tempMatrix = /*@__PURE__*/ new THREE.Matrix4()
 const AxisX = /*@__PURE__*/ new THREE.Vector3(1, 0, 0)
 
 /**
+ * Axis-aligned rectangle (plus baseline) describing the **logical MText frame**
+ * used to compute attachment-point offsets in {@link MText.loadMText}.
+ *
+ * @remarks
+ * Values are expressed in the same local space as the object returned from layout:
+ * X typically spans the declared column width (or measured glyph width when width is
+ * non-finite), and Y spans the visible frame height. The frame height prefers the
+ * world-space geometry bounding box when it is non-empty so that inter-line leading
+ * from line layout does not inflate vertical padding above the first line; otherwise
+ * it falls back to the processor’s `totalHeight`.
+ *
+ * For {@link MTextFlowDirection.BOTTOM_TO_TOP}, the Y interval is built downward from
+ * the geometry minimum so vertical anchoring matches inverted flow.
+ */
+interface AnchorMetrics {
+  /** Left edge of the anchoring frame (drawing units). */
+  minX: number
+  /** Right edge of the anchoring frame (drawing units). */
+  maxX: number
+  /** Bottom edge of the anchoring frame (drawing units). */
+  minY: number
+  /** Top edge of the anchoring frame (drawing units). */
+  maxY: number
+  /**
+   * Y coordinate of the **first text line’s bottom** in line-layout space when at
+   * least one {@link LineLayout} entry exists; otherwise equals `minY`. Used by
+   * baseline attachment points ({@link MTextAttachmentPoint.BaselineLeft}, etc.).
+   */
+  baselineY: number
+}
+
+/**
+ * World-oriented 2D extents of laid-out text **after** the anchor translation from
+ * {@link MText.calculateAnchorPoint} has been applied, stored on the root group as
+ * `userData.logicalBounds` for consumers that need a stable box without per-glyph union.
+ *
+ * @remarks
+ * Coordinates are still in the group’s local space immediately after anchoring; the
+ * owning {@link THREE.Object3D} may then be rotated/translated by insertion point and
+ * rotation from `MTextData`. These bounds align with the same min/max X/Y used when
+ * expanding {@link MText.box} via {@link MText.updateBoxFromObject}.
+ */
+interface LogicalBounds {
+  /** Minimum X of the logically anchored text span. */
+  minX: number
+  /** Maximum X of the logically anchored text span. */
+  maxX: number
+  /** Minimum Y of the logically anchored text span. */
+  minY: number
+  /** Maximum Y of the logically anchored text span. */
+  maxY: number
+}
+
+/**
  * Represents an AutoCAD MText object in Three.js.
  * This class extends THREE.Object3D to provide MText rendering capabilities,
  * including text layout, alignment, and transformation.
@@ -173,10 +227,11 @@ export class MText extends THREE.Object3D {
         minY: Infinity,
         maxY: -Infinity,
         minZ: Infinity,
-        maxZ: -Infinity
+        maxZ: -Infinity,
+        hasLogicalBounds: false
       }
       this.updateBoxFromObject(obj, lineBounds)
-      if (lineBounds.hasLine) {
+      if (lineBounds.hasLine && !lineBounds.hasLogicalBounds) {
         if (this.box.isEmpty()) {
           this.box.min.set(lineBounds.minX, lineBounds.minY, lineBounds.minZ)
           this.box.max.set(lineBounds.maxX, lineBounds.maxY, lineBounds.maxZ)
@@ -283,25 +338,29 @@ export class MText extends THREE.Object3D {
     // is computed from the *real* rendered glyph extent — independent of
     // font, kerning, or character composition.
     let width = mtextData.width
-    let height = layoutHeight
     object.updateWorldMatrix(true, true)
     const bbox = new THREE.Box3().setFromObject(object)
-    if (!bbox.isEmpty()) {
-      const measuredHeight = bbox.max.y - bbox.min.y
-      if (Number.isFinite(measuredHeight) && measuredHeight > 0) {
-        height = measuredHeight
-      }
-    }
     if (!Number.isFinite(width)) {
       const measured = bbox.max.x - bbox.min.x
       width = Number.isFinite(measured) && measured > 0 ? measured : 0
     }
-    const anchorPoint = this.calculateAnchorPoint(
+    const anchorMetrics = this.measureAnchorMetrics(
+      object,
       width,
-      height,
-      mtextData.attachmentPoint,
+      layoutHeight,
+      bbox,
       mtextData.drawingDirection
     )
+    const anchorPoint = this.calculateAnchorPoint(
+      anchorMetrics,
+      mtextData.attachmentPoint
+    )
+    object.userData.logicalBounds = {
+      minX: anchorMetrics.minX + anchorPoint.x,
+      maxX: anchorMetrics.maxX + anchorPoint.x,
+      minY: anchorMetrics.minY + anchorPoint.y,
+      maxY: anchorMetrics.maxY + anchorPoint.y
+    } satisfies LogicalBounds
 
     const translateCharBoxEntries = (entries: CharBox[] | undefined) => {
       if (!entries || entries.length === 0) return
@@ -326,13 +385,12 @@ export class MText extends THREE.Object3D {
       if ('geometry' in obj) {
         const geometry = obj.geometry as THREE.BufferGeometry
         geometry.translate(anchorPoint.x, anchorPoint.y, 0)
-      } else {
-        // Char-box-only placeholder objects (e.g., trailing empty lines)
-        // need the same anchor translation as geometry-bearing objects.
-        translateCharBoxEntries(
-          obj.userData?.layout?.chars as CharBox[] | undefined
-        )
       }
+      // Char-box metadata is stored alongside geometry for normal glyphs and
+      // on placeholder objects for spaces/empty lines, so translate it for both.
+      translateCharBoxEntries(
+        obj.userData?.layout?.chars as CharBox[] | undefined
+      )
       translateLineLayouts(
         obj.userData?.lineLayouts as LineLayout[] | undefined
       )
@@ -499,76 +557,185 @@ export class MText extends THREE.Object3D {
   }
 
   /**
-   * Calculates the anchor point for text positioning based on alignment and flow direction.
-   * @param width - The width of the text
-   * @param height - The height of the text
-   * @param attachmentPoint - The attachment point for text alignment
-   * @param flowDirection - The text flow direction
-   * @returns The calculated anchor point coordinates
+   * Measures the logical text frame used by attachment-point anchoring.
+   *
+   * @remarks
+   * Line-layout boxes include inter-line leading that is useful for hit testing, but
+   * that leading must not become extra padding above the first rendered line when
+   * aligning to top/middle/bottom attachment points. This method therefore prefers the
+   * visible geometry height from `geometryBox` when it is non-empty, and only falls
+   * back to `layoutHeight` when there are no measurable glyphs (e.g. empty or
+   * whitespace-only runs).
+   *
+   * @param object - Root group produced by layout; traversed for {@link LineLayout}
+   *   metadata to locate the first line baseline.
+   * @param width - Column width used for horizontal anchoring when finite and
+   *   positive; if not, horizontal extents are taken from `geometryBox`.
+   * @param layoutHeight - Total laid-out height from {@link MTextProcessor} when
+   *   geometry height is unavailable or zero.
+   * @param geometryBox - Axis-aligned bounds of rendered primitives under `object`,
+   *   typically from {@link THREE.Box3.setFromObject}.
+   * @param flowDirection - Optional flow; when {@link MTextFlowDirection.BOTTOM_TO_TOP},
+   *   the vertical frame is anchored from the geometry minimum upward.
+   * @returns Metrics consumed by {@link MText.calculateAnchorPoint}.
+   */
+  private measureAnchorMetrics(
+    object: THREE.Object3D,
+    width: number,
+    layoutHeight: number,
+    geometryBox: THREE.Box3,
+    flowDirection?: MTextFlowDirection
+  ): AnchorMetrics {
+    const lineBounds = {
+      hasLine: false,
+      minY: Infinity,
+      maxY: -Infinity,
+      baselineY: 0
+    }
+    let firstBaselineCaptured = false
+
+    object.traverse(obj => {
+      const lines = obj.userData?.lineLayouts as LineLayout[] | undefined
+      if (!lines || lines.length === 0) return
+
+      lines.forEach(line => {
+        const minY = line.y - line.height / 2
+        const maxY = line.y + line.height / 2
+        lineBounds.hasLine = true
+        lineBounds.minY = Math.min(lineBounds.minY, minY)
+        lineBounds.maxY = Math.max(lineBounds.maxY, maxY)
+        if (!firstBaselineCaptured) {
+          lineBounds.baselineY = minY
+          firstBaselineCaptured = true
+        }
+      })
+    })
+
+    const geometryHeight = geometryBox.isEmpty()
+      ? 0
+      : geometryBox.max.y - geometryBox.min.y
+    const frameHeight =
+      Number.isFinite(geometryHeight) && geometryHeight > 0
+        ? geometryHeight
+        : Number.isFinite(layoutHeight) && layoutHeight > 0
+          ? layoutHeight
+          : 0
+
+    let minX = 0
+    let maxX = Number.isFinite(width) && width > 0 ? width : 0
+    if (maxX <= minX && !geometryBox.isEmpty()) {
+      minX = geometryBox.min.x
+      maxX = geometryBox.max.x
+    }
+
+    let minY = 0
+    let maxY = 0
+    if (flowDirection == MTextFlowDirection.BOTTOM_TO_TOP) {
+      minY = geometryBox.isEmpty() ? 0 : geometryBox.min.y
+      maxY = minY + frameHeight
+    } else {
+      maxY = geometryBox.isEmpty() ? 0 : geometryBox.max.y
+      minY = maxY - frameHeight
+    }
+    const baselineY = lineBounds.hasLine ? lineBounds.baselineY : minY
+
+    return { minX, maxX, minY, maxY, baselineY }
+  }
+
+  /**
+   * Computes the 2D translation that maps the logical frame described by `metrics`
+   * so that the chosen AutoCAD-style attachment point coincides with the insertion
+   * origin (before rotation/insertion-point transforms applied later in
+   * {@link MText.loadMText}).
+   *
+   * @remarks
+   * The returned vector is **added** to vertex positions and char-box metadata via
+   * `geometry.translate` / `CharBox.box.translate` / line `y` offsets. For `undefined`
+   * attachment, behavior matches {@link MTextAttachmentPoint.TopLeft}.
+   *
+   * @param metrics - Pre-anchoring frame from {@link MText.measureAnchorMetrics}.
+   * @param attachmentPoint - DWG attachment constant; determines which corner, edge
+   *   center, or baseline of the frame is pinned to `(0,0)` in anchored space.
+   * @returns Translation `(x, y)` in drawing units applied uniformly to the laid-out
+   *   group and its layout sidecars.
    */
   private calculateAnchorPoint(
-    width: number,
-    height: number,
-    attachmentPoint?: MTextAttachmentPoint,
-    flowDirection?: MTextFlowDirection
+    metrics: AnchorMetrics,
+    attachmentPoint?: MTextAttachmentPoint
   ): Point2d {
+    const centerX = (metrics.minX + metrics.maxX) / 2
+    const centerY = (metrics.minY + metrics.maxY) / 2
     let anchorX = 0,
       anchorY = 0
     switch (attachmentPoint) {
       case undefined:
       case MTextAttachmentPoint.TopLeft:
-        anchorX = 0
-        anchorY = 0
+        anchorX = -metrics.minX
+        anchorY = -metrics.maxY
         break
       case MTextAttachmentPoint.TopCenter:
-        anchorX -= width / 2
-        anchorY = 0
+        anchorX = -centerX
+        anchorY = -metrics.maxY
         break
       case MTextAttachmentPoint.TopRight:
-        anchorX -= width
-        anchorY = 0
+        anchorX = -metrics.maxX
+        anchorY = -metrics.maxY
         break
       case MTextAttachmentPoint.MiddleLeft:
-        anchorX = 0
-        anchorY += height / 2
+        anchorX = -metrics.minX
+        anchorY = -centerY
         break
       case MTextAttachmentPoint.MiddleCenter:
-        anchorX -= width / 2
-        anchorY += height / 2
+        anchorX = -centerX
+        anchorY = -centerY
         break
       case MTextAttachmentPoint.MiddleRight:
-        anchorX -= width
-        anchorY += height / 2
+        anchorX = -metrics.maxX
+        anchorY = -centerY
         break
       case MTextAttachmentPoint.BottomLeft:
-      case MTextAttachmentPoint.BaselineLeft:
-        // Baseline ≈ Bottom for SHX/single-line text where descender is
-        // negligible. Treating them identically keeps the public API
-        // expressive without requiring per-font descender metrics.
-        anchorX = 0
-        anchorY += height
+        anchorX = -metrics.minX
+        anchorY = -metrics.minY
         break
       case MTextAttachmentPoint.BottomCenter:
-      case MTextAttachmentPoint.BaselineCenter:
-        anchorX -= width / 2
-        anchorY += height
+        anchorX = -centerX
+        anchorY = -metrics.minY
         break
       case MTextAttachmentPoint.BottomRight:
-      case MTextAttachmentPoint.BaselineRight:
-        anchorX -= width
-        anchorY += height
+        anchorX = -metrics.maxX
+        anchorY = -metrics.minY
         break
-    }
-    if (flowDirection == MTextFlowDirection.BOTTOM_TO_TOP) {
-      anchorY -= height
+      case MTextAttachmentPoint.BaselineLeft:
+        anchorX = -metrics.minX
+        anchorY = -metrics.baselineY
+        break
+      case MTextAttachmentPoint.BaselineCenter:
+        anchorX = -centerX
+        anchorY = -metrics.baselineY
+        break
+      case MTextAttachmentPoint.BaselineRight:
+        anchorX = -metrics.maxX
+        anchorY = -metrics.baselineY
+        break
     }
     return { x: anchorX, y: anchorY }
   }
 
   /**
-   * Recursively calculates bounding boxes for an object and its children.
-   * @param object - The Three.js object to process
-   * @param boxes - Array to store the calculated bounding boxes
+   * Walks a laid-out MText subgraph and accumulates world-space character hit boxes and
+   * soft line rectangles for {@link MText.createLayoutData} (raycasting, cursors, debug).
+   *
+   * @remarks
+   * - When `userData.layout.chars` is present, entries are transformed with
+   *   {@link buildCharBoxesFromObject} and appended to `chars`, then recursion stops
+   *   for that branch (char metadata is authoritative).
+   * - When only mesh/line geometry exists, a single synthetic {@link CharBox} wrapping
+   *   the geometry AABB may be emitted.
+   * - `userData.lineLayouts` rows are converted to world-space center `y` and height.
+   *
+   * @param object - Node to traverse (typically the root group from {@link MText.loadMText}).
+   * @param chars - Output collection; receives merged {@link CharBox} entries in world space.
+   * @param lines - Output collection; receives {@link LineLayout} summaries per line break.
    */
   private getLayout(
     object: THREE.Object3D,
@@ -635,6 +802,28 @@ export class MText extends THREE.Object3D {
     }
   }
 
+  /**
+   * Depth-first union of this MText’s {@link MText.box} from layout metadata and mesh
+   * geometry, while optionally tracking coarse line AABB in `lineBounds`.
+   *
+   * @remarks
+   * Priority order per node:
+   * 1. If `userData.logicalBounds` exists (set in {@link MText.loadMText}), union that
+   *    axis-aligned rectangle transformed by `matrixWorld` — this reflects anchored
+   *    logical extents even when individual glyphs are expensive to union.
+   * 2. Else if `userData.lineLayouts` exists, expand `lineBounds` from the world-space
+   *    top/bottom of each line strip (used as a fallback when no logical bounds were
+   *    written, e.g. legacy paths).
+   * 3. Else if `userData.layout.chars` exists, union each transformed char AABB.
+   * 4. Else for mesh/line primitives, union non-decoration geometry bounds.
+   * 5. Always recurse into children.
+   *
+   * @param object - Current scene graph node.
+   * @param lineBounds - Mutable accumulator: `hasLine`/`min*`/`max*` track the union of
+   *   line-layout strips in world space; `hasLogicalBounds` flips true when any child
+   *   contributed `logicalBounds` so {@link MText.syncDraw} can avoid double-counting
+   *   vertical extent from line strips alone.
+   */
   private updateBoxFromObject(
     object: THREE.Object3D,
     lineBounds: {
@@ -645,9 +834,23 @@ export class MText extends THREE.Object3D {
       maxY: number
       minZ: number
       maxZ: number
+      hasLogicalBounds: boolean
     }
   ) {
     object.updateWorldMatrix(false, false)
+
+    const logicalBounds = object.userData?.logicalBounds as
+      | LogicalBounds
+      | undefined
+    if (logicalBounds) {
+      lineBounds.hasLogicalBounds = true
+      const box = new THREE.Box3(
+        new THREE.Vector3(logicalBounds.minX, logicalBounds.minY, 0),
+        new THREE.Vector3(logicalBounds.maxX, logicalBounds.maxY, 0)
+      )
+      box.applyMatrix4(object.matrixWorld)
+      this.box.union(box)
+    }
 
     const objectLineLayouts = object.userData?.lineLayouts as
       | LineLayout[]
@@ -740,6 +943,13 @@ export class MText extends THREE.Object3D {
       }
     })
   }
+  /**
+   * Normalizes a font file reference to the lowercase stem used by
+   * {@link FontManager.loadFontsByNames} (strip extension).
+   *
+   * @param fontFileName - Style font path such as `arial.ttf` or extension-less name.
+   * @returns Lowercase name without the last extension segment, or `undefined` if empty.
+   */
   private getFontName(fontFileName: string) {
     if (fontFileName) {
       const lastDotIndex = fontFileName.lastIndexOf('.')
