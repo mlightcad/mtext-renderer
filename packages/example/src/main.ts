@@ -2,6 +2,7 @@ import {
   CharBox,
   CharBoxType,
   LineLayout,
+  MTextAttachmentPoint,
   MTextColor,
   MTextData,
   MTextObject,
@@ -53,7 +54,9 @@ class MTextRendererExample {
       '{\\pql;Left aligned paragraph.}\\P{\\pqc;Center aligned paragraph.}\\P{\\pqr;Right aligned paragraph.}\\P{\\pqc;Center again.}\\P{\\pql;Back to left.}',
     paragraph:
       '{\\pql;\\P{\\pqi;\\pxi2;\\pxl5;\\pxr5;This paragraph has an indent of 2 units, left margin of 5 units, and right margin of 5 units. The first line is indented.}\\P{\\pqi;\\pxi2;\\pxl5;\\pxr5;This is the second line of the same paragraph, showing the effect of margins.}}',
-    multiple: 'multiple' // Special marker for multiple MText rendering
+    multiple: 'multiple', // Special marker for multiple MText rendering
+    /** DXF group 71 attachment points 1–12; renders a grid with insertion crosshairs */
+    attachmentGrid: 'attachmentGrid'
   }
 
   constructor() {
@@ -190,8 +193,8 @@ class MTextRendererExample {
           const content =
             this.exampleTexts[exampleType as keyof typeof this.exampleTexts]
 
-          if (content === 'multiple') {
-            // For multiple MText, don't update the textarea but render directly
+          if (content === 'multiple' || content === 'attachmentGrid') {
+            // Preset grids: don't overwrite the textarea
             await this.renderMText(content)
           } else {
             // For regular examples, update textarea and render
@@ -276,29 +279,15 @@ class MTextRendererExample {
   }
 
   /**
-   * Draws a bounding box for the text using the given position, max width, and the height from the box property.
-   * @param box The bounding box of the MText (for height)
-   * @param position The position (THREE.Vector3) of the text box (min corner)
-   * @param maxWidth The maximum width of the text box
+   * Draws a bounding box from the renderer-computed MText extents.
    */
-  private createMTextBox(
-    box: THREE.Box3,
-    position: THREE.Vector3,
-    maxWidth?: number
-  ): THREE.LineSegments {
-    // Remove existing box if any
-    if (this.mtextBox) {
-      this.scene.remove(this.mtextBox)
-    }
-
-    // The min and max y/z come from the box, x is from position and maxWidth
+  private createMTextBox(box: THREE.Box3): THREE.LineSegments {
+    const minX = box.min.x
+    const maxX = box.max.x
     const minY = box.min.y
     const maxY = box.max.y
     const minZ = box.min.z
     const maxZ = box.max.z
-    const minX = position.x
-    const maxX =
-      maxWidth !== undefined && maxWidth > 0 ? minX + maxWidth : box.max.x
 
     const vertices = [
       // Bottom face
@@ -388,15 +377,178 @@ class MTextRendererExample {
       linewidth: 1
     })
     this.mtextBox = new THREE.LineSegments(geometry, material)
-
-    // Apply the same transformation as the MText object
-    if (this.currentMText) {
-      this.mtextBox.position.copy(this.currentMText.position)
-      this.mtextBox.rotation.copy(this.currentMText.rotation)
-      this.mtextBox.scale.copy(this.currentMText.scale)
-    }
-
     return this.mtextBox
+  }
+
+  /**
+   * Small cross at the insertion point (DXF alignment anchor) for visual checks.
+   */
+  private createInsertionCrosshair(
+    x: number,
+    y: number,
+    arm = 22,
+    z = 0.03
+  ): THREE.LineSegments {
+    const vertices = new Float32Array([
+      x - arm,
+      y,
+      z,
+      x + arm,
+      y,
+      z,
+      x,
+      y - arm,
+      z,
+      x,
+      y + arm,
+      z
+    ])
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
+    const material = new THREE.LineBasicMaterial({
+      color: 0xff3333,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.95
+    })
+    const lines = new THREE.LineSegments(geometry, material)
+    lines.renderOrder = 1000
+    return lines
+  }
+
+  /**
+   * Twelve MText samples on a 3×4 grid (DXF attachment 1–9 then 10–12).
+   * Each entity shares the same insertion coordinates as the red crosshair;
+   * only {@link MTextData.attachmentPoint} changes so you can compare layout.
+   */
+  private createAttachmentPointTestData(): {
+    mtextData: MTextData
+    textStyle: TextStyle
+  }[] {
+    const cellW = 330
+    const cellH = 175
+    const originX = 60
+    const originY = 610
+
+    const cells: {
+      attachmentPoint: MTextAttachmentPoint
+      title: string
+      subtitle: string
+      col: number
+      row: number
+    }[] = [
+      {
+        attachmentPoint: MTextAttachmentPoint.TopLeft,
+        title: '1 TopLeft',
+        subtitle: 'GC71=1',
+        col: 0,
+        row: 0
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.TopCenter,
+        title: '2 TopCenter',
+        subtitle: 'GC71=2',
+        col: 1,
+        row: 0
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.TopRight,
+        title: '3 TopRight',
+        subtitle: 'GC71=3',
+        col: 2,
+        row: 0
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.MiddleLeft,
+        title: '4 MiddleLeft',
+        subtitle: 'GC71=4',
+        col: 0,
+        row: 1
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.MiddleCenter,
+        title: '5 MiddleCenter',
+        subtitle: 'GC71=5',
+        col: 1,
+        row: 1
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.MiddleRight,
+        title: '6 MiddleRight',
+        subtitle: 'GC71=6',
+        col: 2,
+        row: 1
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.BottomLeft,
+        title: '7 BottomLeft',
+        subtitle: 'GC71=7',
+        col: 0,
+        row: 2
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.BottomCenter,
+        title: '8 BottomCenter',
+        subtitle: 'GC71=8',
+        col: 1,
+        row: 2
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.BottomRight,
+        title: '9 BottomRight',
+        subtitle: 'GC71=9',
+        col: 2,
+        row: 2
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.BaselineLeft,
+        title: '10 BaselineL',
+        subtitle: 'GC71=10',
+        col: 0,
+        row: 3
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.BaselineCenter,
+        title: '11 BaselineC',
+        subtitle: 'GC71=11',
+        col: 1,
+        row: 3
+      },
+      {
+        attachmentPoint: MTextAttachmentPoint.BaselineRight,
+        title: '12 BaselineR',
+        subtitle: 'GC71=12',
+        col: 2,
+        row: 3
+      }
+    ]
+
+    return cells.map(({ attachmentPoint, title, subtitle, col, row }) => {
+      const cx = originX + col * cellW + cellW / 2
+      const cy = originY - row * cellH - cellH / 2
+      const text = `{\\C1;${title}}\\P{\\C3;${subtitle}}\\P{\\C2;+ anchor}\\P{\\C7;sample}`
+
+      return {
+        mtextData: {
+          text,
+          height: 10,
+          width: 170,
+          position: new THREE.Vector3(cx, cy, 0),
+          attachmentPoint
+        },
+        textStyle: {
+          name: 'Standard',
+          standardFlag: 0,
+          fixedTextHeight: 10,
+          widthFactor: 1,
+          obliqueAngle: 0,
+          textGenerationFlag: 0,
+          lastHeight: 10,
+          font: this.fontSelect.value,
+          bigFont: ''
+        }
+      }
+    })
   }
 
   private createMultipleMTextData(): {
@@ -660,11 +812,15 @@ class MTextRendererExample {
       let renderTime: number
       const colorSettings = this.getColorSettings()
 
-      if (content === 'multiple') {
-        // Render multiple MText objects
-        const multipleData = this.createMultipleMTextData()
+      const multiData =
+        content === 'multiple'
+          ? this.createMultipleMTextData()
+          : content === 'attachmentGrid'
+            ? this.createAttachmentPointTestData()
+            : null
 
-        const renderPromises = multipleData.map(({ mtextData, textStyle }) => {
+      if (multiData) {
+        const renderPromises = multiData.map(({ mtextData, textStyle }) => {
           return this.unifiedRenderer.asyncRenderMText(
             mtextData,
             textStyle,
@@ -678,7 +834,18 @@ class MTextRendererExample {
         const group = new THREE.Group()
         let combinedBox: THREE.Box3 | null = null
 
-        mtextObjects.forEach((mtextObj, index) => {
+        if (content === 'attachmentGrid') {
+          for (const { mtextData } of multiData) {
+            group.add(
+              this.createInsertionCrosshair(
+                mtextData.position.x,
+                mtextData.position.y
+              )
+            )
+          }
+        }
+
+        mtextObjects.forEach(mtextObj => {
           this.attachCharBoxOverlay(mtextObj)
           this.attachLineBoxOverlay(mtextObj)
           group.add(mtextObj)
@@ -698,15 +865,7 @@ class MTextRendererExample {
             mtextObj.box &&
             !mtextObj.box.isEmpty()
           ) {
-            const box = this.createMTextBox(
-              mtextObj.box,
-              new THREE.Vector3(
-                multipleData[index].mtextData.position.x,
-                multipleData[index].mtextData.position.y,
-                multipleData[index].mtextData.position.z
-              ),
-              multipleData[index].mtextData.width
-            )
+            const box = this.createMTextBox(mtextObj.box)
             group.add(box)
           }
         })
@@ -722,7 +881,9 @@ class MTextRendererExample {
         this.scene.add(this.currentMText)
 
         renderTime = performance.now() - startTime
-        this.statusDiv.textContent = `Rendered ${mtextObjects.length}/${multipleData.length} MText objects in ${renderTime.toFixed(2)}ms (${this.renderModeSelect.value} thread)`
+        const label =
+          content === 'attachmentGrid' ? 'attachment-point grid' : 'MText batch'
+        this.statusDiv.textContent = `Rendered ${mtextObjects.length}/${multiData.length} (${label}) in ${renderTime.toFixed(2)}ms (${this.renderModeSelect.value} thread)`
       } else {
         // Render single MText object
         const mtextContent: MTextData = {
@@ -761,15 +922,7 @@ class MTextRendererExample {
           this.currentMText.box &&
           !this.currentMText.box.isEmpty()
         ) {
-          const box = this.createMTextBox(
-            this.currentMText.box,
-            new THREE.Vector3(
-              mtextContent.position.x,
-              mtextContent.position.y,
-              mtextContent.position.z
-            ),
-            mtextContent.width
-          )
+          const box = this.createMTextBox(this.currentMText.box)
           this.scene.add(box)
         }
 
