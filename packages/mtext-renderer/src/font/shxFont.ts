@@ -45,18 +45,31 @@ export class ShxFont extends BaseFont {
     return this.font.hasChar(code)
   }
 
+  /**
+   * Horizontal advance for the space character (ASCII 32) at the given size.
+   * Uses the SHX glyph pen advance when defined; otherwise falls back to half the
+   * text height (common for AutoCAD SHX fonts).
+   */
+  getSpaceAdvance(size: number) {
+    const spaceShape = this.getCharShape(' ', size)
+    if (spaceShape) {
+      return spaceShape.width
+    }
+    return size * 0.5
+  }
+
   generateShapes(text: string, size: number) {
     const shapes: ShxTextShape[] = []
     let hOffset = 0.0
     for (let i = 0; i < text.length; i++) {
       const char = text[i]
       if (char === ' ') {
-        hOffset += size
+        hOffset += this.getSpaceAdvance(size)
         continue
       }
       const shape = this.getCharShape(char, size)
       if (!shape) {
-        hOffset += size
+        hOffset += this.getSpaceAdvance(size)
         this.addUnsupportedChar(char)
         // const notFund = this.getNotFoundTextShape(size);
         // notFund && shapes.push(notFund);
