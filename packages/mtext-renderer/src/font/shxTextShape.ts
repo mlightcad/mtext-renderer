@@ -27,14 +27,30 @@ export class ShxTextShape extends BaseTextShape {
     this.shape = shape
     this.font = font
     this.code = code
-    // According to ChatGPT, the advance width of one SHX font character equals the
-    // X position of the final pen location when the character definition ends.
-    // In other words, advanceWidth = finalPenX
-    if (font.data.header.fontType === ShxFontType.BIGFONT) {
-      this.width = this.calcWidth()
-    } else {
-      this.width = shape.lastPoint?.x ?? this.calcWidth()
+    this.width = this.resolveAdvanceWidth(shape)
+  }
+
+  /**
+   * Resolves horizontal advance for SHX glyphs.
+   *
+   * - Unicode / shapes fonts: prefer the pen-down end X (lastPoint), which matches
+   *   AutoCAD's advance for single-byte SHX.
+   * - Big fonts (CJK): advance is the scaled font cell width (content.width /
+   *   content.height * fontSize). Glyph bbox or lastPoint can be narrower than the
+   *   cell; using only bbox caused successive Han characters to overlap visually.
+   */
+  private resolveAdvanceWidth(shape: ShxShape): number {
+    const bboxWidth = this.calcWidth()
+    const penAdvance = shape.lastPoint?.x ?? 0
+
+    if (this.font.data.header.fontType === ShxFontType.BIGFONT) {
+      const { width: cellWidth, height: cellHeight } = this.font.data.content
+      const scaledCellWidth =
+        cellHeight > 0 ? (cellWidth / cellHeight) * this.fontSize : 0
+      return Math.max(bboxWidth, penAdvance, scaledCellWidth)
     }
+
+    return penAdvance > 0 ? penAdvance : bboxWidth
   }
 
   protected calcWidth() {

@@ -414,6 +414,15 @@ export class MTextProcessor {
     return this._currentContext.widthFactor.value
   }
 
+  /** Horizontal advance for one space, including tracking and width factor. */
+  get currentBlankAdvance() {
+    return (
+      this._currentContext.blankWidth *
+      this.currentWordSpace *
+      this.currentWidthFactor
+    )
+  }
+
   /**
    * All of THREE.js objects in current line. It contains objects in all of sections of this line.
    */
@@ -979,7 +988,7 @@ export class MTextProcessor {
             shape.width * this.currentWordSpace * this.currentWidthFactor
         }
       } else {
-        wordWidth += this._currentContext.blankWidth
+        wordWidth += this.currentBlankAdvance
       }
     }
     // 2. If word would overflow, start a new line first (no indent for wrapped lines)
@@ -1271,7 +1280,7 @@ export class MTextProcessor {
       const box = new THREE.Box3(
         new THREE.Vector3(charX, charY, 0),
         new THREE.Vector3(
-          charX + this._currentContext.blankWidth,
+          charX + this.currentBlankAdvance,
           charY + this.currentLayoutFontSize,
           0
         )
@@ -1293,7 +1302,7 @@ export class MTextProcessor {
         })
       }
     }
-    this._hOffset += this._currentContext.blankWidth
+    this._hOffset += this.currentBlankAdvance
   }
 
   private recordVisualLineBreak(
@@ -1341,12 +1350,14 @@ export class MTextProcessor {
 
     const geometry = shape.toGeometry()
     geometry.scale(this.currentWidthFactor, 1, 1)
+    const charHeight = this.currentLayoutFontSize
 
     // Apply oblique/skew transformation if needed (oblique or italic)
     let obliqueAngle = this._currentContext.oblique
     if (this._currentContext.italic) {
       obliqueAngle += 15 // Simulate italic with a 15 degree skew
     }
+    let obliqueExtraAdvance = 0
     if (obliqueAngle) {
       const angleRad = (obliqueAngle * Math.PI) / 180
       const skewMatrix = new THREE.Matrix4()
@@ -1369,6 +1380,8 @@ export class MTextProcessor {
         1
       )
       geometry.applyMatrix4(skewMatrix)
+      // Skew shifts the top of the glyph forward; include that in line advance.
+      obliqueExtraAdvance = Math.tan(angleRad) * charHeight
     }
 
     // Simulate bold for mesh fonts by stroking the geometry
@@ -1391,17 +1404,20 @@ export class MTextProcessor {
         ? this.vOffset
         : this.vOffset - this.currentLayoutFontSize
     const charWidth = shape.width * this.currentWidthFactor
-    const charHeight = this.currentLayoutFontSize
 
     geometry.translate(charX, charY, 0)
 
+    const horizontalAdvance =
+      shape.width * this.currentWidthFactor +
+      obliqueExtraAdvance * this.currentWidthFactor
     if (
       this.currentHorizontalAlignment == MTextParagraphAlignment.DISTRIBUTED
     ) {
-      this._hOffset += shape.width * this.currentWidthFactor
+      this._hOffset += horizontalAdvance
     } else {
       this._hOffset +=
-        shape.width * this.currentWordSpace * this.currentWidthFactor
+        shape.width * this.currentWordSpace * this.currentWidthFactor +
+        obliqueExtraAdvance * this.currentWidthFactor
     }
     geometries.push(geometry)
     this._lineHasRenderableChar = true
@@ -1775,16 +1791,17 @@ export class MTextProcessor {
   }
 
   /**
-   * In AutoCAD, the width of a regular space character (ASCII 32, the space key on the keyboard) in MText
-   * depends on the current font and text height, and is not a fixed value.
-   * Specifically:
-   * - Space width ≈ Text height × space width ratio defined by the font
-   * - For common TrueType fonts (like Arial), the space width is typically about 1/4 to 1/3 of the text height.
-   * For example, if the text height is 10 (units), the space width would be approximately 2.5 to 3.3 units.
-   * - For SHX fonts (AutoCAD's built-in vector fonts, such as txt.shx), the space width is often half the text height.
-   * So if the text height is 10, the space width is typically 5 units.
+   * Resolves horizontal advance for an ASCII space in the active font.
+   *
+   * AutoCAD uses each font's own space glyph metrics (SHX pen advance or TrueType
+   * horizontal advance). A fixed fraction of text height (e.g. 50% for SHX) is only
+   * a rough fallback when the font has no space definition.
    */
   private calculateBlankWidthForFont(font: string, fontSize: number) {
+    const spaceShape = this.fontManager.getCharShape(' ', font, fontSize)
+    if (spaceShape && spaceShape.width > 0) {
+      return spaceShape.width
+    }
     const fontType = this.fontManager.getFontType(font)
     return fontType === 'shx' ? fontSize * 0.5 : fontSize * 0.3
   }
