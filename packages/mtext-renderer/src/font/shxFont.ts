@@ -82,37 +82,10 @@ export class ShxFont extends BaseFont {
   }
 
   /**
-   * Scale factor that converts AutoCAD's `TEXT.height` (cap-height in the SHX
-   * convention) into the em-box-scaled size expected by `generateShapes`.
-   *
-   * SHX glyphs are defined with `baseUp` units of cap-height (height of an
-   * uppercase letter above the baseline) and `height` units of total em-box
-   * (cap-height + descender + headroom for accents). AutoCAD's DXF group 40
-   * for TEXT/ATTRIB/MTEXT is the cap-height — the historical SHX convention
-   * since the format's introduction in AutoCAD R2 (1985), kept by AutoCAD
-   * when TrueType support was added in the early 1990s so that DWGs portable
-   * across font formats render at consistent visual sizes.
-   *
-   * Returning `1` (the previous behavior) meant SHX glyphs were rendered at
-   * `baseUp / height` of the expected size — typically ~0.75 for western
-   * fonts like `romans.shx`/`complex.shx` where `baseUp=21, height=28`.
-   * Multiplying by `height / baseUp` restores the cap-height interpretation.
-   *
-   * Mirrors the behavior already in place for mesh fonts (see
-   * `meshFontParser.ts` where `scaleFactor = unitsPerEm / glyph('A').yMax`),
-   * isolated to the glyph render path only — `mtextProcessor.currentLayoutFontSize`
-   * divides by this factor to keep layout metrics (line height, attachment
-   * offsets, blank width) on the original cap-height scale.
-   *
-   * @returns `height / baseUp` when both are populated and positive; `1`
-   *   otherwise (e.g. exotic BIGFONT/symbol fonts without standard metrics),
-   *   matching the prior behavior as a safe fallback.
+   * SHX font always has fixed scale factor 1.
+   * @returns Always return value 1
    */
   getScaleFactor() {
-    const { height, baseUp } = this.data.content
-    if (baseUp > 0 && height > 0) {
-      return height / baseUp
-    }
     return 1
   }
 
