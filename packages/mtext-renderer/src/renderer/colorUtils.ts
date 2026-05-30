@@ -1,3 +1,5 @@
+import { MTextColor } from '@mlightcad/mtext-parser'
+
 import { getColorByIndex } from '../common'
 import { ColorSettings } from './types'
 
@@ -21,4 +23,31 @@ export function resolveMTextColor(colorSettings: ColorSettings): number {
     return normalizeColorNumber(color.rgbValue)
   }
   return normalizeColorNumber(colorSettings.byLayerColor)
+}
+
+/**
+ * Rebuild ColorSettings for a worker-deserialized glyph material.
+ *
+ * Worker meshes already carry the final resolved RGB in their serialized
+ * material. When the entity base color is ByLayer, preserve that semantic only
+ * for glyphs that match the layer fallback color.
+ */
+export function buildWorkerMaterialColorSettings(
+  base: ColorSettings,
+  resolvedColor: number,
+  baseByLayer: boolean
+): ColorSettings {
+  const color = new MTextColor()
+  if (baseByLayer && resolvedColor === base.byLayerColor) {
+    color.aci = 256
+  } else {
+    color.rgbValue = resolvedColor
+  }
+
+  return {
+    byLayerColor: base.byLayerColor,
+    byBlockColor: base.byBlockColor,
+    layer: base.layer,
+    color
+  }
 }

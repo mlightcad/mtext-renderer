@@ -1,8 +1,8 @@
-import { MTextColor } from '@mlightcad/mtext-parser'
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
 import { buildCharBoxesFromObject } from '../renderer/charBoxUtils'
+import { buildWorkerMaterialColorSettings } from '../renderer/colorUtils'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { StyleManager } from '../renderer/styleManager'
 import {
@@ -526,7 +526,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       // Create material using StyleManager for proper material reuse
       let material: THREE.Material
       if (childData.type === 'mesh') {
-        const materialColorSettings = this.buildMaterialColorSettings(
+        const materialColorSettings = buildWorkerMaterialColorSettings(
           colorSettings,
           childData.material.color,
           baseByLayer
@@ -545,7 +545,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
           material.side = childData.material.side as THREE.Side
         }
       } else {
-        const materialColorSettings = this.buildMaterialColorSettings(
+        const materialColorSettings = buildWorkerMaterialColorSettings(
           colorSettings,
           childData.material.color,
           baseByLayer
@@ -648,28 +648,6 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     }
 
     return mtextObject
-  }
-
-  private buildMaterialColorSettings(
-    base: ColorSettings,
-    resolvedColor: number,
-    baseByLayer: boolean
-  ): ColorSettings {
-    const color = new MTextColor()
-    if (baseByLayer && resolvedColor === base.byLayerColor) {
-      color.aci = 256
-    } else if (base.color.isAci && base.color.aci !== null) {
-      color.aci = base.color.aci
-    } else {
-      color.rgbValue = resolvedColor
-    }
-
-    return {
-      byLayerColor: base.byLayerColor,
-      byBlockColor: base.byBlockColor,
-      layer: base.layer,
-      color
-    }
   }
 
   private deserializeCharBoxes(serialized: SerializedCharBox[]): CharBox[] {

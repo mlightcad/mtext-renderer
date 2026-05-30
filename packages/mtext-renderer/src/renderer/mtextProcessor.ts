@@ -181,6 +181,7 @@ export class MTextProcessor {
   private _options: MTextFormatOptions
   private _totalHeight: number
   private _hOffset: number
+  private _maxLineAdvance: number
   private _vOffset: number
   private _lineCount: number
   private _currentLineObjects: THREE.Object3D[]
@@ -229,6 +230,7 @@ export class MTextProcessor {
     this._options = options
     this._totalHeight = 0
     this._hOffset = 0
+    this._maxLineAdvance = 0
     this._vOffset = 0
     this._lineCount = 1
     this._currentLineObjects = []
@@ -300,6 +302,16 @@ export class MTextProcessor {
    */
   get maxWidth() {
     return this._options.maxWidth
+  }
+
+  /**
+   * Maximum logical pen advance across processed visual lines.
+   *
+   * Unlike visible geometry bounds, this keeps the text insertion origin tied to
+   * the layout pen position even when glyphs have side bearings or overhangs.
+   */
+  get maxLineAdvance() {
+    return this._maxLineAdvance
   }
 
   /**
@@ -911,6 +923,7 @@ export class MTextProcessor {
     }
 
     this.processLastLine()
+    this.captureCurrentLineAdvance()
     this.recordCurrentLineLayout()
     group.userData.lineLayouts = this._lineLayouts.map((line, index) => ({
       ...line,
@@ -919,6 +932,7 @@ export class MTextProcessor {
           ? this._lineBreakIndices[index]
           : undefined
     }))
+    group.userData.logicalAdvanceWidth = this._maxLineAdvance
     return group
   }
 
@@ -1592,6 +1606,7 @@ export class MTextProcessor {
     if (collectBreakIndex) {
       this.recordVisualLineBreak()
     }
+    this.captureCurrentLineAdvance()
     this.recordCurrentLineLayout()
     this._hOffset = 0
     if (!this._lineHasRenderableChar) {
@@ -1615,6 +1630,12 @@ export class MTextProcessor {
     // Reset maxFontSize for the new line
     this._maxFontSize = 0
     this._lineHasRenderableChar = false
+  }
+
+  private captureCurrentLineAdvance() {
+    if (Number.isFinite(this._hOffset)) {
+      this._maxLineAdvance = Math.max(this._maxLineAdvance, this._hOffset)
+    }
   }
 
   private countFinalCharBoxes(
@@ -1722,7 +1743,9 @@ export class MTextProcessor {
     switch (this.currentHorizontalAlignment) {
       case MTextParagraphAlignment.LEFT:
       case MTextParagraphAlignment.JUSTIFIED: {
-        const dx = this._currentLeftMargin - resolvedBBox.min.x
+        const dx = Number.isFinite(this.maxLineWidth)
+          ? this._currentLeftMargin - resolvedBBox.min.x
+          : this._currentLeftMargin
 
         const translated = new Set<THREE.Object3D>()
         geometryEntries.forEach(entry => {

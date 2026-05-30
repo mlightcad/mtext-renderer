@@ -35,8 +35,9 @@ async function registerShxFont(name: string, file: string, encoding?: string) {
   }
   const font = FontFactory.instance.createFont(fontData)
   font.names.add(name)
-  ;(FontManager.instance as unknown as { loadedFontMap: Map<string, unknown> })
-    .loadedFontMap.set(name, font)
+  ;(
+    FontManager.instance as unknown as { loadedFontMap: Map<string, unknown> }
+  ).loadedFontMap.set(name, font)
 }
 
 type CharBoxEntry = {
@@ -58,7 +59,9 @@ function collectCharBoxes(object: THREE.Object3D): CharBoxEntry[] {
 
 function charBoxesInReadingOrder(boxes: CharBoxEntry[]) {
   return [...boxes]
-    .filter(entry => entry.type === CharBoxType.CHAR && entry.char.trim() !== '')
+    .filter(
+      entry => entry.type === CharBoxType.CHAR && entry.char.trim() !== ''
+    )
     .sort((a, b) => a.box.min.x - b.box.min.x)
 }
 
@@ -79,9 +82,7 @@ describe('MText CJK layout regression', () => {
     getMeshBasicMaterial: vi
       .fn()
       .mockReturnValue(new THREE.MeshBasicMaterial()),
-    getLineBasicMaterial: vi
-      .fn()
-      .mockReturnValue(new THREE.LineBasicMaterial())
+    getLineBasicMaterial: vi.fn().mockReturnValue(new THREE.LineBasicMaterial())
   }
 
   const style: TextStyle = {
@@ -153,9 +154,7 @@ describe('SHX space width (PC_TEXTSTYLE / isocp)', () => {
     getMeshBasicMaterial: vi
       .fn()
       .mockReturnValue(new THREE.MeshBasicMaterial()),
-    getLineBasicMaterial: vi
-      .fn()
-      .mockReturnValue(new THREE.LineBasicMaterial())
+    getLineBasicMaterial: vi.fn().mockReturnValue(new THREE.LineBasicMaterial())
   }
 
   const pcTextStyle: TextStyle = {

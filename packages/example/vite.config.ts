@@ -4,6 +4,12 @@ import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig({
   base: './',
+  resolve: {
+    alias: {
+      // iconv-lite (used by SHX bigfont encoding) probes stream.Transform at init.
+      stream: resolve(__dirname, 'src/shims/stream.ts')
+    }
+  },
   build: {
     outDir: resolve(__dirname, 'dist'),
     sourcemap: true,
