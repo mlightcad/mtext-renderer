@@ -9,6 +9,7 @@ import * as THREE from 'three'
 
 import { FontManager } from '../font'
 import { buildCharBoxesFromObject } from './charBoxUtils'
+import { resolveMTextWrapWidth } from './mtextDataUtils'
 import { MTextFormatOptions, MTextProcessor } from './mtextProcessor'
 import { StyleManager } from './styleManager'
 import {
@@ -28,11 +29,6 @@ import {
 const tempPoint = /*@__PURE__*/ new THREE.Vector3()
 const tempPoint2 = /*@__PURE__*/ new THREE.Vector3()
 const tempPoint3 = /*@__PURE__*/ new THREE.Vector3()
-const tempVector = /*@__PURE__*/ new THREE.Vector3()
-const tempScale = /*@__PURE__*/ new THREE.Vector3()
-const tempQuaternion = /*@__PURE__*/ new THREE.Quaternion()
-const translateTempMatrix = /*@__PURE__*/ new THREE.Matrix4()
-const tempMatrix = /*@__PURE__*/ new THREE.Matrix4()
 const AxisX = /*@__PURE__*/ new THREE.Vector3(1, 0, 0)
 
 /**
@@ -323,13 +319,6 @@ export class MText extends THREE.Object3D {
       return undefined
     }
 
-    object.matrix.decompose(tempVector, tempQuaternion, tempScale)
-    if (mtextData.position) {
-      tempVector.x += mtextData.position.x
-      tempVector.y += mtextData.position.y
-      object.matrix.compose(tempVector, tempQuaternion, tempScale)
-    }
-
     // When the caller does not pre-declare the text width (e.g. AcDbText
     // and AcDbAttribute, which let the renderer's own font metrics drive
     // layout), `mtextData.width` is `Infinity`. Using that value verbatim
@@ -337,11 +326,15 @@ export class MText extends THREE.Object3D {
     // attachment. Measure the bbox of the just-built object so the anchor
     // is computed from the *real* rendered glyph extent — independent of
     // font, kerning, or character composition.
-    let width = mtextData.width
+    let width = resolveMTextWrapWidth(mtextData)
     object.updateWorldMatrix(true, true)
     const bbox = new THREE.Box3().setFromObject(object)
     if (!Number.isFinite(width)) {
-      const measured = bbox.max.x - bbox.min.x
+      const logicalAdvanceWidth = object.userData?.logicalAdvanceWidth
+      const measured =
+        typeof logicalAdvanceWidth === 'number' && logicalAdvanceWidth > 0
+          ? logicalAdvanceWidth
+          : bbox.max.x - bbox.min.x
       width = Number.isFinite(measured) && measured > 0 ? measured : 0
     }
     const anchorMetrics = this.measureAnchorMetrics(
@@ -397,6 +390,8 @@ export class MText extends THREE.Object3D {
       obj.layers.enableAll()
     })
 
+    // Keep insertion coordinates out of glyph vertices. Large drawing
+    // positions are applied as object transforms after local anchor offsets.
     let rotateAngle = mtextData.rotation || 0
     if (mtextData.directionVector) {
       const dv = mtextData.directionVector
@@ -406,16 +401,12 @@ export class MText extends THREE.Object3D {
       rotateAngle = v.z > 0 ? -angle : angle
     }
 
-    object.matrix.compose(tempVector, tempQuaternion, tempScale)
-    const translate = mtextData.position
-      ? tempVector.clone().sub(mtextData.position)
-      : tempVector
-    translateTempMatrix.makeTranslation(-translate.x, -translate.y, 0)
-    tempMatrix.makeRotationZ(rotateAngle)
-    object.matrix.multiply(translateTempMatrix)
-    object.matrix.multiply(tempMatrix)
-    object.matrix.multiply(translateTempMatrix.invert())
-    object.matrix.decompose(object.position, object.quaternion, object.scale)
+    const insertion = mtextData.position
+    object.position.set(insertion?.x ?? 0, insertion?.y ?? 0, insertion?.z ?? 0)
+    object.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), rotateAngle)
+    object.scale.set(1, 1, 1)
+    object.updateMatrix()
+    object.updateMatrixWorld(true)
     return object
   }
 
@@ -434,7 +425,7 @@ export class MText extends THREE.Object3D {
       this.styleManager.unsupportedTextStyles[fontFileAndStyleName]++
     }
 
-    const maxWidth = mtextData.width || 0
+    const maxWidth = resolveMTextWrapWidth(mtextData) || 0
     // Internal paragraph alignment: only meaningful for multi-line MText
     // with a declared FINITE `width`. For unconstrained text (Infinity,
     // used by AcDbText/AcDbAttribute), forcing LEFT avoids generating
