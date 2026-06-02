@@ -62,6 +62,9 @@ describe('FontManager', () => {
     manager.fileNames = []
     manager.enableFontCache = true
     manager.defaultFont = 'simkai'
+    manager.defaultMeshFont = 'simkai'
+    manager.defaultShxFont = 'txt'
+    manager.defaultShxBigFont = 'hztxt'
   })
 
   afterEach(() => {
@@ -114,7 +117,7 @@ describe('FontManager', () => {
 
     const result = await manager.loadDefaultFont()
 
-    expect(loader.load).toHaveBeenCalledWith(['simkai'])
+    expect(loader.load).toHaveBeenCalledWith(['simkai', 'txt', 'hztxt'])
     expect(result).toEqual([
       {
         fontName: 'simkai',
@@ -133,6 +136,13 @@ describe('FontManager', () => {
       'replacement'
     )
     expect(FontManager.instance.findAndReplaceFont('Unknown')).toBe('simkai')
+    expect(FontManager.instance.findAndReplaceFont('missing.shx')).toBe('txt')
+    expect(FontManager.instance.findAndReplaceFont('missing', 'shx')).toBe(
+      'txt'
+    )
+    expect(
+      FontManager.instance.findAndReplaceFont('missing_big', 'shx', 'shxBigFont')
+    ).toBe('hztxt')
   })
 
   it('finds fonts by name, strips common font extensions, and records misses', () => {

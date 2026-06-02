@@ -79,6 +79,14 @@ export class UnifiedRenderer {
   }
 
   /**
+   * Configure default fallback fonts for mesh, primary SHX, and SHX big types.
+   */
+  setDefaultFonts(meshFont: string, shxFont: string, shxBigFont: string) {
+    this.mainThreadRenderer.setDefaultFonts(meshFont, shxFont, shxBigFont)
+    return this.webWorkerRenderer.setDefaultFonts(meshFont, shxFont, shxBigFont)
+  }
+
+  /**
    * Get the default rendering mode
    */
   getDefaultMode(): RenderMode {

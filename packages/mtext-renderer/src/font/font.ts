@@ -6,6 +6,14 @@
 export type FontType = 'shx' | 'mesh'
 
 /**
+ * Role of a default fallback font in AutoCAD-style text styles.
+ * - 'mesh': TrueType/mesh font fallback (DXF group 3, big font empty)
+ * - 'shx': Primary SHX font fallback (DXF group 3, ASCII/Latin)
+ * - 'shxBigFont': SHX big-font fallback (DXF group 4, CJK/DBCS)
+ */
+export type DefaultFontRole = 'mesh' | 'shx' | 'shxBigFont'
+
+/**
  * Represents font data stored in the cache database.
  * This interface defines the structure of font data that is stored and retrieved from the cache.
  */

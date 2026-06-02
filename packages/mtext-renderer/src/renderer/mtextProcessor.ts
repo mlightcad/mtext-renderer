@@ -9,7 +9,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 import { getColorByIndex } from '../common'
-import { FontManager } from '../font'
+import { DefaultFontRole, FontManager } from '../font'
 import { resolveMTextColor } from './colorUtils'
 import {
   LINE_SPACING_SCALE_FACTOR,
@@ -250,7 +250,9 @@ export class MTextProcessor {
     // Set initial color
     this._currentContext.setColorFromHex(this.resolveBaseColor())
     // Set initial font face
-    this._currentContext.fontFace.family = this.textStyle.font.toLowerCase()
+    this._currentContext.fontFace.family = this.getResolvedStyleFontName(
+      this.textStyle.font
+    )
     // Set initial width factor
     this._currentContext.widthFactor = {
       value: options.widthFactor,
@@ -1216,7 +1218,7 @@ export class MTextProcessor {
           'position',
           new THREE.BufferAttribute(lineVertices, 3)
         )
-        lineGeometry.setIndex(null)
+        lineGeometry.setIndex([0, 1])
         lineGeometry.userData = { isDecoration: true }
         lineGeometries.push(lineGeometry)
       }
@@ -1481,7 +1483,7 @@ export class MTextProcessor {
           3
         )
       )
-      underlineGeom.setIndex(null)
+      underlineGeom.setIndex([0, 1])
       underlineGeom.userData = { isDecoration: true }
       lineGeometries.push(underlineGeom)
     }
@@ -1503,7 +1505,7 @@ export class MTextProcessor {
           3
         )
       )
-      overlineGeom.setIndex(null)
+      overlineGeom.setIndex([0, 1])
       overlineGeom.userData = { isDecoration: true }
       lineGeometries.push(overlineGeom)
     }
@@ -1525,7 +1527,7 @@ export class MTextProcessor {
           3
         )
       )
-      strikeGeom.setIndex(null)
+      strikeGeom.setIndex([0, 1])
       strikeGeom.userData = { isDecoration: true }
       lineGeometries.push(strikeGeom)
     }
@@ -1539,13 +1541,35 @@ export class MTextProcessor {
     this.calcuateLineParams()
   }
 
-  private changeFont(fontName: string) {
+  private getResolvedStyleFontName(
+    fontName: string,
+    role?: DefaultFontRole
+  ): string {
     let processedFontName = fontName
     if (this._options.removeFontExtension) {
       processedFontName = fontName.replace(/\.(ttf|otf|woff|shx)$/, '')
     }
-    this._currentContext.fontFace.family =
-      this.fontManager.findAndReplaceFont(processedFontName)
+    const fontType = this.fontManager.inferFontTypeFromName(fontName)
+    const resolvedRole =
+      role ??
+      (fontType === 'mesh'
+        ? 'mesh'
+        : fontType === 'shx'
+          ? 'shx'
+          : undefined)
+    return this.fontManager.findAndReplaceFont(
+      processedFontName,
+      fontType,
+      resolvedRole
+    )
+  }
+
+  private getResolvedBigFontName(fontName: string): string {
+    return this.getResolvedStyleFontName(fontName, 'shxBigFont')
+  }
+
+  private changeFont(fontName: string) {
+    this._currentContext.fontFace.family = this.getResolvedStyleFontName(fontName)
     this.calcuateLineParams()
     this._currentContext.blankWidth = this.calculateBlankWidthForFont(
       this._currentContext.fontFace.family,
@@ -1583,7 +1607,7 @@ export class MTextProcessor {
     if (this.textStyle.bigFont && !shape) {
       shape = this.fontManager.getCharShape(
         char,
-        this.textStyle.bigFont,
+        this.getResolvedBigFontName(this.textStyle.bigFont),
         this.currentFontSize
       )
     }
@@ -1873,12 +1897,15 @@ export class MTextProcessor {
     const allLineGeoms = [
       ...lineGeometries,
       ...geometries.filter(g => !(g instanceof THREE.ShapeGeometry))
-    ]
+    ].map(geometry => this.ensureLineGeometryIndexed(geometry))
     if (allLineGeoms.length > 0) {
       const mergedLineGeom =
         allLineGeoms.length > 1
           ? mergeGeometries(allLineGeoms)
           : allLineGeoms[0]
+      if (!mergedLineGeom) {
+        throw new Error('Failed to merge line geometries for MText rendering')
+      }
       const lineMesh = new THREE.LineSegments(mergedLineGeom, lineMaterial)
       lineMesh.userData.bboxIntersectionCheck = true
       lineMesh.userData.charBoxType = charBoxType
@@ -1895,6 +1922,26 @@ export class MTextProcessor {
     } else {
       return meshGroup
     }
+  }
+
+  private ensureLineGeometryIndexed(
+    geometry: THREE.BufferGeometry
+  ): THREE.BufferGeometry {
+    if (geometry.getIndex()) {
+      return geometry
+    }
+
+    const position = geometry.getAttribute('position')
+    if (!position || position.count < 2) {
+      return geometry
+    }
+
+    const indices: number[] = []
+    for (let i = 0; i < position.count; i++) {
+      indices.push(i)
+    }
+    geometry.setIndex(indices)
+    return geometry
   }
 
   private changeFontSizeScaleFactor(value: number) {

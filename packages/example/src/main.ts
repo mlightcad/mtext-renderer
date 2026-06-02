@@ -28,7 +28,9 @@ class MTextRendererExample {
   private mtextInput: HTMLTextAreaElement
   private renderBtn: HTMLButtonElement
   private statusDiv: HTMLDivElement
-  private fontSelect: HTMLSelectElement
+  private defaultMeshFontSelect: HTMLSelectElement
+  private defaultShxFontSelect: HTMLSelectElement
+  private defaultShxBigFontSelect: HTMLSelectElement
   private showBoundingBoxCheckbox: HTMLInputElement
   private showCharBoxesCheckbox: HTMLInputElement
   private showLineBoxesCheckbox: HTMLInputElement
@@ -47,7 +49,7 @@ class MTextRendererExample {
       '{Circle diameter dimensioning symbol: %%c},\\P{Degree symbol: %%d}\\P{Plus/minus tolerance symbol: %%p}\\P{A single percent sign: %%%}\\P{Unicode character: %%130 %%131}\\P{Toggles strikethrough on and off: %%kon, %%koff}\\P{Toggles overscoring on and off.: %%oon, %%ooff}\\P{Toggles underscoring  on and off.: %%uon, %%uoff}',
     color:
       '{\\C0;By Block}\\P{\\C1;Red Text}\\P{\\C2;Yellow Text}\\P{\\C3;Green Text}\\P{\\C4;Cyan Text}\\P{\\C5;Blue Text}\\P{\\C6;Magenta Text}\\P{\\C7;White Text}\\P{\\C256;By Layer}\\P{\\c16761035;Pink (0x0FFC0CB)}\\PRestore ByLayer\\P\\C1;Old Context Color: Red, {\\C2; New Context Color: Yellow, } Restored Context Color: Red',
-    font: '{\\C1;\\W2;\\FSimSun;SimSun Text 宋体文字（面积、材料、8、①④⑧⑩⑫㉔㉚）}\\P{\\C2;\\W0.5;\\FArial;Arial Text}\\P{\\C3;30;\\Faehalf.shx;SHX Text}\\P{\\C4;\\Fgbcbig.shx;东亚字符集字体}\\P{\\C5;\\Q1;\\FSimHei;SimHei Text，黑体文字}\\P{\\C6;\\Q0.5;\\FSimKai;SimKai Text}',
+    font: '{\\C1;\\W2;\\FSimSun;SimSun Text 宋体文字（面积、材料、8、①④⑧⑩⑫㉔㉚）}\\P{\\C2;\\W0.5;\\FArial;Arial Text}\\P{\\C3;30;\\Faehalf.shx;SHX Text}\\P{\\C4;\\Fgbcbig.shx;东亚字符集字体}\\P{\\C5;\\Q1;\\FSimHei;SimHei Text，黑体文字}\\P{\\C6;\\Q0.5;\\FSimKai;SimKai Text}\\P{\\C7;\\F__missing_mesh__.ttf;Missing mesh → default mesh font}\\P{\\C8;\\F__missing__.shx;Missing inline SHX → default English SHX}\\P{\\C9;Style primary fallback: ABC}\\P{\\C10;Style SHX big-font fallback: 中文}',
     stacking:
       '{\\C1;Basic Fractions:}\\P{\\C2;The value is \\S1/2; and \\S3/4; of the total.}\\P{\\C3;\\H0.16;Stacked Fractions:}\\P{\\C4;\\S1 2/3 4; represents \\Sx^ y; in the equation \\S1#2;.}\\P{\\C5;Complex Fractions:}\\P{\\C6;The result \\S1/2/3; is between \\S1^ 2^ 3; and \\S1#2#3;.}\\P{\\C7;Subscript Examples:}\\P{\\C8;H\\S^ 2;O (Water)}\\P{\\C9;CO\\S^ 2; (Carbon Dioxide)}\\P{\\C10;x\\S^ 2; + y\\S^ 2;}\\P{\\C11;Superscript Examples:}\\P{\\C12;E = mc\\S2^ ; (Energy)}\\P{\\C13;x\\S2^ ; + y\\S2^ ; = r\\S2^ ; (Circle)}\\P{\\C14;Combined Examples:}\\P{\\C15;H\\S^ 2;O\\S2^ ; (Hydrogen Peroxide)}\\P{\\C16;Fe\\S^ 2;+\\S3^ ; (Iron Ion)}',
     alignment:
@@ -99,8 +101,14 @@ class MTextRendererExample {
     ) as HTMLTextAreaElement
     this.renderBtn = document.getElementById('render-btn') as HTMLButtonElement
     this.statusDiv = document.getElementById('status') as HTMLDivElement
-    this.fontSelect = document.getElementById(
-      'font-select'
+    this.defaultMeshFontSelect = document.getElementById(
+      'default-mesh-font-select'
+    ) as HTMLSelectElement
+    this.defaultShxFontSelect = document.getElementById(
+      'default-shx-font-select'
+    ) as HTMLSelectElement
+    this.defaultShxBigFontSelect = document.getElementById(
+      'default-shx-big-font-select'
     ) as HTMLSelectElement
     this.showBoundingBoxCheckbox = document.getElementById(
       'show-bounding-box'
@@ -174,13 +182,14 @@ class MTextRendererExample {
       await this.renderMText(content)
     })
 
-    // Font selection
-    this.fontSelect.addEventListener('change', async () => {
-      const content = this.mtextInput.value
-
-      // Re-render MText with new font
-      await this.renderMText(content)
-    })
+    // Default font selection
+    const reloadDefaultFonts = async () => {
+      await this.initializeFonts(false)
+      await this.renderMText(this.mtextInput.value)
+    }
+    this.defaultMeshFontSelect.addEventListener('change', reloadDefaultFonts)
+    this.defaultShxFontSelect.addEventListener('change', reloadDefaultFonts)
+    this.defaultShxBigFontSelect.addEventListener('change', reloadDefaultFonts)
 
     // Example buttons
     document.querySelectorAll('.example-btn').forEach(button => {
@@ -242,33 +251,78 @@ class MTextRendererExample {
     })
   }
 
+  private createTextStyle(options?: {
+    demoMissingStyleFonts?: boolean
+    fixedTextHeight?: number
+  }): TextStyle {
+    const demoMissingStyleFonts = options?.demoMissingStyleFonts ?? false
+    const fixedTextHeight = options?.fixedTextHeight ?? 24
+    return {
+      name: 'Standard',
+      standardFlag: 0,
+      fixedTextHeight,
+      widthFactor: 1,
+      obliqueAngle: 0,
+      textGenerationFlag: 0,
+      lastHeight: fixedTextHeight,
+      font: demoMissingStyleFonts
+        ? '__missing_primary__.shx'
+        : this.defaultShxFontSelect.value,
+      bigFont: demoMissingStyleFonts
+        ? '__missing_big__.shx'
+        : this.defaultShxBigFontSelect.value
+    }
+  }
+
+  private populateFontSelect(
+    select: HTMLSelectElement,
+    fonts: Array<{ name: string[]; type?: string }>,
+    fontType: 'mesh' | 'shx',
+    defaultName: string
+  ): void {
+    select.innerHTML = ''
+    fonts
+      .filter(font => font.type === fontType)
+      .forEach(font => {
+        const option = document.createElement('option')
+        option.value = font.name[0]
+        option.textContent = font.name[0]
+        if (font.name[0] === defaultName) {
+          option.selected = true
+        }
+        select.appendChild(option)
+      })
+  }
+
   private async initializeFonts(isResetAvaiableFonts = true): Promise<void> {
     try {
       if (isResetAvaiableFonts) {
-        // Load available fonts for the dropdown
         const result = await this.unifiedRenderer.getAvailableFonts()
         const fonts = result.fonts
 
-        // Clear existing options
-        this.fontSelect.innerHTML = ''
-
-        // Add all available fonts to dropdown
-        fonts.forEach(font => {
-          const option = document.createElement('option')
-          option.value = font.name[0]
-          option.textContent = font.name[0] // Use the first name from the array
-          // Set selected if this is the default font
-          if (font.name[0] === 'simkai') {
-            option.selected = true
-          }
-          this.fontSelect.appendChild(option)
-        })
+        this.populateFontSelect(
+          this.defaultMeshFontSelect,
+          fonts,
+          'mesh',
+          'simkai'
+        )
+        this.populateFontSelect(this.defaultShxFontSelect, fonts, 'shx', 'txt')
+        this.populateFontSelect(
+          this.defaultShxBigFontSelect,
+          fonts,
+          'shx',
+          'hztxt'
+        )
       }
 
-      // Load default fonts
-      const selectedFont = this.fontSelect.value
-      await this.unifiedRenderer.loadFonts([selectedFont])
-      this.statusDiv.textContent = 'Fonts loaded successfully'
+      const meshFont = this.defaultMeshFontSelect.value
+      const shxFont = this.defaultShxFontSelect.value
+      const shxBigFont = this.defaultShxBigFontSelect.value
+      await this.unifiedRenderer.setDefaultFonts(meshFont, shxFont, shxBigFont)
+      await this.unifiedRenderer.loadFonts(
+        [...new Set([meshFont, shxFont, shxBigFont])]
+      )
+      this.statusDiv.textContent = `Default fonts loaded (mesh: ${meshFont}, english: ${shxFont}, shx big: ${shxBigFont})`
       this.statusDiv.style.color = '#0f0'
     } catch (error) {
       console.error('Error loading fonts:', error)
@@ -536,17 +590,7 @@ class MTextRendererExample {
           position: new THREE.Vector3(cx, cy, 0),
           attachmentPoint
         },
-        textStyle: {
-          name: 'Standard',
-          standardFlag: 0,
-          fixedTextHeight: 10,
-          widthFactor: 1,
-          obliqueAngle: 0,
-          textGenerationFlag: 0,
-          lastHeight: 10,
-          font: this.fontSelect.value,
-          bigFont: ''
-        }
+        textStyle: this.createTextStyle({ fixedTextHeight: 10 })
       }
     })
   }
@@ -581,17 +625,7 @@ class MTextRendererExample {
           width: 240,
           position: new THREE.Vector3(x, y, 0)
         },
-        textStyle: {
-          name: 'Standard',
-          standardFlag: 0,
-          fixedTextHeight: 24,
-          widthFactor: 1,
-          obliqueAngle: 0,
-          textGenerationFlag: 0,
-          lastHeight: 24,
-          font: this.fontSelect.value,
-          bigFont: ''
-        }
+        textStyle: this.createTextStyle()
       }
     })
   }
@@ -893,17 +927,9 @@ class MTextRendererExample {
           position: new THREE.Vector3(70, 530, 0)
         }
 
-        const textStyle: TextStyle = {
-          name: 'Standard',
-          standardFlag: 0,
-          fixedTextHeight: 24,
-          widthFactor: 1,
-          obliqueAngle: 0,
-          textGenerationFlag: 0,
-          lastHeight: 24,
-          font: this.fontSelect.value,
-          bigFont: ''
-        }
+        const textStyle = this.createTextStyle({
+          demoMissingStyleFonts: content === this.exampleTexts.font
+        })
 
         // Render MText using unified renderer
         this.currentMText = await this.unifiedRenderer.asyncRenderMText(

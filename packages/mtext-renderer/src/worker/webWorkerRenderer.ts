@@ -83,12 +83,22 @@ type SetFontUrlMessage = WorkerMessageBase<
   }
 >
 
+type SetDefaultFontsMessage = WorkerMessageBase<
+  'setDefaultFonts',
+  {
+    meshFont: string
+    shxFont: string
+    shxBigFont: string
+  }
+>
+
 type GetAvailableFontsMessage = WorkerMessageBase<'getAvailableFonts'>
 
 type WorkerMessageTyped =
   | RenderMessage
   | LoadFontsMessage
   | SetFontUrlMessage
+  | SetDefaultFontsMessage
   | GetAvailableFontsMessage
 
 //
@@ -105,6 +115,8 @@ type LoadFontsResponse = WorkerResponseBase<
 
 type SetFontUrlResponse = WorkerResponseBase<'setFontUrl'>
 
+type SetDefaultFontsResponse = WorkerResponseBase<'setDefaultFonts'>
+
 type GetAvailableFontsResponse = WorkerResponseBase<
   'getAvailableFonts',
   {
@@ -116,6 +128,7 @@ type WorkerResponseTyped =
   | RenderResponse
   | LoadFontsResponse
   | SetFontUrlResponse
+  | SetDefaultFontsResponse
   | GetAvailableFontsResponse
 
 // Serialized MText data from worker (JSON-based)
@@ -239,8 +252,8 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
 
   private async ensureInitialized() {
     if (!this.isInitialized) {
-      // Guarantee the default font is loaded
-      await this.loadFonts([FontManager.instance.defaultFont])
+      // Guarantee the default fonts are loaded
+      await this.loadFonts(FontManager.instance.getDefaultFontsToLoad())
       this.isInitialized = true
     }
   }
@@ -408,6 +421,22 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   }
 
   /**
+   * Configure default fallback fonts for mesh, primary SHX, and big SHX types in all workers.
+   */
+  async setDefaultFonts(meshFont: string, shxFont: string, shxBigFont: string) {
+    FontManager.instance.defaultMeshFont = meshFont
+    FontManager.instance.defaultShxFont = shxFont
+    FontManager.instance.defaultShxBigFont = shxBigFont
+    await this.sendMessageToAllWorkers<
+      SetDefaultFontsMessage,
+      SetDefaultFontsResponse
+    >({
+      type: 'setDefaultFonts',
+      data: { meshFont, shxFont, shxBigFont }
+    })
+  }
+
+  /**
    * Render MText in one worker and return serialized data asynchronously.
    */
   async asyncRenderMText(
@@ -480,6 +509,24 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   ): MTextObject {
     const baseByLayer = colorSettings.color.aci === 256
     const group = new THREE.Group()
+
+    // Large drawing coordinates live on the root transform; glyph geometry stays local.
+    group.position.set(
+      serializedData.position.x,
+      serializedData.position.y,
+      serializedData.position.z
+    )
+    group.quaternion.set(
+      serializedData.rotation.x,
+      serializedData.rotation.y,
+      serializedData.rotation.z,
+      serializedData.rotation.w
+    )
+    group.scale.set(
+      serializedData.scale.x,
+      serializedData.scale.y,
+      serializedData.scale.z
+    )
 
     // Reconstruct all child objects
     serializedData.children.forEach(childData => {
@@ -586,7 +633,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
         geometry.computeBoundingSphere()
       }
 
-      // Set position, rotation, and scale directly (already in world coordinates)
+      // Child transforms are local to the MText root group.
       object.position.set(
         childData.position.x,
         childData.position.y,

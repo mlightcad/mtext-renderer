@@ -149,6 +149,7 @@ function createProcessor(
     getFontScaleFactor: () => fontScaleFactor,
     getFontType: () => fontType,
     findAndReplaceFont: (name: string) => name,
+    inferFontTypeFromName: () => fontType,
     getCharShape: (char: string) => {
       if (!char || char === ' ') return undefined
       return {
