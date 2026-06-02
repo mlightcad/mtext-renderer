@@ -110,6 +110,7 @@ function createTextFixture(
     getFontScaleFactor: () => 1,
     getFontType: () => 'mesh',
     findAndReplaceFont: (name: string) => name,
+    inferFontTypeFromName: () => 'mesh' as const,
     getCharShape: (_char: string, _fontName: string, size: number) => ({
       width: 10,
       toGeometry: () => createShapeGeometry(10, size)
@@ -163,6 +164,7 @@ describe('MText attachment anchoring', () => {
       getFontScaleFactor: () => fontScaleFactor,
       getFontType: () => 'mesh',
       findAndReplaceFont: (name: string) => name,
+    inferFontTypeFromName: () => 'mesh' as const,
       getCharShape: (_char: string, _fontName: string, size: number) => ({
         width: 10,
         toGeometry: () => createShapeGeometry(10, size / fontScaleFactor)
@@ -236,6 +238,7 @@ describe('MText attachment anchoring', () => {
         getFontScaleFactor: () => 1,
         getFontType: () => 'mesh',
         findAndReplaceFont: (name: string) => name,
+    inferFontTypeFromName: () => 'mesh' as const,
         getCharShape: (_char: string, _fontName: string, size: number) => ({
           width: 10,
           toGeometry: () => createShapeGeometry(10, size)
@@ -292,6 +295,7 @@ describe('MText attachment anchoring', () => {
       getFontScaleFactor: () => 1,
       getFontType: () => 'mesh',
       findAndReplaceFont: (name: string) => name,
+    inferFontTypeFromName: () => 'mesh' as const,
       getCharShape: (_char: string, _fontName: string, size: number) => ({
         width: 10,
         toGeometry: () => createShapeGeometry(10, size)
@@ -352,6 +356,7 @@ describe('MText attachment anchoring', () => {
       getFontScaleFactor: () => 1,
       getFontType: () => 'mesh',
       findAndReplaceFont: (name: string) => name,
+    inferFontTypeFromName: () => 'mesh' as const,
       getCharShape: (_char: string, _fontName: string, size: number) => ({
         width: 10,
         toGeometry: () => createOffsetShapeGeometry(10, size, sideBearing)

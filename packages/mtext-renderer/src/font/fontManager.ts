@@ -9,7 +9,7 @@ import {
 import { BaseFont } from './baseFont'
 import { BaseTextShape } from './baseTextShape'
 import { DefaultFontLoader } from './defaultFontLoader'
-import { FontData, FontType } from './font'
+import { FontData, FontType, DefaultFontRole } from './font'
 import { FontFactory } from './fontFactory'
 import { FontInfo, FontLoader, FontLoadStatus } from './fontLoader'
 
@@ -57,8 +57,35 @@ export class FontManager {
   public missedFonts: Record<string, number> = {}
   /** Flag to enable/disable font caching */
   public enableFontCache = true
-  /** Default font to use when a requested font is not found */
-  public defaultFont = 'simkai'
+  /** Default mesh font to use when a requested mesh font is not found */
+  public defaultMeshFont = 'simkai'
+  /** Default primary (English) SHX font when a requested SHX font is not found (DXF group 3) */
+  public defaultShxFont = 'txt'
+  /** Default SHX big font when a requested big font is not found (DXF group 4) */
+  public defaultShxBigFont = 'hztxt'
+
+  /**
+   * @deprecated Use {@link defaultShxBigFont} instead.
+   */
+  get defaultBigFont() {
+    return this.defaultShxBigFont
+  }
+  set defaultBigFont(value: string) {
+    this.defaultShxBigFont = value
+  }
+
+  /**
+   * Default font to use when a requested font is not found.
+   * Setting this value updates all three default font properties.
+   */
+  get defaultFont() {
+    return this.defaultMeshFont
+  }
+  set defaultFont(value: string) {
+    this.defaultMeshFont = value
+    this.defaultShxFont = value
+    this.defaultShxBigFont = value
+  }
 
   /** Event managers for font-related events */
   public readonly events = {
@@ -124,19 +151,71 @@ export class FontManager {
   }
 
   /**
-   * Return true if the default font was loaded.
-   * @returns True if the default font was loaded. False otherwise.
+   * Return true if all configured default fonts were loaded.
+   * @returns True if all default fonts were loaded. False otherwise.
    */
   isDefaultFontLoaded() {
-    return this.loadedFontMap.get(this.defaultFont.toLowerCase()) != null
+    return this.getDefaultFontsToLoad().every(
+      fontName => this.loadedFontMap.get(fontName.toLowerCase()) != null
+    )
   }
 
   /**
-   * Loads the default font
+   * Returns the distinct default font names that should be loaded.
+   */
+  getDefaultFontsToLoad(): string[] {
+    return [
+      ...new Set([
+        this.defaultMeshFont,
+        this.defaultShxFont,
+        this.defaultShxBigFont
+      ])
+    ]
+  }
+
+  /**
+   * Resolves the default font for the given font type or text-style role.
+   */
+  getDefaultFontForRole(role?: DefaultFontRole, fontType?: FontType): string {
+    if (role === 'shxBigFont') {
+      return this.defaultShxBigFont
+    }
+    if (role === 'shx' || fontType === 'shx') {
+      return this.defaultShxFont
+    }
+    return this.defaultMeshFont
+  }
+
+  /**
+   * Resolves the default font for the given font type.
+   * @deprecated Use {@link getDefaultFontForRole} instead.
+   */
+  getDefaultFontForType(fontType?: FontType): string {
+    return this.getDefaultFontForRole(undefined, fontType)
+  }
+
+  /**
+   * Infers font type from a font name or a loaded font entry.
+   */
+  inferFontTypeFromName(fontName: string): FontType | undefined {
+    const lower = fontName.toLowerCase()
+    if (lower.endsWith('.shx')) {
+      return 'shx'
+    }
+    if (/\.(ttf|otf|woff)$/.test(lower)) {
+      return 'mesh'
+    }
+
+    const withoutExtension = lower.replace(/\.(ttf|otf|woff|shx)$/, '')
+    return this.loadedFontMap.get(withoutExtension)?.type
+  }
+
+  /**
+   * Loads the default mesh, primary SHX, and big SHX fonts
    * @returns Promise that resolves to the font load statuses
    */
   async loadDefaultFont() {
-    return await this.loadFontsByNames(this.defaultFont)
+    return await this.loadFontsByNames(this.getDefaultFontsToLoad())
   }
 
   /**
@@ -185,7 +264,11 @@ export class FontManager {
    * @param fontName - The font name to find
    * @returns The original font name if found, or the replacement font name if not found
    */
-  findAndReplaceFont(fontName: string) {
+  findAndReplaceFont(
+    fontName: string,
+    fontTypeHint?: FontType,
+    role?: DefaultFontRole
+  ) {
     let font = this.loadedFontMap.get(fontName.toLowerCase())
     if (font == null) {
       const mappedFontName = this.fontMapping[fontName]
@@ -194,7 +277,12 @@ export class FontManager {
         return mappedFontName
       }
     }
-    return font ? fontName : this.defaultFont
+    if (font) {
+      return fontName
+    }
+
+    const fontType = fontTypeHint ?? this.inferFontTypeFromName(fontName)
+    return this.getDefaultFontForRole(role, fontType)
   }
 
   /**

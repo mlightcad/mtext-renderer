@@ -44,6 +44,15 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   }
 
   /**
+   * Configure default fallback fonts for mesh, primary SHX, and big SHX types.
+   */
+  async setDefaultFonts(meshFont: string, shxFont: string, shxBigFont: string) {
+    this.fontManager.defaultMeshFont = meshFont
+    this.fontManager.defaultShxFont = shxFont
+    this.fontManager.defaultShxBigFont = shxBigFont
+  }
+
+  /**
    * Render MText directly in the main thread asynchronously. It will ensure that default font
    * is loaded. And fonts needed in mtext are loaded on demand.
    */
@@ -108,8 +117,8 @@ export class MainThreadRenderer implements MTextBaseRenderer {
 
   private async ensureInitialized() {
     if (!this.isInitialized) {
-      // Guarantee the default font is loaded
-      await this.loadFonts([FontManager.instance.defaultFont])
+      // Guarantee the default fonts are loaded
+      await this.loadFonts(FontManager.instance.getDefaultFontsToLoad())
       this.isInitialized = true
     }
   }

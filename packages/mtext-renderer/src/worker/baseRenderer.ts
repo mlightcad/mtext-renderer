@@ -101,6 +101,15 @@ export interface MTextBaseRenderer {
   setFontUrl(value: string): Promise<void>
 
   /**
+   * Configure default fallback fonts for mesh, primary SHX, and big SHX types.
+   */
+  setDefaultFonts(
+    meshFont: string,
+    shxFont: string,
+    shxBigFont: string
+  ): Promise<void>
+
+  /**
    * Release any resources owned by the renderer (e.g., terminate Web Workers).
    *
    * Safe to call multiple times.
