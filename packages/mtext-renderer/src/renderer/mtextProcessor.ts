@@ -1909,6 +1909,22 @@ export class MTextProcessor {
   }
 
   /**
+   * Merges line-based geometries for LineSegments. SHX glyphs use indexed
+   * BufferGeometry while fraction/divider decorations omit an index; normalize
+   * to non-indexed form so mergeGeometries accepts the batch.
+   */
+  private mergeLineGeometries(
+    geometries: THREE.BufferGeometry[]
+  ): THREE.BufferGeometry {
+    const normalized = geometries.map(geometry =>
+      geometry.index != null ? geometry.toNonIndexed() : geometry
+    )
+    return normalized.length > 1
+      ? (mergeGeometries(normalized) ?? normalized[0])
+      : normalized[0]
+  }
+
+  /**
    * Convert the text shape geometries to three.js object
    * @param geometries Input text shape geometries
    * @returns Return three.js object created from the specified text shape geometries
@@ -1954,10 +1970,7 @@ export class MTextProcessor {
       ...geometries.filter(g => !(g instanceof THREE.ShapeGeometry))
     ]
     if (allLineGeoms.length > 0) {
-      const mergedLineGeom =
-        allLineGeoms.length > 1
-          ? mergeGeometries(allLineGeoms)
-          : allLineGeoms[0]
+      const mergedLineGeom = this.mergeLineGeometries(allLineGeoms)
       const lineMesh = new THREE.LineSegments(mergedLineGeom, lineMaterial)
       lineMesh.userData.bboxIntersectionCheck = true
       lineMesh.userData.charBoxType = charBoxType

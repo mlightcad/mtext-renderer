@@ -85,9 +85,17 @@ type SetFontUrlMessage = WorkerMessageBase<
 
 type GetAvailableFontsMessage = WorkerMessageBase<'getAvailableFonts'>
 
+type SetDefaultFontsMessage = WorkerMessageBase<
+  'setDefaultFonts',
+  {
+    fonts: string[]
+  }
+>
+
 type WorkerMessageTyped =
   | RenderMessage
   | LoadFontsMessage
+  | SetDefaultFontsMessage
   | SetFontUrlMessage
   | GetAvailableFontsMessage
 
@@ -112,9 +120,17 @@ type GetAvailableFontsResponse = WorkerResponseBase<
   }
 >
 
+type SetDefaultFontsResponse = WorkerResponseBase<
+  'setDefaultFonts',
+  {
+    fonts: string[]
+  }
+>
+
 type WorkerResponseTyped =
   | RenderResponse
   | LoadFontsResponse
+  | SetDefaultFontsResponse
   | SetFontUrlResponse
   | GetAvailableFontsResponse
 
@@ -404,6 +420,20 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     await this.sendMessageToAllWorkers<SetFontUrlMessage, SetFontUrlResponse>({
       type: 'setFontUrl',
       data: { url: value }
+    })
+  }
+
+  /**
+   * Syncs the default font fallback chain to all workers.
+   */
+  async setDefaultFonts(fonts: readonly string[]) {
+    FontManager.instance.setDefaultFonts(fonts)
+    await this.sendMessageToAllWorkers<
+      SetDefaultFontsMessage,
+      SetDefaultFontsResponse
+    >({
+      type: 'setDefaultFonts',
+      data: { fonts: [...fonts] }
     })
   }
 

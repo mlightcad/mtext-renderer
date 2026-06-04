@@ -119,9 +119,19 @@
         <h2>MText Renderer Example</h2>
         <div class="row">
             <div class="field">
-                <label for="font-select">Default Font:</label>
+                <label for="font-select">Text Style Font:</label>
                 <select id="font-select">
                     <option value="simkai">simkai</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="default-fonts-preset">Default Fonts Preset:</label>
+                <select id="default-fonts-preset">
+                    <option value="minimal">minimal (simkai)</option>
+                    <option value="r12r14">r12r14 (txt → gdt)</option>
+                    <option value="modern">modern (hztxt → gdt)</option>
+                    <option value="international">international (txt → gdt)</option>
+                    <option value="cjk">cjk (gbcbig → gdt)</option>
                 </select>
             </div>
             <div class="field">
@@ -166,6 +176,7 @@
             <button class="example-btn" data-example="controlCode">Control Code</button>
             <button class="example-btn" data-example="color">Color</button>
             <button class="example-btn" data-example="font">Font</button>
+            <button class="example-btn" data-example="defaultFonts">Default Fonts</button>
             <button class="example-btn" data-example="alignment">Alignment</button>
             <button class="example-btn" data-example="paragraph">Paragraph</button>
             <button class="example-btn" data-example="stacking">Stacking</button>

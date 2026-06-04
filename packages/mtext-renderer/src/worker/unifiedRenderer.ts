@@ -1,3 +1,4 @@
+import { DefaultFontsPreset, FontManager } from '../font'
 import { StyleManager } from '../renderer'
 import {
   ColorSettings,
@@ -124,6 +125,24 @@ export class UnifiedRenderer {
       textStyle,
       colorSettings
     )
+  }
+
+  /**
+   * Sets the default font fallback chain on the active renderer and workers.
+   */
+  async setDefaultFonts(
+    fonts: DefaultFontsPreset | string | readonly string[]
+  ): Promise<void> {
+    FontManager.instance.setDefaultFonts(fonts)
+    const chain = [...FontManager.instance.defaultFonts]
+    await this.webWorkerRenderer.setDefaultFonts(chain)
+  }
+
+  /**
+   * Returns font names for a predefined default-font preset.
+   */
+  getDefaultFontsPreset(preset: DefaultFontsPreset): readonly string[] {
+    return FontManager.instance.getDefaultFontsPreset(preset)
   }
 
   /**
