@@ -19,7 +19,7 @@ const PAGE_TOTAL_TEXT = ' 共     页 '
 const PAGE_INDEX_TEXT = ' 第     页 '
 /** Insertion-point gap between the two TEXT entities in 机械工差.dxf. */
 const DXF_TEXT_INSERTION_GAP = 16.938
-const FONT_BASE = 'https://mlightcad.gitlab.io/cad-data/fonts/'
+const FONT_BASE = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
 
 async function registerShxFont(name: string, file: string, encoding?: string) {
   const response = await fetch(FONT_BASE + file)

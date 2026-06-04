@@ -403,6 +403,150 @@ describe('MTextProcessor format state', () => {
     expect(chars).not.toContain(STACK_DIVIDER_CHAR)
   })
 
+  it('renders caret stack with both upper and lower parts (tolerance notation)', () => {
+    const { processor } = createProcessor('mesh')
+    ;(processor as any)._options.collectCharBoxes = true
+
+    const obj = processor.processText([
+      {
+        type: TOKEN_STACK,
+        ctx: null,
+        data: ['+0.021', '0', '^']
+      }
+    ] as any)
+
+    const chars = getAllCharBoxes(obj).map(entry => entry.char)
+    expect(chars).toContain('+')
+    expect(chars).toContain('0')
+    expect(chars).toContain('2')
+    expect(chars).toContain('1')
+    expect(chars).not.toContain(STACK_DIVIDER_CHAR)
+  })
+
+  it('left-aligns caret tolerance stack with lower element bottom aligned to text bottom', () => {
+    const { processor, options } = createProcessor('mesh')
+    ;(processor as any)._options.collectCharBoxes = true
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'X' },
+      {
+        type: TOKEN_STACK,
+        ctx: null,
+        data: ['+0.021', '0', '^']
+      }
+    ] as any)
+
+    const boxes = getAllCharBoxes(obj)
+    const mainX = boxes.find(entry => entry.char === 'X')!
+    const lowerZero = [...boxes]
+      .filter(entry => entry.char === '0')
+      .sort((a, b) => a.box.min.y - b.box.min.y)[0]!
+    const upperPlus = boxes.find(entry => entry.char === '+')!
+
+    const mainFontSize = options.fontSize!
+    const stackFontSize = mainFontSize * 0.7
+
+    // Main text bottom and scaled text bottom should align
+    const mainBottom = mainX.box.min.y
+    const scaledBottom = lowerZero.box.min.y
+    expect(mainBottom).toBeCloseTo(scaledBottom, 0)
+
+    // Upper and lower parts should be left-aligned
+    expect(upperPlus.box.min.x).toBeCloseTo(lowerZero.box.min.x, 1)
+    expect(upperPlus.box.min.y).toBeGreaterThan(lowerZero.box.max.y - 0.01)
+  })
+
+  it('aligns caret tolerance stack after explicit height scaling (H0.7x)', () => {
+    const fontSize = 24
+    const fontManager = {
+      getFontScaleFactor: () => 1,
+      getFontType: () => 'mesh' as const,
+      findAndReplaceFont: (name: string) => name,
+      getCharShape: (char: string, _font: string, size: number) => {
+        if (!char || char === ' ') return undefined
+        const height = size
+        return {
+          width: height * 0.6,
+          toGeometry: () => {
+            const shape = new THREE.Shape()
+            shape.moveTo(0, 0)
+            shape.lineTo(height * 0.6, 0)
+            shape.lineTo(height * 0.6, height)
+            shape.lineTo(0, height)
+            shape.lineTo(0, 0)
+            return new THREE.ShapeGeometry(shape)
+          }
+        }
+      },
+      getNotFoundTextShape: () => undefined
+    }
+
+    const style: TextStyle = {
+      name: 'default',
+      standardFlag: 0,
+      fixedTextHeight: 0,
+      widthFactor: 1,
+      obliqueAngle: 0,
+      textGenerationFlag: 0,
+      lastHeight: fontSize,
+      font: 'simkai',
+      bigFont: ''
+    }
+
+    const options: MTextFormatOptions = {
+      fontSize,
+      widthFactor: 1,
+      lineSpaceFactor: 0.3,
+      horizontalAlignment: 1,
+      maxWidth: 0,
+      flowDirection: MTextFlowDirection.LEFT_TO_RIGHT,
+      byBlockColor: 0x123456,
+      byLayerColor: 0xabcdef,
+      removeFontExtension: true,
+      collectCharBoxes: true
+    }
+
+    const processor = new MTextProcessor(
+      style,
+      {
+        byBlockColor: options.byBlockColor,
+        byLayerColor: options.byLayerColor,
+        layer: '0',
+        color: new MTextColor(256)
+      } as any,
+      {
+        getMeshBasicMaterial: vi
+          .fn()
+          .mockReturnValue(new THREE.MeshBasicMaterial({ color: 0xffffff })),
+        getLineBasicMaterial: vi
+          .fn()
+          .mockReturnValue(new THREE.LineBasicMaterial({ color: 0xffffff }))
+      } as any,
+      fontManager as any,
+      options
+    )
+
+    ;(processor as any)._currentContext.fontSizeScaleFactor = 0.7
+    ;(processor as any).calcuateLineParams()
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: '30' },
+      {
+        type: TOKEN_STACK,
+        ctx: null,
+        data: ['+0.021', '  0', '^']
+      }
+    ] as any)
+
+    const boxes = getAllCharBoxes(obj)
+    const mainThree = boxes.find(entry => entry.char === '3')!
+    const lowerZero = [...boxes]
+      .filter(entry => entry.char === '0')
+      .sort((a, b) => a.box.min.y - b.box.min.y)[0]!
+
+    expect(mainThree.box.min.y).toBeCloseTo(lowerZero.box.min.y, 0)
+  })
+
   it('does not store paragraph-break char boxes on paragraph break', () => {
     const { processor } = createProcessor('mesh')
     ;(processor as any)._options.collectCharBoxes = true
