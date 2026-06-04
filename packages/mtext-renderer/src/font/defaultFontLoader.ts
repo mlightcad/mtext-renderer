@@ -3,7 +3,7 @@ import { FontManager } from './fontManager'
 
 /**
  * Default implementation of the FontLoader interface.
- * This class provides font loading functionality using [this font repository](https://mlightcad.gitlab.io/cad-data/fonts/).
+ * This class provides font loading functionality using [this font repository](https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/).
  * It loads font metadata from a JSON file and provides access to available fonts.
  */
 export class DefaultFontLoader implements FontLoader {
@@ -18,7 +18,7 @@ export class DefaultFontLoader implements FontLoader {
   constructor() {
     this._avaiableFonts = []
     this._avaiableFontMap = new Map()
-    this._baseUrl = 'https://mlightcad.gitlab.io/cad-data/fonts/'
+    this._baseUrl = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
   }
 
   /**

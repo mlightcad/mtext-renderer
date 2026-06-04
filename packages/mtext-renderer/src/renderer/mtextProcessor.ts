@@ -1070,13 +1070,12 @@ export class MTextProcessor {
 
     // Handle different stack types based on divider
     if (divider === '^') {
-      // Scale down font size to 70% for subscript and superscript
-      this._currentContext.fontSizeScaleFactor =
-        currentFontSizeScaleFactor * 0.7
-      this.calcuateLineParams()
-
       // Superscript case
       if (numerator && !denominator) {
+        this._currentContext.fontSizeScaleFactor =
+          currentFontSizeScaleFactor * 0.7
+        this.calcuateLineParams()
+
         const superscriptGeometries: THREE.BufferGeometry[] = []
         const superscriptLineGeometries: THREE.BufferGeometry[] = []
         const superscriptMeshCharBoxes: CharBox[] = []
@@ -1101,10 +1100,17 @@ export class MTextProcessor {
         meshCharBoxes.push(...superscriptMeshCharBoxes)
         lineCharBoxes.push(...superscriptLineCharBoxes)
         this._hOffset = currentHOffset + numeratorWidth
+
+        this._currentContext.fontSizeScaleFactor = currentFontSizeScaleFactor
+        this.calcuateLineParams()
       }
 
       // Subscript case
       else if (!numerator && denominator) {
+        this._currentContext.fontSizeScaleFactor =
+          currentFontSizeScaleFactor * 0.7
+        this.calcuateLineParams()
+
         const subscriptGeometries: THREE.BufferGeometry[] = []
         const subscriptLineGeometries: THREE.BufferGeometry[] = []
         const subscriptMeshCharBoxes: CharBox[] = []
@@ -1129,11 +1135,81 @@ export class MTextProcessor {
         meshCharBoxes.push(...subscriptMeshCharBoxes)
         lineCharBoxes.push(...subscriptLineCharBoxes)
         this._hOffset = currentHOffset + denominatorWidth
+
+        this._currentContext.fontSizeScaleFactor = currentFontSizeScaleFactor
+        this.calcuateLineParams()
       }
 
-      // Restore original font size
-      this._currentContext.fontSizeScaleFactor = currentFontSizeScaleFactor
-      this.calcuateLineParams()
+      // Tolerance / vertical stack with both upper and lower parts (e.g. \S+0.021^0;).
+      // Stack elements are left-aligned, with the lower part bottom aligned to the main text bottom.
+      else if (numerator && denominator) {
+        const fontScaleFactor = this._currentContext.fontScaleFactor || 1
+        const mainLayoutFontSize =
+          (this._maxFontSize || this.currentFontSize) / fontScaleFactor
+        const toleranceUsesDefaultScale =
+          Math.abs(this.currentLayoutFontSize - mainLayoutFontSize) < 1e-6
+        if (toleranceUsesDefaultScale) {
+          this._currentContext.fontSizeScaleFactor =
+            currentFontSizeScaleFactor * 0.7
+          this.calcuateLineParams()
+        }
+
+        const stackWidth = Math.max(numeratorWidth, denominatorWidth)
+        const upperOffset = 0
+        const lowerOffset = 0
+        const stackLayoutFontSize = this.currentLayoutFontSize
+        const lowerBaseline =
+          currentVOffset - mainLayoutFontSize + stackLayoutFontSize
+        const upperBaseline = lowerBaseline + this.currentFontSize
+
+        const upperGeometries: THREE.BufferGeometry[] = []
+        const upperLineGeometries: THREE.BufferGeometry[] = []
+        const upperMeshCharBoxes: CharBox[] = []
+        const upperLineCharBoxes: CharBox[] = []
+
+        this._hOffset = currentHOffset + upperOffset
+        this._vOffset = upperBaseline
+        for (let i = 0; i < numerator.length; i++) {
+          this.processChar(
+            numerator[i],
+            upperGeometries,
+            upperLineGeometries,
+            upperMeshCharBoxes,
+            upperLineCharBoxes
+          )
+        }
+        geometries.push(...upperGeometries)
+        lineGeometries.push(...upperLineGeometries)
+        meshCharBoxes.push(...upperMeshCharBoxes)
+        lineCharBoxes.push(...upperLineCharBoxes)
+
+        const lowerGeometries: THREE.BufferGeometry[] = []
+        const lowerLineGeometries: THREE.BufferGeometry[] = []
+        const lowerMeshCharBoxes: CharBox[] = []
+        const lowerLineCharBoxes: CharBox[] = []
+
+        this._hOffset = currentHOffset + lowerOffset
+        this._vOffset = lowerBaseline
+        for (let i = 0; i < denominator.length; i++) {
+          this.processChar(
+            denominator[i],
+            lowerGeometries,
+            lowerLineGeometries,
+            lowerMeshCharBoxes,
+            lowerLineCharBoxes
+          )
+        }
+        geometries.push(...lowerGeometries)
+        lineGeometries.push(...lowerLineGeometries)
+        meshCharBoxes.push(...lowerMeshCharBoxes)
+        lineCharBoxes.push(...lowerLineCharBoxes)
+        this._hOffset = currentHOffset + stackWidth
+
+        if (toleranceUsesDefaultScale) {
+          this._currentContext.fontSizeScaleFactor = currentFontSizeScaleFactor
+          this.calcuateLineParams()
+        }
+      }
     } else {
       // Fraction case
       // Second pass: render numerator
