@@ -1656,16 +1656,19 @@ export class MTextProcessor {
       this.currentFont,
       this.currentFontSize
     )
-    if (this.textStyle.bigFont && !shape) {
+    const bigFont = this.textStyle.bigFont?.trim()
+    if (bigFont && !shape) {
       shape = this.fontManager.getCharShape(
         char,
-        this.textStyle.bigFont,
+        bigFont,
         this.currentFontSize
       )
     }
     if (!shape) {
-      // When the text cannot be found in the font file, all font files are searched until the text is found.
-      shape = this.fontManager.getCharShape(char, '', this.currentFontSize)
+      shape = this.fontManager.getCharShapeFromDefaults(
+        char,
+        this.currentFontSize
+      )
     }
     if (!shape) {
       shape = this.fontManager.getNotFoundTextShape(this.currentFontSize)

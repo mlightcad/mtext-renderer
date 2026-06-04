@@ -19,6 +19,7 @@ vi.mock('../../src/font/fontFactory', () => ({
 }))
 
 import { FontManager } from '../../src/font/fontManager'
+import { DEFAULT_FONTS_PRESETS } from '../../src/font/defaultFontsPresets'
 import { FontCacheManager } from '../../src/cache'
 import { FontFactory } from '../../src/font/fontFactory'
 import { FontInfo, FontLoader, FontLoadStatus } from '../../src/font/fontLoader'
@@ -61,7 +62,7 @@ describe('FontManager', () => {
     manager.unsupportedChars = {}
     manager.fileNames = []
     manager.enableFontCache = true
-    manager.defaultFont = 'simkai'
+    manager.defaultFonts = new Set(['simkai'])
   })
 
   afterEach(() => {
@@ -150,18 +151,51 @@ describe('FontManager', () => {
     FontManager.instance.events.fontNotFound.removeEventListener(listener)
   })
 
-  it('finds fonts by character and falls back by character when a named font is missing', () => {
+  it('does not fall back when the requested font lacks a glyph', () => {
+    const manager = FontManager.instance as any
+    const primary = createFakeFont({
+      hasChar: vi.fn().mockReturnValue(false),
+      getCharShape: vi.fn()
+    })
+    const fallback = createFakeFont({
+      hasChar: vi.fn((char: string) => char === '中'),
+      getCharShape: vi.fn().mockReturnValue({ width: 1 })
+    })
+    manager.defaultFonts = new Set(['fallback'])
+    manager.loadedFontMap.set('primary', primary)
+    manager.loadedFontMap.set('fallback', fallback)
+
+    expect(
+      FontManager.instance.getCharShape('中', 'primary', 12)
+    ).toBeUndefined()
+    expect(primary.getCharShape).toHaveBeenCalledWith('中', 12)
+    expect(fallback.getCharShape).not.toHaveBeenCalled()
+  })
+
+  it('falls back through defaultFonts via getCharShapeFromDefaults', () => {
     const shape = { width: 1 }
+    const manager = FontManager.instance as any
+    const fallback = createFakeFont({
+      hasChar: vi.fn((char: string) => char === '中'),
+      getCharShape: vi.fn().mockReturnValue(shape)
+    })
+    manager.defaultFonts = new Set(['fallback'])
+    manager.loadedFontMap.set('fallback', fallback)
+
+    expect(FontManager.instance.getCharShapeFromDefaults('中', 12)).toBe(shape)
+    expect(fallback.getCharShape).toHaveBeenCalledWith('中', 12)
+  })
+
+  it('finds fonts by character without using getCharShape on a missing font name', () => {
     const manager = FontManager.instance as any
     const font = createFakeFont({
       hasChar: vi.fn((char: string) => char === 'A'),
-      getCharShape: vi.fn().mockReturnValue(shape)
+      getCharShape: vi.fn().mockReturnValue({ width: 1 })
     })
     manager.loadedFontMap.set('fallback', font)
 
     expect(FontManager.instance.getFontByChar('A')).toBe(font)
-    expect(FontManager.instance.getCharShape('A', 'missing', 12)).toBe(shape)
-    expect(font.getCharShape).toHaveBeenCalledWith('A', 12)
+    expect(FontManager.instance.getCharShape('A', 'missing', 12)).toBeUndefined()
   })
 
   it('returns font metadata helpers from loaded fonts', () => {
@@ -237,6 +271,46 @@ describe('FontManager', () => {
         status: 'Success'
       }
     ])
+  })
+
+  it('sets default fonts from a preset', () => {
+    const manager = FontManager.instance
+
+    manager.setDefaultFonts('r12r14')
+    expect([...manager.defaultFonts]).toEqual([
+      ...DEFAULT_FONTS_PRESETS.r12r14
+    ])
+
+    manager.setDefaultFonts('modern')
+    expect([...manager.defaultFonts]).toEqual([...DEFAULT_FONTS_PRESETS.modern])
+  })
+
+  it('sets custom default fonts from a list or single name', () => {
+    const manager = FontManager.instance
+
+    manager.setDefaultFonts(['hztxt', 'simsun', 'gdt'])
+    expect([...manager.defaultFonts]).toEqual(['hztxt', 'simsun', 'gdt'])
+
+    manager.setDefaultFonts('simkai')
+    expect([...manager.defaultFonts]).toEqual(['simkai'])
+  })
+
+  it('returns preset font names via getDefaultFontsPreset', () => {
+    expect(FontManager.instance.getDefaultFontsPreset('cjk')).toEqual(
+      DEFAULT_FONTS_PRESETS.cjk
+    )
+  })
+
+  it('loads default fonts configured by preset', async () => {
+    const loader = createFontLoader('https://cdn.example.com/fonts/')
+    vi.mocked(loader.load).mockResolvedValue([])
+    const manager = FontManager.instance
+    manager.setFontLoader(loader)
+    manager.setDefaultFonts('modern')
+
+    await manager.loadDefaultFont()
+
+    expect(loader.load).toHaveBeenCalledWith(['hztxt', 'simsun', 'gdt'])
   })
 
   it('loads fonts from cache without requesting the font URL', async () => {

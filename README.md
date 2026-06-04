@@ -20,7 +20,7 @@ The central manager for font operations. It's a singleton class that handles fon
 - `missedFonts`: Record of fonts that were requested but not found
 - `enableFontCache`: Flag to enable/disable font caching. If it is true, parsed fonts 
 will be stored in local IndexedDB to improve performance. Default value is true.
-- `defaultFont`: Default font to use when a requested font is not found
+- `defaultFonts`: Set of default font names; used when a requested font is not found or lacks a glyph (earlier entries are tried first)
 - `events`: Event managers for font-related events
   - `fontNotFound`: Triggered when a font cannot be found
   - `fontLoaded`: Triggered when a font is successfully loaded
@@ -192,7 +192,7 @@ classDiagram
         +unsupportedChars: Record
         +missedFonts: Record
         +enableFontCache: boolean
-        +defaultFont: string
+        +defaultFonts: Set~string~
         +events: EventManagers
         +loadFonts(urls)
         +getCharShape(char, fontName, size)

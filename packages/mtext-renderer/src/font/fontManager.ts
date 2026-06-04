@@ -9,6 +9,11 @@ import {
 import { BaseFont } from './baseFont'
 import { BaseTextShape } from './baseTextShape'
 import { DefaultFontLoader } from './defaultFontLoader'
+import {
+  DEFAULT_FONTS_PRESETS,
+  DefaultFontsPreset,
+  isDefaultFontsPreset
+} from './defaultFontsPresets'
 import { FontData, FontType } from './font'
 import { FontFactory } from './fontFactory'
 import { FontInfo, FontLoader, FontLoadStatus } from './fontLoader'
@@ -57,8 +62,11 @@ export class FontManager {
   public missedFonts: Record<string, number> = {}
   /** Flag to enable/disable font caching */
   public enableFontCache = true
-  /** Default font to use when a requested font is not found */
-  public defaultFont = 'simkai'
+  /**
+   * Default fonts to use when a requested font is not found or lacks a glyph.
+   * Insertion order is preserved; earlier entries are tried first.
+   */
+  public defaultFonts = new Set<string>(['simkai'])
 
   /** Event managers for font-related events */
   public readonly events = {
@@ -106,6 +114,40 @@ export class FontManager {
   }
 
   /**
+   * Sets the default font fallback chain.
+   *
+   * Pass a {@link DefaultFontsPreset} name to apply a predefined AutoCAD-era
+   * fallback stack, or pass one or more font names to define a custom chain.
+   * Earlier entries are tried first when a glyph is missing.
+   *
+   * @param fonts - A preset name, a single font name, or an ordered list of font names
+   * @example
+   * ```ts
+   * FontManager.instance.setDefaultFonts('r12r14')
+   * FontManager.instance.setDefaultFonts(['hztxt', 'simsun', 'gdt'])
+   * FontManager.instance.setDefaultFonts('simkai')
+   * ```
+   */
+  setDefaultFonts(fonts: DefaultFontsPreset): void
+  setDefaultFonts(fonts: string | readonly string[]): void
+  setDefaultFonts(fonts: DefaultFontsPreset | string | readonly string[]) {
+    if (typeof fonts === 'string' && isDefaultFontsPreset(fonts)) {
+      this.defaultFonts = new Set(DEFAULT_FONTS_PRESETS[fonts])
+      return
+    }
+    const list = typeof fonts === 'string' ? [fonts] : [...fonts]
+    this.defaultFonts = new Set(list)
+  }
+
+  /**
+   * Returns the font names for a predefined default-font preset.
+   * @param preset - The preset to look up
+   */
+  getDefaultFontsPreset(preset: DefaultFontsPreset): readonly string[] {
+    return DEFAULT_FONTS_PRESETS[preset]
+  }
+
+  /**
    * Sets the font loader
    * @param fontLoader - The font loader to set
    */
@@ -124,19 +166,24 @@ export class FontManager {
   }
 
   /**
-   * Return true if the default font was loaded.
-   * @returns True if the default font was loaded. False otherwise.
+   * Return true if all default fonts were loaded.
+   * @returns True if every font in `defaultFonts` is loaded. False otherwise.
    */
   isDefaultFontLoaded() {
-    return this.loadedFontMap.get(this.defaultFont.toLowerCase()) != null
+    for (const fontName of this.defaultFonts) {
+      if (this.loadedFontMap.get(fontName.toLowerCase()) == null) {
+        return false
+      }
+    }
+    return this.defaultFonts.size > 0
   }
 
   /**
-   * Loads the default font
+   * Loads all default fonts
    * @returns Promise that resolves to the font load statuses
    */
   async loadDefaultFont() {
-    return await this.loadFontsByNames(this.defaultFont)
+    return await this.loadFontsByNames([...this.defaultFonts])
   }
 
   /**
@@ -194,7 +241,15 @@ export class FontManager {
         return mappedFontName
       }
     }
-    return font ? fontName : this.defaultFont
+    if (font) {
+      return fontName
+    }
+    for (const defaultFontName of this.defaultFonts) {
+      if (this.loadedFontMap.has(defaultFontName.toLowerCase())) {
+        return defaultFontName
+      }
+    }
+    return [...this.defaultFonts][0] ?? ''
   }
 
   /**
@@ -250,7 +305,8 @@ export class FontManager {
   }
 
   /**
-   * Gets the text shape for a specific character with the specified font and size
+   * Gets the text shape for a specific character in the named font only.
+   * Does not fall back to bigFont, default fonts, or other loaded fonts.
    * @param char - The character to get the shape for
    * @param fontName - The name of the font to use
    * @param size - The size of the character
@@ -261,11 +317,33 @@ export class FontManager {
     fontName: string,
     size: number
   ): BaseTextShape | undefined {
-    let currentFont = this.getFontByName(fontName)
-    if (!currentFont) {
-      currentFont = this.getFontByChar(char)
-    }
+    const currentFont = this.getFontByName(fontName)
     return currentFont?.getCharShape(char, size)
+  }
+
+  /**
+   * Gets the text shape from the first loaded default font that contains the character.
+   * Used after primary and optional bigFont lookups per AutoCAD text-style semantics.
+   */
+  public getCharShapeFromDefaults(
+    char: string,
+    size: number
+  ): BaseTextShape | undefined {
+    const fallbackFont = this.getFontFromDefaults(char)
+    return fallbackFont?.getCharShape(char, size)
+  }
+
+  /**
+   * Gets the first loaded default font that contains the specified character.
+   */
+  private getFontFromDefaults(char: string): BaseFont | undefined {
+    for (const fontName of this.defaultFonts) {
+      const font = this.loadedFontMap.get(fontName.toLowerCase())
+      if (font?.hasChar(char)) {
+        return font
+      }
+    }
+    return undefined
   }
 
   /**

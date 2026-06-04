@@ -109,7 +109,7 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   private async ensureInitialized() {
     if (!this.isInitialized) {
       // Guarantee the default font is loaded
-      await this.loadFonts([FontManager.instance.defaultFont])
+      await this.loadFonts([...FontManager.instance.defaultFonts])
       this.isInitialized = true
     }
   }
