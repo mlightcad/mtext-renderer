@@ -9,7 +9,8 @@ const shxParserRoot = path.dirname(
 
 export default defineConfig({
   test: {
-    testTimeout: 30_000
+    testTimeout: 30_000,
+    hookTimeout: 60_000
   },
   resolve: {
     alias: {

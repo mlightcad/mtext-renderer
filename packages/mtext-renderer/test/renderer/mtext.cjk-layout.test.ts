@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { FontData } from '../../src/font/font'
 import { FontFactory } from '../../src/font/fontFactory'
@@ -21,24 +21,61 @@ const PAGE_INDEX_TEXT = ' 第     页 '
 const DXF_TEXT_INSERTION_GAP = 16.938
 const FONT_BASE = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
 
-async function registerShxFont(name: string, file: string, encoding?: string) {
+const CJK_LAYOUT_TEST_FONTS: Array<{
+  name: string
+  file: string
+  encoding?: string
+}> = [
+  { name: 'txt', file: 'txt.shx' },
+  { name: 'hztxt', file: 'hztxt.shx', encoding: 'gbk' },
+  { name: 'isocp', file: 'isocp.shx' }
+]
+
+let cachedCjkLayoutFontData: FontData[] | undefined
+
+async function fetchShxFontData(
+  name: string,
+  file: string,
+  encoding?: string
+): Promise<FontData> {
   const response = await fetch(FONT_BASE + file)
   if (!response.ok) {
     throw new Error(`Failed to fetch ${file}: ${response.status}`)
   }
-  const fontData: FontData = {
+  return {
     name,
     type: 'shx',
     data: await response.arrayBuffer(),
     encoding,
     alias: [name]
   }
+}
+
+function registerShxFontFromData(fontData: FontData) {
   const font = FontFactory.instance.createFont(fontData)
-  font.names.add(name)
+  font.names.add(fontData.name)
   ;(
     FontManager.instance as unknown as { loadedFontMap: Map<string, unknown> }
-  ).loadedFontMap.set(name, font)
+  ).loadedFontMap.set(fontData.name, font)
 }
+
+async function loadCjkLayoutTestFonts() {
+  if (!cachedCjkLayoutFontData) {
+    cachedCjkLayoutFontData = await Promise.all(
+      CJK_LAYOUT_TEST_FONTS.map(({ name, file, encoding }) =>
+        fetchShxFontData(name, file, encoding)
+      )
+    )
+  }
+
+  FontManager.instance.release()
+  FontManager.instance.enableFontCache = false
+  for (const fontData of cachedCjkLayoutFontData) {
+    registerShxFontFromData(fontData)
+  }
+}
+
+beforeEach(() => loadCjkLayoutTestFonts(), 60_000)
 
 type CharBoxEntry = {
   type: CharBoxType
@@ -96,14 +133,6 @@ describe('MText CJK layout regression', () => {
     font: 'txt',
     bigFont: 'hztxt'
   }
-
-  beforeAll(async () => {
-    FontManager.instance.release()
-    FontManager.instance.enableFontCache = false
-    await registerShxFont('txt', 'txt.shx')
-    await registerShxFont('hztxt', 'hztxt.shx', 'gbk')
-    await registerShxFont('isocp', 'isocp.shx')
-  })
 
   afterEach(() => {
     FontManager.instance.release()
@@ -168,13 +197,6 @@ describe('SHX space width (PC_TEXTSTYLE / isocp)', () => {
     font: 'isocp',
     bigFont: 'hztxt'
   }
-
-  beforeAll(async () => {
-    FontManager.instance.release()
-    FontManager.instance.enableFontCache = false
-    await registerShxFont('isocp', 'isocp.shx')
-    await registerShxFont('hztxt', 'hztxt.shx', 'gbk')
-  })
 
   afterEach(() => {
     FontManager.instance.release()
