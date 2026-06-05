@@ -165,6 +165,7 @@ function createProcessor(
       }
     },
     getCharShapeFromDefaults: () => undefined,
+    getCharShapeFromSymbolFonts: () => undefined,
     getNotFoundTextShape: () => undefined
   }
 
@@ -480,6 +481,7 @@ describe('MTextProcessor format state', () => {
         }
       },
       getCharShapeFromDefaults: () => undefined,
+      getCharShapeFromSymbolFonts: () => undefined,
       getNotFoundTextShape: () => undefined
     }
 
