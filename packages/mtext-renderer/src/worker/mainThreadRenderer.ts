@@ -89,9 +89,9 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   /**
    * Load fonts in the main thread
    */
-  async loadFonts(fonts: string[]): Promise<{ loaded: string[] }> {
+  async loadFonts(fonts: readonly string[]): Promise<{ loaded: string[] }> {
     await this.fontManager.loadFontsByNames(fonts)
-    return { loaded: fonts }
+    return { loaded: [...fonts] }
   }
 
   /**
@@ -109,7 +109,7 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   private async ensureInitialized() {
     if (!this.isInitialized) {
       // Guarantee the default font is loaded
-      await this.loadFonts([...FontManager.instance.defaultFonts])
+      await this.loadFonts(FontManager.instance.getFontsToLoad())
       this.isInitialized = true
     }
   }

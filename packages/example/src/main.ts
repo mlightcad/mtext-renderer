@@ -1,6 +1,7 @@
 import {
   CharBox,
   CharBoxType,
+  DefaultFontsPreset,
   LineLayout,
   MTextAttachmentPoint,
   MTextColor,
@@ -29,6 +30,7 @@ class MTextRendererExample {
   private renderBtn: HTMLButtonElement
   private statusDiv: HTMLDivElement
   private fontSelect: HTMLSelectElement
+  private defaultFontsPresetSelect: HTMLSelectElement
   private showBoundingBoxCheckbox: HTMLInputElement
   private showCharBoxesCheckbox: HTMLInputElement
   private showLineBoxesCheckbox: HTMLInputElement
@@ -44,10 +46,12 @@ class MTextRendererExample {
     complex:
       '{\\C1;\\W2;Title}\\P{\\C2;This is a paragraph with different styles.}\\P{\\C3;\\W1.5;Subtitle}\\P{\\C4;• First item\\P• Second item\\P• Third item}\\P{\\T2;Absolute character spacing: 2, }{\\T0.2x;Relative character spacing: 0.2}\\P{\\W0.8;Footer text}',
     controlCode:
-      '{Circle diameter dimensioning symbol: %%c},\\P{Degree symbol: %%d}\\P{Plus/minus tolerance symbol: %%p}\\P{A single percent sign: %%%}\\P{Unicode character: %%130 %%131}\\P{Toggles strikethrough on and off: %%kon, %%koff}\\P{Toggles overscoring on and off.: %%oon, %%ooff}\\P{Toggles underscoring  on and off.: %%uon, %%uoff}',
+      '{Circle diameter dimensioning symbol: %%c},\\P{Degree symbol: %%d}\\P{Plus/minus tolerance symbol: %%p}\\P{A single percent sign: %%%}\\P{Unicode character: %%130 %%131}\\P{Strikethrough toggle (%%k): %%kstruck%%k normal}\\P{Strikethrough explicit: %%konstruck%%koff normal}\\P{Overscore toggle (%%o): %%oover%%o normal}\\P{Overscore explicit: %%oonover%%ooff normal}\\P{Underscore toggle (%%u): %%uunder%%u normal}\\P{Underscore explicit: %%uonunder%%uoff normal}',
     color:
       '{\\C0;By Block}\\P{\\C1;Red Text}\\P{\\C2;Yellow Text}\\P{\\C3;Green Text}\\P{\\C4;Cyan Text}\\P{\\C5;Blue Text}\\P{\\C6;Magenta Text}\\P{\\C7;White Text}\\P{\\C256;By Layer}\\P{\\c16761035;Pink (0x0FFC0CB)}\\PRestore ByLayer\\P\\C1;Old Context Color: Red, {\\C2; New Context Color: Yellow, } Restored Context Color: Red',
-    font: '{\\C1;\\W2;\\FSimSun;SimSun 宋体}\\P{\\FArial;SimFang 仿宋（面积、材料、8、①④⑧⑩⑫㉔㉚）}\\P{\\C2;\\W0.5;\\FArial;Arial Text}\\P{\\C3;30;\\Faehalf.shx;SHX Text}\\P{\\C4;\\Fgbcbig.shx;东亚字符集字体}\\P{\\C5;\\Q1;\\FSimHei;SimHei Text，黑体}\\P{\\C6;\\Q0.5;\\FSimKai;SimKai 楷体}',
+    font: '{\\C1;\\W2;\\FSimSun;SimSun 宋体}\\P{\\F仿宋_gb2312;SimFang 仿宋（面积、材料、8、①④⑧⑩⑫㉔㉚）}\\P{\\C2;\\W0.5;\\FArial;Arial Text}\\P{\\C3;30;\\Faehalf.shx;SHX Text}\\P{\\C4;\\Fgbcbig.shx;东亚字符集字体}\\P{\\C5;\\Q1;\\FSimHei;SimHei Text，黑体}\\P{\\C6;\\Q0.5;\\FSimKai;SimKai 楷体}',
+    defaultFonts:
+      '{\\C1;Primary \\Ftxt;txt (SHX) — Latin: Hello %%c50}\\P{\\C2;CJK falls back via preset chain: 材料 装车 直径 你好}\\P{\\C3;Symbol %%c %%d %%p — may use gdt in chain}\\P{\\C4;Switch preset above and re-render to compare fallback order}',
     stacking:
       '%%c30{\\C3;\\H0.7x;\\S+0.021^  0;}\\P{\\C1;Basic Fractions:}\\P{\\C2;The value is \\S1/2; and \\S3/4; of the total.}\\P{\\C3;\\H0.16;Stacked Fractions:}\\P{\\C4;\\S1 2/3 4; represents \\Sx^ y; in the equation \\S1#2;.}\\P{\\C5;Complex Fractions:}\\P{\\C6;The result \\S1/2/3; is between \\S1^ 2^ 3; and \\S1#2#3;.}\\P{\\C7;Subscript Examples:}\\P{\\C8;H\\S^ 2;O (Water)}\\P{\\C9;CO\\S^ 2; (Carbon Dioxide)}\\P{\\C10;x\\S^ 2; + y\\S^ 2;}\\P{\\C11;Superscript Examples:}\\P{\\C12;E = mc\\S2^ ; (Energy)}\\P{\\C13;x\\S2^ ; + y\\S2^ ; = r\\S2^ ; (Circle)}\\P{\\C14;Combined Examples:}\\P{\\C15;H\\S^ 2;O\\S2^ ; (Hydrogen Peroxide)}\\P{\\C16;Fe\\S^ 2;+\\S3^ ; (Iron Ion)}',
     alignment:
@@ -101,6 +105,9 @@ class MTextRendererExample {
     this.statusDiv = document.getElementById('status') as HTMLDivElement
     this.fontSelect = document.getElementById(
       'font-select'
+    ) as HTMLSelectElement
+    this.defaultFontsPresetSelect = document.getElementById(
+      'default-fonts-preset'
     ) as HTMLSelectElement
     this.showBoundingBoxCheckbox = document.getElementById(
       'show-bounding-box'
@@ -174,12 +181,16 @@ class MTextRendererExample {
       await this.renderMText(content)
     })
 
-    // Font selection
+    // Text style font selection
     this.fontSelect.addEventListener('change', async () => {
-      const content = this.mtextInput.value
+      await this.applyDefaultFontsPreset()
+      await this.renderMText(this.mtextInput.value)
+    })
 
-      // Re-render MText with new font
-      await this.renderMText(content)
+    // Default fonts preset (fallback chain)
+    this.defaultFontsPresetSelect.addEventListener('change', async () => {
+      await this.applyDefaultFontsPreset()
+      await this.renderMText(this.mtextInput.value)
     })
 
     // Example buttons
@@ -242,6 +253,23 @@ class MTextRendererExample {
     })
   }
 
+  private getSelectedDefaultFontsPreset(): DefaultFontsPreset {
+    return this.defaultFontsPresetSelect.value as DefaultFontsPreset
+  }
+
+  private async applyDefaultFontsPreset(): Promise<void> {
+    const preset = this.getSelectedDefaultFontsPreset()
+    await this.unifiedRenderer.setDefaultFonts(preset)
+    const textChain = this.unifiedRenderer.getDefaultFontsPreset(preset)
+    const symbolChain = this.unifiedRenderer.getSymbolFontsPreset(preset)
+    const fontsToLoad = [
+      ...new Set([...textChain, ...symbolChain, this.fontSelect.value])
+    ]
+    await this.unifiedRenderer.loadFonts(fontsToLoad)
+    this.statusDiv.textContent = `Preset "${preset}": text ${textChain.join(' → ')} | symbol ${symbolChain.join(' → ')}`
+    this.statusDiv.style.color = '#0f0'
+  }
+
   private async initializeFonts(isResetAvaiableFonts = true): Promise<void> {
     try {
       if (isResetAvaiableFonts) {
@@ -257,7 +285,6 @@ class MTextRendererExample {
           const option = document.createElement('option')
           option.value = font.name[0]
           option.textContent = font.name[0] // Use the first name from the array
-          // Set selected if this is the default font
           if (font.name[0] === 'simkai') {
             option.selected = true
           }
@@ -265,11 +292,7 @@ class MTextRendererExample {
         })
       }
 
-      // Load default fonts
-      const selectedFont = this.fontSelect.value
-      await this.unifiedRenderer.loadFonts([selectedFont])
-      this.statusDiv.textContent = 'Fonts loaded successfully'
-      this.statusDiv.style.color = '#0f0'
+      await this.applyDefaultFontsPreset()
     } catch (error) {
       console.error('Error loading fonts:', error)
       this.statusDiv.textContent = 'Error loading fonts'

@@ -176,12 +176,26 @@ export class MeshFont extends BaseFont {
   }
 
   /**
+   * Whether opentype maps the character to a real glyph (not .notdef at index 0).
+   *
+   * opentype.js ≤1.3.4: {@link OpenTypeFont.hasChar} used `charToGlyphIndex(c) !== null`,
+   * but CmapEncoding returns 0 for missing code points — see
+   * https://github.com/opentypejs/opentype.js/issues/330 (fixed in 2.0.0).
+   * We keep `index > 0` here so hasChar stays aligned with {@link _loadGlyphIfNeeded}.
+   */
+  private opentypeHasGlyph(char: string): boolean {
+    if (!this.opentypeFont) return false
+    const index = this.opentypeFont.charToGlyphIndex(char)
+    return index != null && index > 0
+  }
+
+  /**
    * Return true if this font contains glyph of the specified character. Otherwise, return false.
    * @param char - The character to check
    * @returns True if this font contains glyph of the specified character. Otherwise, return false.
    */
   hasChar(char: string): boolean {
-    return this.opentypeFont.hasChar(char)
+    return this.opentypeHasGlyph(char)
   }
 
   /**
@@ -207,17 +221,7 @@ export class MeshFont extends BaseFont {
       return
     }
 
-    // Notes:
-    // Please don't use method `hasChar`. Its implementation is as follows.
-    // ```
-    // return this.encoding.charToGlyphIndex(n) !== null;
-    // ```
-    // Method `charToGlyphIndex` returns undefined if not found. However, it
-    // uses '!==null' to check whether it is found or not.
-    //
-    // I checked opentype.js source code and found it was fixed. However, it
-    // isn't included in latest released (1.3.4) yet.
-    if (this.opentypeFont.charToGlyphIndex(char) > 0) {
+    if (this.opentypeHasGlyph(char)) {
       const glyph = this.opentypeFont.charToGlyph(char)
       if (!glyph || !glyph.path) return
 

@@ -272,6 +272,89 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
     expect(getCharShapeFromDefaults).toHaveBeenCalledWith(cjkChar, 10)
   })
 
+  it.each([
+    {
+      label: '%%c diameter',
+      char: 'Ø',
+      lookupChars: [String.fromCharCode(129), '\u2205'],
+      primaryWidth: 10,
+      symbolWidth: 6.78
+    },
+    {
+      label: '%%d degree',
+      char: '°',
+      lookupChars: [String.fromCharCode(126), String.fromCharCode(176)],
+      primaryWidth: 4.6,
+      symbolWidth: 2.85
+    },
+    {
+      label: '%%p plus/minus',
+      char: '±',
+      lookupChars: [String.fromCharCode(177)],
+      primaryWidth: 5.4,
+      symbolWidth: 9.28
+    }
+  ])(
+    'prefers SHX symbol-font control codes for $label before primary font',
+    ({ char, lookupChars, primaryWidth, symbolWidth }) => {
+      const primaryShape = createShape(primaryWidth)
+      const symbolShape = createShape(symbolWidth)
+      const glyphs: Record<string, Record<string, GlyphShape | undefined>> = {
+        isocp: { [char]: primaryShape },
+        simsun: Object.fromEntries(
+          [
+            String.fromCharCode(127),
+            String.fromCharCode(128),
+            String.fromCharCode(126),
+            String.fromCharCode(129),
+            '°',
+            '±',
+            '\u2205'
+          ].map(ch => [ch, createShape(99)])
+        ),
+        amgdt: Object.fromEntries(
+          lookupChars.map(lookupChar => [lookupChar, symbolShape])
+        )
+      }
+
+      const getCharShape = vi.fn((lookupChar: string, fontName: string) =>
+        resolveCharShape(lookupChar, fontName, glyphs)
+      )
+      const getCharShapeFromSymbolFonts = vi.fn((lookupChar: string) => {
+        for (const fontName of ['amgdt', 'simsun']) {
+          const shape = resolveCharShape(lookupChar, fontName, glyphs)
+          if (shape) return shape
+        }
+        return undefined
+      })
+
+      const processor = createGlyphFallbackProcessor(
+        { font: 'isocp', bigFont: 'intecad' },
+        {
+          getFontScaleFactor: () => 1,
+          getFontType: () => 'shx' as const,
+          findAndReplaceFont: (name: string) => name,
+          getCharShape,
+          getCharShapeFromDefaults: vi.fn(),
+          getCharShapeFromSymbolFonts,
+          getNotFoundTextShape: () => undefined
+        }
+      )
+
+      getCharShape.mockClear()
+      getCharShapeFromSymbolFonts.mockClear()
+
+      const shape = (processor as any).getCharShape(char)
+
+      expect(shape).toBe(symbolShape)
+      expect(getCharShapeFromSymbolFonts).toHaveBeenCalledTimes(1)
+      expect(lookupChars).toContain(
+        getCharShapeFromSymbolFonts.mock.calls[0][0]
+      )
+      expect(getCharShape).not.toHaveBeenCalled()
+    }
+  )
+
   it('stops at primary font when the glyph is present there', () => {
     const primaryShape = createShape(1)
     const bigShape = createShape(2)
@@ -351,6 +434,7 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
 
     const getCharShape = vi.fn(() => undefined)
     const getCharShapeFromDefaults = vi.fn(() => undefined)
+    const getCharShapeFromSymbolFonts = vi.fn(() => undefined)
     const getNotFoundTextShape = vi.fn(() => notFoundShape)
 
     const processor = createGlyphFallbackProcessor(
@@ -361,12 +445,14 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
         findAndReplaceFont: (name: string) => name,
         getCharShape,
         getCharShapeFromDefaults,
+        getCharShapeFromSymbolFonts,
         getNotFoundTextShape
       }
     )
 
     getCharShape.mockClear()
     getCharShapeFromDefaults.mockClear()
+    getCharShapeFromSymbolFonts.mockClear()
     getNotFoundTextShape.mockClear()
 
     const shape = (processor as any).getCharShape(cjkChar)
@@ -375,6 +461,7 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
     expect(getCharShape).toHaveBeenCalledWith(cjkChar, primaryFont, 10)
     expect(getCharShape).toHaveBeenCalledWith(cjkChar, bigFontName, 10)
     expect(getCharShapeFromDefaults).toHaveBeenCalledWith(cjkChar, 10)
+    expect(getCharShapeFromSymbolFonts).toHaveBeenCalledWith(cjkChar, 10)
     expect(getNotFoundTextShape).toHaveBeenCalledWith(10)
   })
 })

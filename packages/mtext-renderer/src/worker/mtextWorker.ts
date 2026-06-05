@@ -14,7 +14,12 @@ import {
 
 // Worker message types
 interface WorkerMessage {
-  type: 'render' | 'loadFonts' | 'setFontUrl' | 'getAvailableFonts'
+  type:
+    | 'render'
+    | 'loadFonts'
+    | 'setDefaultFonts'
+    | 'setFontUrl'
+    | 'getAvailableFonts'
   id: string
   data?: {
     mtextContent?: unknown
@@ -26,7 +31,13 @@ interface WorkerMessage {
 }
 
 interface WorkerResponse {
-  type: 'render' | 'loadFonts' | 'setFontUrl' | 'getAvailableFonts' | 'error'
+  type:
+    | 'render'
+    | 'loadFonts'
+    | 'setDefaultFonts'
+    | 'setFontUrl'
+    | 'getAvailableFonts'
+    | 'error'
   id: string
   success: boolean
   data?: unknown
@@ -93,6 +104,26 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
           id,
           success: true,
           data: { loaded: fonts }
+        } as WorkerResponse)
+        break
+      }
+
+      case 'setDefaultFonts': {
+        if (!data) throw new Error('Missing data for setDefaultFonts message')
+        const { fonts, symbolFonts } = data as {
+          fonts: string[]
+          symbolFonts: string[]
+        }
+        fontManager.setDefaultFonts(fonts)
+        fontManager.setSymbolFonts(symbolFonts)
+        self.postMessage({
+          type: 'setDefaultFonts',
+          id,
+          success: true,
+          data: {
+            fonts: [...fontManager.defaultFonts],
+            symbolFonts: [...fontManager.symbolFonts]
+          }
         } as WorkerResponse)
         break
       }
