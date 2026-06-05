@@ -355,6 +355,102 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
     }
   )
 
+  it('prefers SHX symbol-font glyph for %%132 before default-font fallbacks', () => {
+    const ch132 = String.fromCharCode(132)
+    const defaultShape = createShape(0)
+    const symbolShape = createShape(6.5)
+    const glyphs: Record<string, Record<string, GlyphShape | undefined>> = {
+      txt: {},
+      simkai: { [ch132]: defaultShape },
+      amgdt: { [ch132]: symbolShape }
+    }
+
+    const getCharShape = vi.fn((lookupChar: string, fontName: string) =>
+      resolveCharShape(lookupChar, fontName, glyphs)
+    )
+    const getCharShapeFromDefaults = vi.fn((lookupChar: string) => {
+      for (const fontName of ['txt', 'simkai']) {
+        const shape = resolveCharShape(lookupChar, fontName, glyphs)
+        if (shape) return shape
+      }
+      return undefined
+    })
+    const getCharShapeFromSymbolFonts = vi.fn((lookupChar: string) => {
+      for (const fontName of ['amgdt']) {
+        const shape = resolveCharShape(lookupChar, fontName, glyphs)
+        if (shape) return shape
+      }
+      return undefined
+    })
+
+    const processor = createGlyphFallbackProcessor(
+      { font: 'txt', bigFont: '' },
+      {
+        getFontScaleFactor: () => 1,
+        getFontType: () => 'shx' as const,
+        findAndReplaceFont: (name: string) => name,
+        getCharShape,
+        getCharShapeFromDefaults,
+        getCharShapeFromSymbolFonts,
+        getNotFoundTextShape: () => undefined
+      }
+    )
+
+    getCharShape.mockClear()
+    getCharShapeFromDefaults.mockClear()
+    getCharShapeFromSymbolFonts.mockClear()
+
+    const shape = (processor as any).getCharShape(ch132)
+
+    expect(shape).toBe(symbolShape)
+    expect(getCharShapeFromSymbolFonts).toHaveBeenCalledWith(ch132, 10)
+    expect(getCharShapeFromDefaults).not.toHaveBeenCalled()
+    expect(getCharShape).not.toHaveBeenCalled()
+  })
+
+  it('prefers SHX symbol-font glyph for %%132 when primary font has a wrong code-132 shape', () => {
+    const ch132 = String.fromCharCode(132)
+    const primaryShape = createShape(0)
+    const symbolShape = createShape(6.5)
+    const glyphs: Record<string, Record<string, GlyphShape | undefined>> = {
+      txt: { [ch132]: primaryShape },
+      amgdt: { [ch132]: symbolShape }
+    }
+
+    const getCharShape = vi.fn((lookupChar: string, fontName: string) =>
+      resolveCharShape(lookupChar, fontName, glyphs)
+    )
+    const getCharShapeFromSymbolFonts = vi.fn((lookupChar: string) => {
+      for (const fontName of ['amgdt']) {
+        const shape = resolveCharShape(lookupChar, fontName, glyphs)
+        if (shape) return shape
+      }
+      return undefined
+    })
+
+    const processor = createGlyphFallbackProcessor(
+      { font: 'txt', bigFont: '' },
+      {
+        getFontScaleFactor: () => 1,
+        getFontType: () => 'shx' as const,
+        findAndReplaceFont: (name: string) => name,
+        getCharShape,
+        getCharShapeFromDefaults: vi.fn(),
+        getCharShapeFromSymbolFonts,
+        getNotFoundTextShape: () => undefined
+      }
+    )
+
+    getCharShape.mockClear()
+    getCharShapeFromSymbolFonts.mockClear()
+
+    const shape = (processor as any).getCharShape(ch132)
+
+    expect(shape).toBe(symbolShape)
+    expect(getCharShapeFromSymbolFonts).toHaveBeenCalledWith(ch132, 10)
+    expect(getCharShape).not.toHaveBeenCalled()
+  })
+
   it('stops at primary font when the glyph is present there', () => {
     const primaryShape = createShape(1)
     const bigShape = createShape(2)
