@@ -2,7 +2,8 @@ import {
   Point,
   ShxFont as ShxFontInternal,
   ShxFontData,
-  ShxFontType
+  ShxFontType,
+  ShxShape
 } from '@mlightcad/shx-parser'
 import iconv from 'iconv-lite'
 
@@ -112,7 +113,19 @@ export class ShxFont extends BaseFont {
    */
   public getCodeShape(code: number, size: number) {
     const shape = this.font.getCharShape(code, size)
-    return shape ? new ShxTextShape(code, size, shape, this) : undefined
+    if (!shape || !ShxFont.hasRenderableStrokes(shape)) {
+      return undefined
+    }
+    return new ShxTextShape(code, size, shape, this)
+  }
+
+  /** True when the SHX glyph has drawable strokes or a non-zero pen advance. */
+  private static hasRenderableStrokes(shape: ShxShape): boolean {
+    if (shape.polylines.some(line => line.length >= 2)) {
+      return true
+    }
+    // Advance-only glyphs (e.g. space) have no stroke geometry but valid width.
+    return (shape.lastPoint?.x ?? 0) > 0
   }
 
   /**

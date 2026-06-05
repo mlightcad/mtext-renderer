@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AUTOCAD_PERCENT_SYMBOL_CONTROL_CODES,
   getShxControlCodeCandidates,
+  isAutoCadNumericPercentControlCodeChar,
   isAutoCadPercentSymbolChar
 } from '../../src/renderer/shxSymbolControlCodes'
 
@@ -36,5 +37,17 @@ describe('shxSymbolControlCodes', () => {
     ])
     expect(getShxControlCodeCandidates('±')).toEqual([String.fromCharCode(177)])
     expect(getShxControlCodeCandidates('A')).toEqual([])
+  })
+
+  it('recognizes numeric %%ddd SHX control-code characters', () => {
+    expect(isAutoCadNumericPercentControlCodeChar(String.fromCharCode(130))).toBe(
+      true
+    )
+    expect(isAutoCadNumericPercentControlCodeChar(String.fromCharCode(132))).toBe(
+      true
+    )
+    expect(isAutoCadNumericPercentControlCodeChar('°')).toBe(false)
+    expect(isAutoCadNumericPercentControlCodeChar('A')).toBe(false)
+    expect(isAutoCadNumericPercentControlCodeChar('9')).toBe(false)
   })
 })

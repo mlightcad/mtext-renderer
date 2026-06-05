@@ -48,7 +48,7 @@ describe('AutoCAD percent symbols with isocp primary font (integration)', () => 
           label: '%%c',
           unicodeChar: 'Ø',
           symbolChar: '\u2205',
-          isocpWidth: 10,
+          isocpWidth: 12.230769230769234,
           symbolWidth: 6.785714285714286
         },
         {
@@ -99,6 +99,7 @@ describe('AutoCAD percent symbols with isocp primary font (integration)', () => 
 describe('%%130 %%131 glyph fallback (integration)', () => {
   const ch130 = String.fromCharCode(130)
   const ch131 = String.fromCharCode(131)
+  const ch132 = String.fromCharCode(132)
 
   it(
     'resolves %%130/%%131 from amgdt.shx; gdt.ttf has no real glyph at those code points',
@@ -113,6 +114,12 @@ describe('%%130 %%131 glyph fallback (integration)', () => {
       expect(gdt.getCharShape(ch130, 10)).toBeUndefined()
       expect(amgdt.getCharShape(ch130, 10)).toBeDefined()
       expect(amgdt.getCharShape(ch131, 10)).toBeDefined()
+
+      const shape132 = amgdt.getCharShape(ch132, 10)
+      expect(shape132).toBeDefined()
+      expect(shape132!.toGeometry().attributes.position?.count ?? 0).toBeGreaterThan(
+        0
+      )
     },
     60_000
   )

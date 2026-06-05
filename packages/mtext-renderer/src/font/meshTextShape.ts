@@ -6,6 +6,20 @@ import { MeshFont } from './meshFont'
 
 const _tmp = new THREE.Vector2()
 
+function hasFinitePositions(geometry: THREE.BufferGeometry) {
+  const position = geometry.getAttribute('position')
+  if (!position || position.count === 0) {
+    return true
+  }
+  const array = position.array as ArrayLike<number>
+  for (let index = 0; index < array.length; index++) {
+    if (!Number.isFinite(array[index])) {
+      return false
+    }
+  }
+  return true
+}
+
 /**
  * Represents a text shape for mesh-based fonts (e.g., TTF, OTF, WOFF).
  * This class extends BaseTextShape to provide specific functionality for mesh fonts,
@@ -42,6 +56,10 @@ export class MeshTextShape extends BaseTextShape {
     if (geometry == null) {
       const shapes = this.font.generateShapes(this.char, this.fontSize)
       geometry = new THREE.ShapeGeometry(shapes, 4)
+      if (!hasFinitePositions(geometry)) {
+        geometry.dispose()
+        return new THREE.BufferGeometry()
+      }
       // Remove uv and normal to save memory
       if (geometry.hasAttribute('uv')) {
         geometry.deleteAttribute('uv')
@@ -50,6 +68,9 @@ export class MeshTextShape extends BaseTextShape {
         geometry.deleteAttribute('normal')
       }
       return mergeVertices(geometry, 1e-6)
+    }
+    if (!hasFinitePositions(geometry)) {
+      return new THREE.BufferGeometry()
     }
     return geometry
   }

@@ -66,6 +66,23 @@ export function isAutoCadPercentSymbolChar(char: string): boolean {
 }
 
 /**
+ * Returns whether a character likely came from an AutoCAD numeric percent code
+ * (`%%ddd`) expanded by mtext-parser into {@link String.fromCharCode}.
+ *
+ * AutoCAD resolves these byte-oriented SHX code points from GDT / symbol fonts
+ * (e.g. `amgdt.shx`), not from the primary text font—even when the text font
+ * defines a glyph at the same code (as with `txt.shx` at code 132).
+ */
+export function isAutoCadNumericPercentControlCodeChar(char: string): boolean {
+  if (char.length !== 1 || isAutoCadPercentSymbolChar(char)) {
+    return false
+  }
+  const code = char.charCodeAt(0)
+  // Legacy GDT / SHX symbol bytes produced by `%%126`–`%%255`.
+  return code >= 126 && code <= 255
+}
+
+/**
  * Returns ordered SHX control-code characters to try in symbol-font fallbacks
  * for an AutoCAD percent-symbol Unicode expansion.
  */

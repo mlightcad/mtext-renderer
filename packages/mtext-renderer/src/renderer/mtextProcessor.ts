@@ -10,12 +10,16 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 
 import { getColorByIndex } from '../common'
 import { FontManager } from '../font'
+import { BaseTextShape } from '../font/baseTextShape'
 import { resolveMTextColor } from './colorUtils'
 import {
   LINE_SPACING_SCALE_FACTOR,
   STACK_VERTICAL_SHIFT_FACTOR
 } from './constants'
-import { getShxControlCodeCandidates } from './shxSymbolControlCodes'
+import {
+  getShxControlCodeCandidates,
+  isAutoCadNumericPercentControlCodeChar
+} from './shxSymbolControlCodes'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
@@ -1651,6 +1655,19 @@ export class MTextProcessor {
    * @param char Input one character
    * @returns Return the text shape of the specified character
    */
+  private shapeHasStrokeGeometry(shape: BaseTextShape, char: string): boolean {
+    if (typeof shape.toGeometry !== 'function') {
+      return shape.width > 0
+    }
+    const geometry = shape.toGeometry()
+    const vertexCount = geometry.getAttribute('position')?.count ?? 0
+    if (vertexCount > 0) {
+      return true
+    }
+    // SHX space glyphs often have advance width only (no stroke geometry).
+    return char === ' ' && shape.width > 0
+  }
+
   private getCharShape(char: string) {
     // Named AutoCAD percent codes (%%c/%%d/%%p) are expanded to Unicode by
     // mtext-parser before rendering, but AutoCAD itself resolves those symbols
@@ -1663,7 +1680,22 @@ export class MTextProcessor {
         controlChar,
         this.currentFontSize
       )
-      if (symbolShape) {
+      if (symbolShape && this.shapeHasStrokeGeometry(symbolShape, char)) {
+        if (this.currentFontSize > this._maxFontSize) {
+          this._maxFontSize = this.currentFontSize
+        }
+        return symbolShape
+      }
+    }
+
+    // Numeric `%%ddd` codes (e.g. %%130, %%132) expand to raw byte values and
+    // must be resolved from symbol SHX fonts before the primary text font.
+    if (isAutoCadNumericPercentControlCodeChar(char)) {
+      const symbolShape = this.fontManager.getCharShapeFromSymbolFonts(
+        char,
+        this.currentFontSize
+      )
+      if (symbolShape && this.shapeHasStrokeGeometry(symbolShape, char)) {
         if (this.currentFontSize > this._maxFontSize) {
           this._maxFontSize = this.currentFontSize
         }
@@ -1696,7 +1728,7 @@ export class MTextProcessor {
         this.currentFontSize
       )
     }
-    if (!shape) {
+    if (!shape || !this.shapeHasStrokeGeometry(shape, char)) {
       shape = this.fontManager.getNotFoundTextShape(this.currentFontSize)
     }
 
@@ -1845,24 +1877,32 @@ export class MTextProcessor {
       }
     }
 
+    const applyLeftAlignment = () => {
+      const dx = Number.isFinite(this.maxLineWidth)
+        ? this._currentLeftMargin - resolvedBBox.min.x
+        : this._currentLeftMargin
+
+      const translated = new Set<THREE.Object3D>()
+      geometryEntries.forEach(entry => {
+        entry.geometry.translate(dx, 0, 0)
+        if (!translated.has(entry.owner)) {
+          translateCharBoxes(entry.owner, dx)
+          translated.add(entry.owner)
+        }
+      })
+    }
+
     switch (this.currentHorizontalAlignment) {
       case MTextParagraphAlignment.LEFT:
       case MTextParagraphAlignment.JUSTIFIED: {
-        const dx = Number.isFinite(this.maxLineWidth)
-          ? this._currentLeftMargin - resolvedBBox.min.x
-          : this._currentLeftMargin
-
-        const translated = new Set<THREE.Object3D>()
-        geometryEntries.forEach(entry => {
-          entry.geometry.translate(dx, 0, 0)
-          if (!translated.has(entry.owner)) {
-            translateCharBoxes(entry.owner, dx)
-            translated.add(entry.owner)
-          }
-        })
+        applyLeftAlignment()
         break
       }
       case MTextParagraphAlignment.CENTER: {
+        if (!Number.isFinite(this.maxLineWidth)) {
+          applyLeftAlignment()
+          break
+        }
         const dx =
           this._currentLeftMargin +
           (this.maxLineWidth - size.x) / 2 -
@@ -1879,6 +1919,10 @@ export class MTextProcessor {
         break
       }
       case MTextParagraphAlignment.RIGHT: {
+        if (!Number.isFinite(this.maxLineWidth)) {
+          applyLeftAlignment()
+          break
+        }
         const dx =
           this._currentLeftMargin +
           this.maxLineWidth -
@@ -1896,6 +1940,10 @@ export class MTextProcessor {
         break
       }
       case MTextParagraphAlignment.DISTRIBUTED: {
+        if (!Number.isFinite(this.maxLineWidth)) {
+          applyLeftAlignment()
+          break
+        }
         const gap =
           geometryEntries.length > 1
             ? (this.maxLineWidth - size.x) / (geometryEntries.length - 1)

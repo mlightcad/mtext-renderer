@@ -378,7 +378,12 @@ export class MText extends THREE.Object3D {
     object.traverse(obj => {
       if ('geometry' in obj) {
         const geometry = obj.geometry as THREE.BufferGeometry
-        geometry.translate(anchorPoint.x, anchorPoint.y, 0)
+        if (
+          Number.isFinite(anchorPoint.x) &&
+          Number.isFinite(anchorPoint.y)
+        ) {
+          geometry.translate(anchorPoint.x, anchorPoint.y, 0)
+        }
       }
       // Char-box metadata is stored alongside geometry for normal glyphs and
       // on placeholder objects for spaces/empty lines, so translate it for both.

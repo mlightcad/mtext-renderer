@@ -42,12 +42,25 @@ export class ShxTextShape extends BaseTextShape {
   private resolveAdvanceWidth(shape: ShxShape): number {
     const bboxWidth = this.calcWidth()
     const penAdvance = shape.lastPoint?.x ?? 0
+    const bboxMaxX = shape.bbox.maxX
+    const fontType = this.font.data.header.fontType
+    const { width: cellWidth, height: cellHeight } = this.font.data.content
+    const scaledCellWidth =
+      cellHeight > 0 ? (cellWidth / cellHeight) * this.fontSize : 0
 
-    if (this.font.data.header.fontType === ShxFontType.BIGFONT) {
-      const { width: cellWidth, height: cellHeight } = this.font.data.content
-      const scaledCellWidth =
-        cellHeight > 0 ? (cellWidth / cellHeight) * this.fontSize : 0
+    if (fontType === ShxFontType.BIGFONT) {
       return Math.max(bboxWidth, penAdvance, scaledCellWidth)
+    }
+
+    if (fontType === ShxFontType.UNIFONT) {
+      // Unifont GDT symbols (e.g. amgdt %%132) may draw past lastPoint; when
+      // ink extends beyond the pen advance, also enforce the font cell width.
+      const inkExtent = Math.max(bboxWidth, bboxMaxX)
+      let advance = Math.max(penAdvance, inkExtent)
+      if (inkExtent > penAdvance + 1e-6) {
+        advance = Math.max(advance, scaledCellWidth)
+      }
+      return advance
     }
 
     return penAdvance > 0 ? penAdvance : bboxWidth
