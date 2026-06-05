@@ -12,7 +12,8 @@ import { DefaultFontLoader } from './defaultFontLoader'
 import {
   DEFAULT_FONTS_PRESETS,
   DefaultFontsPreset,
-  isDefaultFontsPreset
+  isDefaultFontsPreset,
+  SYMBOL_FONTS_PRESETS
 } from './defaultFontsPresets'
 import { FontData, FontType } from './font'
 import { FontFactory } from './fontFactory'
@@ -67,6 +68,12 @@ export class FontManager {
    * Insertion order is preserved; earlier entries are tried first.
    */
   public defaultFonts = new Set<string>(['simkai'])
+  /**
+   * GDT / SHX symbol fonts for AutoCAD control-code glyphs (`%%c`, `%%d`, `%%p`,
+   * `%%nnn`, etc.). Separate from {@link defaultFonts} so text fallbacks are not
+   * polluted by symbol-font code-point matches.
+   */
+  public symbolFonts = new Set<string>(['amgdt'])
 
   /** Event managers for font-related events */
   public readonly events = {
@@ -133,10 +140,30 @@ export class FontManager {
   setDefaultFonts(fonts: DefaultFontsPreset | string | readonly string[]) {
     if (typeof fonts === 'string' && isDefaultFontsPreset(fonts)) {
       this.defaultFonts = new Set(DEFAULT_FONTS_PRESETS[fonts])
+      this.symbolFonts = new Set(SYMBOL_FONTS_PRESETS[fonts])
       return
     }
     const list = typeof fonts === 'string' ? [fonts] : [...fonts]
     this.defaultFonts = new Set(list)
+  }
+
+  /**
+   * Sets the symbol-font fallback chain for AutoCAD control-code glyphs.
+   *
+   * Pass a {@link DefaultFontsPreset} name to apply a predefined symbol stack,
+   * or pass one or more font names to define a custom chain.
+   *
+   * @param fonts - A preset name, a single font name, or an ordered list of font names
+   */
+  setSymbolFonts(fonts: DefaultFontsPreset): void
+  setSymbolFonts(fonts: string | readonly string[]): void
+  setSymbolFonts(fonts: DefaultFontsPreset | string | readonly string[]) {
+    if (typeof fonts === 'string' && isDefaultFontsPreset(fonts)) {
+      this.symbolFonts = new Set(SYMBOL_FONTS_PRESETS[fonts])
+      return
+    }
+    const list = typeof fonts === 'string' ? [fonts] : [...fonts]
+    this.symbolFonts = new Set(list)
   }
 
   /**
@@ -145,6 +172,21 @@ export class FontManager {
    */
   getDefaultFontsPreset(preset: DefaultFontsPreset): readonly string[] {
     return DEFAULT_FONTS_PRESETS[preset]
+  }
+
+  /**
+   * Returns the symbol-font names for a predefined preset.
+   * @param preset - The preset to look up
+   */
+  getSymbolFontsPreset(preset: DefaultFontsPreset): readonly string[] {
+    return SYMBOL_FONTS_PRESETS[preset]
+  }
+
+  /**
+   * Font names that should be loaded for the active default and symbol chains.
+   */
+  getFontsToLoad(): readonly string[] {
+    return [...new Set([...this.defaultFonts, ...this.symbolFonts])]
   }
 
   /**
@@ -170,20 +212,20 @@ export class FontManager {
    * @returns True if every font in `defaultFonts` is loaded. False otherwise.
    */
   isDefaultFontLoaded() {
-    for (const fontName of this.defaultFonts) {
+    for (const fontName of this.getFontsToLoad()) {
       if (this.loadedFontMap.get(fontName.toLowerCase()) == null) {
         return false
       }
     }
-    return this.defaultFonts.size > 0
+    return this.defaultFonts.size > 0 || this.symbolFonts.size > 0
   }
 
   /**
-   * Loads all default fonts
+   * Loads all default and symbol fonts
    * @returns Promise that resolves to the font load statuses
    */
   async loadDefaultFont() {
-    return await this.loadFontsByNames([...this.defaultFonts])
+    return await this.loadFontsByNames(this.getFontsToLoad())
   }
 
   /**
@@ -191,9 +233,11 @@ export class FontManager {
    * @param names - Font names to load.
    * @returns Promise that resolves to an array of font load statuses
    */
-  async loadFontsByNames(names: string | string[]): Promise<FontLoadStatus[]> {
-    names = Array.isArray(names) ? names : [names]
-    return await this.fontLoader.load(names)
+  async loadFontsByNames(
+    names: string | readonly string[]
+  ): Promise<FontLoadStatus[]> {
+    const list = typeof names === 'string' ? [names] : [...names]
+    return await this.fontLoader.load(list)
   }
 
   /**
@@ -329,18 +373,29 @@ export class FontManager {
     char: string,
     size: number
   ): BaseTextShape | undefined {
-    const fallbackFont = this.getFontFromDefaults(char)
-    return fallbackFont?.getCharShape(char, size)
+    for (const fontName of this.defaultFonts) {
+      const font = this.loadedFontMap.get(fontName.toLowerCase())
+      const shape = font?.getCharShape(char, size)
+      if (shape) {
+        return shape
+      }
+    }
+    return undefined
   }
 
   /**
-   * Gets the first loaded default font that contains the specified character.
+   * Gets the text shape from configured GDT / symbol fonts (e.g. `amgdt.shx`).
+   * Used for AutoCAD percent codes and other symbol-font code points.
    */
-  private getFontFromDefaults(char: string): BaseFont | undefined {
-    for (const fontName of this.defaultFonts) {
+  public getCharShapeFromSymbolFonts(
+    char: string,
+    size: number
+  ): BaseTextShape | undefined {
+    for (const fontName of this.symbolFonts) {
       const font = this.loadedFontMap.get(fontName.toLowerCase())
-      if (font?.hasChar(char)) {
-        return font
+      const shape = font?.getCharShape(char, size)
+      if (shape) {
+        return shape
       }
     }
     return undefined
@@ -424,14 +479,14 @@ export class FontManager {
     const data = await FontCacheManager.instance.get(fontName)
     if (data) {
       const font = FontFactory.instance.createFont(data)
-      this.loadedFontMap.set(fontName, font)
+      this.registerFontInMap(fontName, font)
     } else {
       const buffer = (await this.loader.loadAsync(fontInfo.url)) as ArrayBuffer
       fontData.data = buffer
       const font = FontFactory.instance.createFont(fontData)
       if (font) {
         fontInfo.name.forEach(name => font.names.add(name))
-        this.loadedFontMap.set(fontName, font)
+        this.registerFontInMap(fontName, font)
         if (this.enableFontCache) {
           await FontCacheManager.instance.set(fontName, fontData)
         }
@@ -470,8 +525,18 @@ export class FontManager {
         continue
       }
       const font = FontFactory.instance.createFont(fontFileData)
-      this.loadedFontMap.set(name, font)
+      this.registerFontInMap(name, font)
     }
+  }
+
+  /**
+   * Registers a loaded font under its primary name and all aliases.
+   */
+  private registerFontInMap(primaryName: string, font: BaseFont) {
+    this.loadedFontMap.set(primaryName.toLowerCase(), font)
+    font.names.forEach(name => {
+      this.loadedFontMap.set(name.toLowerCase(), font)
+    })
   }
 
   /**
@@ -501,8 +566,16 @@ export class FontManager {
     if (fontToRelease == null) {
       this.loadedFontMap.clear()
       return true
-    } else {
-      return this.loadedFontMap.delete(fontToRelease)
     }
+    const font = this.loadedFontMap.get(fontToRelease.toLowerCase())
+    if (!font) {
+      return false
+    }
+    for (const [key, value] of this.loadedFontMap) {
+      if (value === font) {
+        this.loadedFontMap.delete(key)
+      }
+    }
+    return true
   }
 }

@@ -110,13 +110,20 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
 
       case 'setDefaultFonts': {
         if (!data) throw new Error('Missing data for setDefaultFonts message')
-        const { fonts } = data as { fonts: string[] }
+        const { fonts, symbolFonts } = data as {
+          fonts: string[]
+          symbolFonts: string[]
+        }
         fontManager.setDefaultFonts(fonts)
+        fontManager.setSymbolFonts(symbolFonts)
         self.postMessage({
           type: 'setDefaultFonts',
           id,
           success: true,
-          data: { fonts: [...fontManager.defaultFonts] }
+          data: {
+            fonts: [...fontManager.defaultFonts],
+            symbolFonts: [...fontManager.symbolFonts]
+          }
         } as WorkerResponse)
         break
       }

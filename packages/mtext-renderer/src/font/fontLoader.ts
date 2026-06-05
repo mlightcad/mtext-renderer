@@ -46,7 +46,7 @@ export interface FontLoader {
    * @param fontNames - Array of font names to load
    * @returns Promise that resolves to an array of FontLoadStatus objects indicating the load status of each font
    */
-  load(fontNames: string[]): Promise<FontLoadStatus[]>
+  load(fontNames: readonly string[]): Promise<FontLoadStatus[]>
 
   /**
    * Retrieves information about all available fonts in the system

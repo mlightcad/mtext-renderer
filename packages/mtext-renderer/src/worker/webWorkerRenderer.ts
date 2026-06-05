@@ -89,6 +89,7 @@ type SetDefaultFontsMessage = WorkerMessageBase<
   'setDefaultFonts',
   {
     fonts: string[]
+    symbolFonts: string[]
   }
 >
 
@@ -124,6 +125,7 @@ type SetDefaultFontsResponse = WorkerResponseBase<
   'setDefaultFonts',
   {
     fonts: string[]
+    symbolFonts: string[]
   }
 >
 
@@ -256,7 +258,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   private async ensureInitialized() {
     if (!this.isInitialized) {
       // Guarantee the default font is loaded
-      await this.loadFonts([...FontManager.instance.defaultFonts])
+      await this.loadFonts(FontManager.instance.getFontsToLoad())
       this.isInitialized = true
     }
   }
@@ -426,14 +428,21 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   /**
    * Syncs the default font fallback chain to all workers.
    */
-  async setDefaultFonts(fonts: readonly string[]) {
+  async setDefaultFonts(
+    fonts: readonly string[],
+    symbolFonts: readonly string[]
+  ) {
     FontManager.instance.setDefaultFonts(fonts)
+    FontManager.instance.setSymbolFonts(symbolFonts)
     await this.sendMessageToAllWorkers<
       SetDefaultFontsMessage,
       SetDefaultFontsResponse
     >({
       type: 'setDefaultFonts',
-      data: { fonts: [...fonts] }
+      data: {
+        fonts: [...fonts],
+        symbolFonts: [...symbolFonts]
+      }
     })
   }
 
@@ -472,7 +481,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     )
   }
 
-  async loadFonts(fonts: string[]): Promise<{ loaded: string[] }> {
+  async loadFonts(fonts: readonly string[]): Promise<{ loaded: string[] }> {
     await this.ensureTasksFinished()
 
     const results = await this.sendMessageToAllWorkers<
@@ -480,7 +489,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       LoadFontsResponse
     >({
       type: 'loadFonts',
-      data: { fonts }
+      data: { fonts: [...fonts] }
     })
 
     const aggregated = new Set<string>()

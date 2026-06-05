@@ -46,10 +46,10 @@ class MTextRendererExample {
     complex:
       '{\\C1;\\W2;Title}\\P{\\C2;This is a paragraph with different styles.}\\P{\\C3;\\W1.5;Subtitle}\\P{\\C4;• First item\\P• Second item\\P• Third item}\\P{\\T2;Absolute character spacing: 2, }{\\T0.2x;Relative character spacing: 0.2}\\P{\\W0.8;Footer text}',
     controlCode:
-      '{Circle diameter dimensioning symbol: %%c},\\P{Degree symbol: %%d}\\P{Plus/minus tolerance symbol: %%p}\\P{A single percent sign: %%%}\\P{Unicode character: %%130 %%131}\\P{Toggles strikethrough on and off: %%kon, %%koff}\\P{Toggles overscoring on and off.: %%oon, %%ooff}\\P{Toggles underscoring  on and off.: %%uon, %%uoff}',
+      '{Circle diameter dimensioning symbol: %%c},\\P{Degree symbol: %%d}\\P{Plus/minus tolerance symbol: %%p}\\P{A single percent sign: %%%}\\P{Unicode character: %%130 %%131}\\P{Strikethrough toggle (%%k): %%kstruck%%k normal}\\P{Strikethrough explicit: %%konstruck%%koff normal}\\P{Overscore toggle (%%o): %%oover%%o normal}\\P{Overscore explicit: %%oonover%%ooff normal}\\P{Underscore toggle (%%u): %%uunder%%u normal}\\P{Underscore explicit: %%uonunder%%uoff normal}',
     color:
       '{\\C0;By Block}\\P{\\C1;Red Text}\\P{\\C2;Yellow Text}\\P{\\C3;Green Text}\\P{\\C4;Cyan Text}\\P{\\C5;Blue Text}\\P{\\C6;Magenta Text}\\P{\\C7;White Text}\\P{\\C256;By Layer}\\P{\\c16761035;Pink (0x0FFC0CB)}\\PRestore ByLayer\\P\\C1;Old Context Color: Red, {\\C2; New Context Color: Yellow, } Restored Context Color: Red',
-    font: '{\\C1;\\W2;\\FSimSun;SimSun 宋体}\\P{\\FArial;SimFang 仿宋（面积、材料、8、①④⑧⑩⑫㉔㉚）}\\P{\\C2;\\W0.5;\\FArial;Arial Text}\\P{\\C3;30;\\Faehalf.shx;SHX Text}\\P{\\C4;\\Fgbcbig.shx;东亚字符集字体}\\P{\\C5;\\Q1;\\FSimHei;SimHei Text，黑体}\\P{\\C6;\\Q0.5;\\FSimKai;SimKai 楷体}',
+    font: '{\\C1;\\W2;\\FSimSun;SimSun 宋体}\\P{\\F仿宋_gb2312;SimFang 仿宋（面积、材料、8、①④⑧⑩⑫㉔㉚）}\\P{\\C2;\\W0.5;\\FArial;Arial Text}\\P{\\C3;30;\\Faehalf.shx;SHX Text}\\P{\\C4;\\Fgbcbig.shx;东亚字符集字体}\\P{\\C5;\\Q1;\\FSimHei;SimHei Text，黑体}\\P{\\C6;\\Q0.5;\\FSimKai;SimKai 楷体}',
     defaultFonts:
       '{\\C1;Primary \\Ftxt;txt (SHX) — Latin: Hello %%c50}\\P{\\C2;CJK falls back via preset chain: 材料 装车 直径 你好}\\P{\\C3;Symbol %%c %%d %%p — may use gdt in chain}\\P{\\C4;Switch preset above and re-render to compare fallback order}',
     stacking:
@@ -260,12 +260,13 @@ class MTextRendererExample {
   private async applyDefaultFontsPreset(): Promise<void> {
     const preset = this.getSelectedDefaultFontsPreset()
     await this.unifiedRenderer.setDefaultFonts(preset)
-    const chain = this.unifiedRenderer.getDefaultFontsPreset(preset)
+    const textChain = this.unifiedRenderer.getDefaultFontsPreset(preset)
+    const symbolChain = this.unifiedRenderer.getSymbolFontsPreset(preset)
     const fontsToLoad = [
-      ...new Set([...chain, this.fontSelect.value, 'txt'])
+      ...new Set([...textChain, ...symbolChain, this.fontSelect.value])
     ]
     await this.unifiedRenderer.loadFonts(fontsToLoad)
-    this.statusDiv.textContent = `Preset "${preset}": ${chain.join(' → ')}`
+    this.statusDiv.textContent = `Preset "${preset}": text ${textChain.join(' → ')} | symbol ${symbolChain.join(' → ')}`
     this.statusDiv.style.color = '#0f0'
   }
 

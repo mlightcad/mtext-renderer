@@ -11,6 +11,7 @@ import { FontManager } from '../font'
 import { buildCharBoxesFromObject } from './charBoxUtils'
 import { resolveMTextWrapWidth } from './mtextDataUtils'
 import { MTextFormatOptions, MTextProcessor } from './mtextProcessor'
+import { expandPercentControlCodes } from './percentControlCodes'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
@@ -535,7 +536,7 @@ export class MText extends THREE.Object3D {
       this.fontManager,
       textLineFormatOptions
     )
-    const parser = new MTextParser(mtextData.text, context, {
+    const parser = new MTextParser(expandPercentControlCodes(mtextData.text), context, {
       resetParagraphParameters: true,
       yieldPropertyCommands: true
     })

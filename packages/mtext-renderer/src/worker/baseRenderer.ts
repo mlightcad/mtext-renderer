@@ -83,7 +83,7 @@ export interface MTextBaseRenderer {
    * @param fonts Font names to load (without extension for built-ins).
    * @returns A Promise with the list of fonts that were processed.
    */
-  loadFonts(fonts: string[]): Promise<{ loaded: string[] }>
+  loadFonts(fonts: readonly string[]): Promise<{ loaded: string[] }>
 
   /**
    * Retrieve the list of fonts that can be used by the renderer.

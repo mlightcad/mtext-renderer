@@ -1,3 +1,4 @@
+import { getFileNameWithoutExtension } from '../common'
 import { FontInfo, FontLoader, FontLoadStatus } from './fontLoader'
 import { FontManager } from './fontManager'
 
@@ -86,7 +87,7 @@ export class DefaultFontLoader implements FontLoader {
    * @param fontNames - Array of font names to load
    * @returns Promise that resolves to an array of FontLoadStatus objects
    */
-  async load(fontNames: string[]) {
+  async load(fontNames: readonly string[]): Promise<FontLoadStatus[]> {
     if (fontNames == null || fontNames.length === 0) {
       return []
     }
@@ -94,10 +95,12 @@ export class DefaultFontLoader implements FontLoader {
 
     const alreadyLoadedStatuses: FontLoadStatus[] = []
     const fontsToLoad: FontInfo[] = []
+    const requestedFontInfos = new Map<string, FontInfo>()
     fontNames.forEach(font => {
       const lowerCaseFontName = font.toLowerCase()
       const fontInfo = this._avaiableFontMap.get(lowerCaseFontName)
       if (fontInfo) {
+        requestedFontInfos.set(lowerCaseFontName, fontInfo)
         if (FontManager.instance.isFontLoaded(lowerCaseFontName)) {
           alreadyLoadedStatuses.push({
             fontName: lowerCaseFontName,
@@ -111,20 +114,47 @@ export class DefaultFontLoader implements FontLoader {
     const newlyLoadedStatuses =
       await FontManager.instance.loadFonts(fontsToLoad)
 
-    // Merge and return statuses for all requested fonts, preserving order
+    // Merge and return statuses for all requested fonts, preserving order.
+    // FontManager reports status by file name; alias requests need remapping.
     const statusMap: Record<string, FontLoadStatus> = {}
     ;[...alreadyLoadedStatuses, ...newlyLoadedStatuses].forEach(s => {
       statusMap[s.fontName] = s
     })
     return fontNames.map(font => {
       const lowerCaseFontName = font.toLowerCase()
-      return (
-        statusMap[lowerCaseFontName] || {
-          fontName: lowerCaseFontName,
-          url: '',
-          status: 'NotFound'
+      const directStatus = statusMap[lowerCaseFontName]
+      if (directStatus) {
+        return directStatus
+      }
+
+      const fontInfo = requestedFontInfos.get(lowerCaseFontName)
+      if (fontInfo) {
+        if (FontManager.instance.isFontLoaded(lowerCaseFontName)) {
+          return {
+            fontName: lowerCaseFontName,
+            url: fontInfo.url,
+            status: 'Success'
+          }
         }
-      )
+
+        const fileBaseName = getFileNameWithoutExtension(
+          fontInfo.file
+        ).toLowerCase()
+        const loadedByFile = statusMap[fileBaseName]
+        if (loadedByFile) {
+          return {
+            fontName: lowerCaseFontName,
+            url: fontInfo.url,
+            status: loadedByFile.status
+          }
+        }
+      }
+
+      return {
+        fontName: lowerCaseFontName,
+        url: '',
+        status: 'NotFound'
+      }
     })
   }
 
@@ -135,7 +165,7 @@ export class DefaultFontLoader implements FontLoader {
     const fontMap = this._avaiableFontMap
     this._avaiableFonts.forEach(font => {
       font.name.forEach(name => {
-        fontMap.set(name.toLocaleLowerCase(), font)
+        fontMap.set(name.toLowerCase(), font)
       })
     })
   }

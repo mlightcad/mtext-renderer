@@ -134,8 +134,10 @@ export class UnifiedRenderer {
     fonts: DefaultFontsPreset | string | readonly string[]
   ): Promise<void> {
     FontManager.instance.setDefaultFonts(fonts)
-    const chain = [...FontManager.instance.defaultFonts]
-    await this.webWorkerRenderer.setDefaultFonts(chain)
+    await this.webWorkerRenderer.setDefaultFonts(
+      [...FontManager.instance.defaultFonts],
+      [...FontManager.instance.symbolFonts]
+    )
   }
 
   /**
@@ -146,9 +148,16 @@ export class UnifiedRenderer {
   }
 
   /**
+   * Returns symbol-font names for a predefined preset.
+   */
+  getSymbolFontsPreset(preset: DefaultFontsPreset): readonly string[] {
+    return FontManager.instance.getSymbolFontsPreset(preset)
+  }
+
+  /**
    * Load fonts using the current mode
    */
-  async loadFonts(fonts: string[]): Promise<{ loaded: string[] }> {
+  async loadFonts(fonts: readonly string[]): Promise<{ loaded: string[] }> {
     return this.renderer.loadFonts(fonts)
   }
 

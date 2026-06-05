@@ -15,6 +15,7 @@ import {
   LINE_SPACING_SCALE_FACTOR,
   STACK_VERTICAL_SHIFT_FACTOR
 } from './constants'
+import { getShxControlCodeCandidates } from './shxSymbolControlCodes'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
@@ -1651,6 +1652,25 @@ export class MTextProcessor {
    * @returns Return the text shape of the specified character
    */
   private getCharShape(char: string) {
+    // Named AutoCAD percent codes (%%c/%%d/%%p) are expanded to Unicode by
+    // mtext-parser before rendering, but AutoCAD itself resolves those symbols
+    // from GDT/symbol SHX fonts (e.g. amgdt.shx) via legacy control-code code
+    // points—not from the primary text font's Unicode glyphs. Try the ordered
+    // SHX control-code candidates in the default symbol-font chain first so
+    // rendering matches AutoCAD and avoids incorrect glyphs from the text font.
+    for (const controlChar of getShxControlCodeCandidates(char)) {
+      const symbolShape = this.fontManager.getCharShapeFromSymbolFonts(
+        controlChar,
+        this.currentFontSize
+      )
+      if (symbolShape) {
+        if (this.currentFontSize > this._maxFontSize) {
+          this._maxFontSize = this.currentFontSize
+        }
+        return symbolShape
+      }
+    }
+
     let shape = this.fontManager.getCharShape(
       char,
       this.currentFont,
@@ -1666,6 +1686,12 @@ export class MTextProcessor {
     }
     if (!shape) {
       shape = this.fontManager.getCharShapeFromDefaults(
+        char,
+        this.currentFontSize
+      )
+    }
+    if (!shape) {
+      shape = this.fontManager.getCharShapeFromSymbolFonts(
         char,
         this.currentFontSize
       )

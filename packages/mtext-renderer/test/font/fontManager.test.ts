@@ -19,7 +19,10 @@ vi.mock('../../src/font/fontFactory', () => ({
 }))
 
 import { FontManager } from '../../src/font/fontManager'
-import { DEFAULT_FONTS_PRESETS } from '../../src/font/defaultFontsPresets'
+import {
+  DEFAULT_FONTS_PRESETS,
+  SYMBOL_FONTS_PRESETS
+} from '../../src/font/defaultFontsPresets'
 import { FontCacheManager } from '../../src/cache'
 import { FontFactory } from '../../src/font/fontFactory'
 import { FontInfo, FontLoader, FontLoadStatus } from '../../src/font/fontLoader'
@@ -63,6 +66,7 @@ describe('FontManager', () => {
     manager.fileNames = []
     manager.enableFontCache = true
     manager.defaultFonts = new Set(['simkai'])
+    manager.symbolFonts = new Set(['amgdt'])
   })
 
   afterEach(() => {
@@ -115,7 +119,7 @@ describe('FontManager', () => {
 
     const result = await manager.loadDefaultFont()
 
-    expect(loader.load).toHaveBeenCalledWith(['simkai'])
+    expect(loader.load).toHaveBeenCalledWith(['simkai', 'amgdt'])
     expect(result).toEqual([
       {
         fontName: 'simkai',
@@ -184,6 +188,53 @@ describe('FontManager', () => {
 
     expect(FontManager.instance.getCharShapeFromDefaults('中', 12)).toBe(shape)
     expect(fallback.getCharShape).toHaveBeenCalledWith('中', 12)
+  })
+
+  it('skips default fonts that hasChar but cannot build a shape', () => {
+    const shape = { width: 1 }
+    const manager = FontManager.instance as any
+    const falsePositive = createFakeFont({
+      hasChar: vi.fn().mockReturnValue(true),
+      getCharShape: vi.fn().mockReturnValue(undefined)
+    })
+    const fallback = createFakeFont({
+      hasChar: vi.fn().mockReturnValue(false),
+      getCharShape: vi.fn().mockReturnValue(shape)
+    })
+    manager.defaultFonts = new Set(['falsepositive', 'fallback'])
+    manager.loadedFontMap.set('falsepositive', falsePositive)
+    manager.loadedFontMap.set('fallback', fallback)
+
+    expect(FontManager.instance.getCharShapeFromDefaults('中', 12)).toBe(shape)
+    expect(falsePositive.getCharShape).toHaveBeenCalledWith('中', 12)
+    expect(fallback.getCharShape).toHaveBeenCalledWith('中', 12)
+  })
+
+  it('prefers symbolFonts for AutoCAD control-code glyphs', () => {
+    const meshShape = { width: 99 }
+    const symbolShape = { width: 2.85 }
+    const manager = FontManager.instance as any
+    const mesh = createFakeFont({
+      hasChar: vi.fn((char: string) => char === '°'),
+      getCharShape: vi.fn().mockReturnValue(meshShape)
+    })
+    const symbol = createFakeFont({
+      hasChar: vi.fn((char: string) => char === '°'),
+      getCharShape: vi.fn().mockReturnValue(symbolShape)
+    })
+    manager.defaultFonts = new Set(['simsun'])
+    manager.symbolFonts = new Set(['amgdt'])
+    manager.loadedFontMap.set('simsun', mesh)
+    manager.loadedFontMap.set('amgdt', symbol)
+
+    expect(FontManager.instance.getCharShapeFromDefaults('°', 10)).toBe(
+      meshShape
+    )
+    expect(FontManager.instance.getCharShapeFromSymbolFonts('°', 10)).toBe(
+      symbolShape
+    )
+    expect(mesh.getCharShape).toHaveBeenCalled()
+    expect(symbol.getCharShape).toHaveBeenCalled()
   })
 
   it('finds fonts by character without using getCharShape on a missing font name', () => {
@@ -273,35 +324,47 @@ describe('FontManager', () => {
     ])
   })
 
-  it('sets default fonts from a preset', () => {
+  it('sets default and symbol fonts from a preset', () => {
     const manager = FontManager.instance
 
     manager.setDefaultFonts('r12r14')
     expect([...manager.defaultFonts]).toEqual([
       ...DEFAULT_FONTS_PRESETS.r12r14
     ])
+    expect([...manager.symbolFonts]).toEqual([
+      ...SYMBOL_FONTS_PRESETS.r12r14
+    ])
 
     manager.setDefaultFonts('modern')
     expect([...manager.defaultFonts]).toEqual([...DEFAULT_FONTS_PRESETS.modern])
+    expect([...manager.symbolFonts]).toEqual([...SYMBOL_FONTS_PRESETS.modern])
   })
 
-  it('sets custom default fonts from a list or single name', () => {
+  it('sets custom default fonts without changing symbol fonts', () => {
     const manager = FontManager.instance
 
-    manager.setDefaultFonts(['hztxt', 'simsun', 'gdt'])
-    expect([...manager.defaultFonts]).toEqual(['hztxt', 'simsun', 'gdt'])
+    manager.setDefaultFonts('modern')
+    manager.setDefaultFonts(['hztxt', 'simsun'])
+    expect([...manager.defaultFonts]).toEqual(['hztxt', 'simsun'])
+    expect([...manager.symbolFonts]).toEqual([...SYMBOL_FONTS_PRESETS.modern])
 
     manager.setDefaultFonts('simkai')
     expect([...manager.defaultFonts]).toEqual(['simkai'])
+
+    manager.setSymbolFonts(['amgdt', 'gdt'])
+    expect([...manager.symbolFonts]).toEqual(['amgdt', 'gdt'])
   })
 
-  it('returns preset font names via getDefaultFontsPreset', () => {
+  it('returns preset font names via getDefaultFontsPreset and getSymbolFontsPreset', () => {
     expect(FontManager.instance.getDefaultFontsPreset('cjk')).toEqual(
       DEFAULT_FONTS_PRESETS.cjk
     )
+    expect(FontManager.instance.getSymbolFontsPreset('cjk')).toEqual(
+      SYMBOL_FONTS_PRESETS.cjk
+    )
   })
 
-  it('loads default fonts configured by preset', async () => {
+  it('loads default and symbol fonts configured by preset', async () => {
     const loader = createFontLoader('https://cdn.example.com/fonts/')
     vi.mocked(loader.load).mockResolvedValue([])
     const manager = FontManager.instance
@@ -310,12 +373,70 @@ describe('FontManager', () => {
 
     await manager.loadDefaultFont()
 
-    expect(loader.load).toHaveBeenCalledWith(['hztxt', 'simsun', 'gdt'])
+    expect(loader.load).toHaveBeenCalledWith(['hztxt', 'simsun', 'amgdt'])
+  })
+
+  it('resolves fonts by alias names after loading', async () => {
+    const manager = FontManager.instance as any
+    const buffer = new ArrayBuffer(8)
+    const shape = { width: 1 }
+    const font = createFakeFont({
+      names: new Set([
+        'simfang',
+        'FangSong_GB2312',
+        '仿宋',
+        '仿宋_GB2312',
+        '华文仿宋'
+      ]),
+      type: 'mesh',
+      hasChar: vi.fn().mockReturnValue(true),
+      getCharShape: vi.fn().mockReturnValue(shape),
+      getScaleFactor: vi.fn().mockReturnValue(0.8)
+    })
+    manager.loader = {
+      loadAsync: vi.fn().mockResolvedValue(buffer)
+    }
+    vi.mocked(FontFactory.instance.createFont).mockReturnValue(font as any)
+
+    await FontManager.instance.loadFonts({
+      name: ['simfang', 'FangSong_GB2312', '仿宋', '仿宋_GB2312', '华文仿宋'],
+      file: 'simfang.woff',
+      type: 'mesh',
+      url: 'https://cdn.example.com/fonts/simfang.woff'
+    })
+
+    expect(FontManager.instance.isFontLoaded('simfang')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('仿宋_GB2312')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('仿宋_gb2312')).toBe(true)
+    expect(FontManager.instance.getFontByName('仿宋_GB2312')).toBe(font)
+    expect(FontManager.instance.getFontByName('仿宋_gb2312')).toBe(font)
+    expect(FontManager.instance.getFontScaleFactor('仿宋_GB2312')).toBe(0.8)
+    expect(FontManager.instance.getFontType('华文仿宋')).toBe('mesh')
+    expect(FontManager.instance.findAndReplaceFont('仿宋_gb2312')).toBe(
+      '仿宋_gb2312'
+    )
+    expect(FontManager.instance.getCharShape('仿', '仿宋_GB2312', 12)).toBe(
+      shape
+    )
+  })
+
+  it('releases a font and all of its alias entries', () => {
+    const manager = FontManager.instance as any
+    const font = createFakeFont({
+      names: new Set(['simfang', '仿宋_GB2312'])
+    })
+    manager.loadedFontMap.set('simfang', font)
+    manager.loadedFontMap.set('仿宋_gb2312', font)
+
+    expect(FontManager.instance.release('仿宋_GB2312')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('simfang')).toBe(false)
+    expect(FontManager.instance.isFontLoaded('仿宋_GB2312')).toBe(false)
+    expect(manager.loadedFontMap.size).toBe(0)
   })
 
   it('loads fonts from cache without requesting the font URL', async () => {
     const manager = FontManager.instance as any
-    const font = createFakeFont()
+    const font = createFakeFont({ names: new Set(['Romans']) })
     const cachedFontData = {
       name: 'romans',
       alias: ['Romans'],
@@ -339,6 +460,8 @@ describe('FontManager', () => {
     expect(manager.loader.loadAsync).not.toHaveBeenCalled()
     expect(FontFactory.instance.createFont).toHaveBeenCalledWith(cachedFontData)
     expect(FontManager.instance.isFontLoaded('romans')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('Romans')).toBe(true)
+    expect(FontManager.instance.getFontByName('Romans')).toBe(font)
     expect(statuses[0].status).toBe('Success')
   })
 })

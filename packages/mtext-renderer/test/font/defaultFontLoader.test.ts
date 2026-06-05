@@ -166,6 +166,53 @@ describe('DefaultFontLoader', () => {
     ])
   })
 
+  it('reports success for alias requests when load status uses the file name', async () => {
+    vi.mocked(FontManager.instance.isFontLoaded).mockReturnValue(false)
+    vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([
+      {
+        fontName: 'simfang',
+        url: 'https://cdn.example.com/fonts/simfang.woff',
+        status: 'Success'
+      }
+    ])
+    const loader = new DefaultFontLoader()
+    loader.baseUrl = 'https://cdn.example.com/fonts/'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse([
+          {
+            name: [
+              'simfang',
+              'FangSong_GB2312',
+              '仿宋',
+              '仿宋_GB2312',
+              '华文仿宋'
+            ],
+            file: 'simfang.woff',
+            type: 'mesh',
+            url: ''
+          }
+        ])
+      )
+    )
+
+    const statuses = await loader.load(['仿宋_gb2312'])
+
+    expect(FontManager.instance.loadFonts).toHaveBeenCalledWith([
+      expect.objectContaining({
+        file: 'simfang.woff'
+      })
+    ])
+    expect(statuses).toEqual([
+      {
+        fontName: '仿宋_gb2312',
+        url: 'https://cdn.example.com/fonts/simfang.woff',
+        status: 'Success'
+      }
+    ])
+  })
+
   it('returns success immediately for already loaded requested fonts', async () => {
     vi.mocked(FontManager.instance.isFontLoaded).mockReturnValue(true)
     const loader = new DefaultFontLoader()
