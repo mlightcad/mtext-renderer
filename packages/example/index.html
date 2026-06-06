@@ -112,12 +112,37 @@
         .example-btn:hover {
             background: #555;
         }
+        .content-panel {
+            margin: 10px 0;
+        }
+        .content-panel.hidden {
+            display: none;
+        }
+        .content-panel input[type="number"],
+        .content-panel input[type="text"] {
+            width: 100%;
+            padding: 5px;
+            margin: 5px 0;
+            box-sizing: border-box;
+        }
+        .hint {
+            font-size: 12px;
+            color: #bbb;
+            margin: 4px 0 8px;
+        }
     </style>
 </head>
 <body>
     <div id="controls">
         <h2>MText Renderer Example</h2>
         <div class="row">
+            <div class="field">
+                <label for="content-type">Content Type:</label>
+                <select id="content-type">
+                    <option value="mtext" selected>MText</option>
+                    <option value="shape">SHAPE (SHX shape entity)</option>
+                </select>
+            </div>
             <div class="field">
                 <label for="font-select">Text Style Font:</label>
                 <select id="font-select">
@@ -152,8 +177,43 @@
                 <input type="color" id="by-block-color" value="#ffffff">
             </div>
         </div>
-        <label for="mtext-input">MText:</label>
-        <textarea id="mtext-input" placeholder="Enter MText content here... (Special characters: %%c=Ø, %%d=°, %%p=±)">{\C1;Hello World}\P{\C2;This is a test}\P{\C3;MText Renderer}</textarea>
+        <div id="mtext-panel" class="content-panel">
+            <label for="mtext-input">MText:</label>
+            <textarea id="mtext-input" placeholder="Enter MText content here... (Special characters: %%c=Ø, %%d=°, %%p=±)">{\C1;Hello World}\P{\C2;This is a test}\P{\C3;MText Renderer}</textarea>
+        </div>
+        <div id="shape-panel" class="content-panel hidden">
+            <div class="row">
+                <div class="field">
+                    <label for="shape-font-select">Shape Font (SHX):</label>
+                    <select id="shape-font-select">
+                        <option value="complex" selected>complex</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="shape-name">Shape Name (optional):</label>
+                    <input type="text" id="shape-name" placeholder="e.g. GRS when defined in font">
+                </div>
+            </div>
+            <div class="row">
+                <div class="field">
+                    <label for="shape-number">Shape Number:</label>
+                    <input type="number" id="shape-number" value="128" min="1" max="65535">
+                </div>
+                <div class="field">
+                    <label for="shape-size">Height:</label>
+                    <input type="number" id="shape-size" value="24" min="1" step="1">
+                </div>
+                <div class="field">
+                    <label for="shape-width-factor">Width Factor:</label>
+                    <input type="number" id="shape-width-factor" value="1" min="0.1" step="0.1">
+                </div>
+                <div class="field">
+                    <label for="shape-rotation">Rotation (deg):</label>
+                    <input type="number" id="shape-rotation" value="0" step="1">
+                </div>
+            </div>
+            <p class="hint">Uses <code>complex.shx</code> by default. Shape number 128–132 render distinct glyphs; name lookup is tried first when provided.</p>
+        </div>
         <div style="display: flex; align-items: center; gap: 10px;">
             <button id="render-btn">Render</button>
             <div class="checkbox-container" style="margin: 0;">
@@ -177,6 +237,7 @@
             <button class="example-btn" data-example="color">Color</button>
             <button class="example-btn" data-example="font">Font</button>
             <button class="example-btn" data-example="defaultFonts">Default Fonts</button>
+            <button class="example-btn" data-example="shapes">SHX Shapes</button>
             <button class="example-btn" data-example="alignment">Alignment</button>
             <button class="example-btn" data-example="paragraph">Paragraph</button>
             <button class="example-btn" data-example="stacking">Stacking</button>

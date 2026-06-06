@@ -4,6 +4,7 @@ import {
   ColorSettings,
   createDefaultColorSettings,
   MTextData,
+  ShapeData,
   TextStyle
 } from '../renderer/types'
 import { MTextBaseRenderer, MTextObject } from './baseRenderer'
@@ -122,6 +123,31 @@ export class UnifiedRenderer {
   ): MTextObject {
     return this.mainThreadRenderer.syncRenderMText(
       mtextContent,
+      textStyle,
+      colorSettings
+    )
+  }
+
+  async asyncRenderShape(
+    shapeContent: ShapeData,
+    textStyle: TextStyle,
+    colorSettings: ColorSettings = createDefaultColorSettings(),
+    _mode?: RenderMode
+  ): Promise<MTextObject> {
+    return this.mainThreadRenderer.asyncRenderShape(
+      shapeContent,
+      textStyle,
+      colorSettings
+    )
+  }
+
+  syncRenderShape(
+    shapeContent: ShapeData,
+    textStyle: TextStyle,
+    colorSettings: ColorSettings = createDefaultColorSettings()
+  ): MTextObject {
+    return this.mainThreadRenderer.syncRenderShape(
+      shapeContent,
       textStyle,
       colorSettings
     )

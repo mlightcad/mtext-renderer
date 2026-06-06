@@ -8,6 +8,7 @@ import {
   MTextData,
   MTextObject,
   RenderMode,
+  ShapeData,
   TextStyle,
   UnifiedRenderer
 } from '@mlightcad/mtext-renderer'
@@ -31,6 +32,15 @@ class MTextRendererExample {
   private statusDiv: HTMLDivElement
   private fontSelect: HTMLSelectElement
   private defaultFontsPresetSelect: HTMLSelectElement
+  private contentTypeSelect: HTMLSelectElement
+  private mtextPanel: HTMLDivElement
+  private shapePanel: HTMLDivElement
+  private shapeFontSelect: HTMLSelectElement
+  private shapeNameInput: HTMLInputElement
+  private shapeNumberInput: HTMLInputElement
+  private shapeSizeInput: HTMLInputElement
+  private shapeWidthFactorInput: HTMLInputElement
+  private shapeRotationInput: HTMLInputElement
   private showBoundingBoxCheckbox: HTMLInputElement
   private showCharBoxesCheckbox: HTMLInputElement
   private showLineBoxesCheckbox: HTMLInputElement
@@ -59,6 +69,8 @@ class MTextRendererExample {
     paragraph:
       '{\\pql;\\P{\\pqi;\\pxi2;\\pxl5;\\pxr5;This paragraph has an indent of 2 units, left margin of 5 units, and right margin of 5 units. The first line is indented.}\\P{\\pqi;\\pxi2;\\pxl5;\\pxr5;This is the second line of the same paragraph, showing the effect of margins.}}',
     multiple: 'multiple', // Special marker for multiple MText rendering
+    /** Grid of SHX shape glyphs from complex.shx (shape numbers 128–132). */
+    shapes: 'shapes',
     /** DXF group 71 attachment points 1–12; renders a grid with insertion crosshairs */
     attachmentGrid: 'attachmentGrid'
   }
@@ -109,6 +121,29 @@ class MTextRendererExample {
     this.defaultFontsPresetSelect = document.getElementById(
       'default-fonts-preset'
     ) as HTMLSelectElement
+    this.contentTypeSelect = document.getElementById(
+      'content-type'
+    ) as HTMLSelectElement
+    this.mtextPanel = document.getElementById('mtext-panel') as HTMLDivElement
+    this.shapePanel = document.getElementById('shape-panel') as HTMLDivElement
+    this.shapeFontSelect = document.getElementById(
+      'shape-font-select'
+    ) as HTMLSelectElement
+    this.shapeNameInput = document.getElementById(
+      'shape-name'
+    ) as HTMLInputElement
+    this.shapeNumberInput = document.getElementById(
+      'shape-number'
+    ) as HTMLInputElement
+    this.shapeSizeInput = document.getElementById(
+      'shape-size'
+    ) as HTMLInputElement
+    this.shapeWidthFactorInput = document.getElementById(
+      'shape-width-factor'
+    ) as HTMLInputElement
+    this.shapeRotationInput = document.getElementById(
+      'shape-rotation'
+    ) as HTMLInputElement
     this.showBoundingBoxCheckbox = document.getElementById(
       'show-bounding-box'
     ) as HTMLInputElement
@@ -138,7 +173,7 @@ class MTextRendererExample {
     this.initializeFonts(true)
       .then(() => {
         // Initial render after fonts are loaded
-        void this.renderMText(this.mtextInput.value)
+        void this.renderCurrentContent()
       })
       .catch(error => {
         console.error('Failed to initialize fonts:', error)
@@ -177,20 +212,40 @@ class MTextRendererExample {
 
     // Render button
     this.renderBtn.addEventListener('click', async () => {
-      const content = this.mtextInput.value
-      await this.renderMText(content)
+      await this.renderCurrentContent()
+    })
+
+    this.contentTypeSelect.addEventListener('change', () => {
+      this.updateContentPanels()
+      void this.renderCurrentContent()
+    })
+    this.updateContentPanels()
+
+    ;[
+      this.shapeFontSelect,
+      this.shapeNameInput,
+      this.shapeNumberInput,
+      this.shapeSizeInput,
+      this.shapeWidthFactorInput,
+      this.shapeRotationInput
+    ].forEach(element => {
+      element.addEventListener('change', () => {
+        if (this.contentTypeSelect.value === 'shape') {
+          void this.renderCurrentContent()
+        }
+      })
     })
 
     // Text style font selection
     this.fontSelect.addEventListener('change', async () => {
       await this.applyDefaultFontsPreset()
-      await this.renderMText(this.mtextInput.value)
+      await this.renderCurrentContent()
     })
 
     // Default fonts preset (fallback chain)
     this.defaultFontsPresetSelect.addEventListener('change', async () => {
       await this.applyDefaultFontsPreset()
-      await this.renderMText(this.mtextInput.value)
+      await this.renderCurrentContent()
     })
 
     // Example buttons
@@ -204,13 +259,19 @@ class MTextRendererExample {
           const content =
             this.exampleTexts[exampleType as keyof typeof this.exampleTexts]
 
-          if (content === 'multiple' || content === 'attachmentGrid') {
-            // Preset grids: don't overwrite the textarea
-            await this.renderMText(content)
+          if (content === 'shapes') {
+            this.contentTypeSelect.value = 'shape'
+            this.updateContentPanels()
+            await this.renderCurrentContent('shapes')
+          } else if (content === 'multiple' || content === 'attachmentGrid') {
+            this.contentTypeSelect.value = 'mtext'
+            this.updateContentPanels()
+            await this.renderCurrentContent(content)
           } else {
-            // For regular examples, update textarea and render
+            this.contentTypeSelect.value = 'mtext'
+            this.updateContentPanels()
             this.mtextInput.value = content
-            await this.renderMText(content)
+            await this.renderCurrentContent(content)
           }
         }
       })
@@ -241,16 +302,33 @@ class MTextRendererExample {
       await this.initializeFonts(false)
 
       // Re-render with current content to reflect the new mode
-      await this.renderMText(this.mtextInput.value)
+      await this.renderCurrentContent()
     })
 
     // Color settings
     this.byLayerColorInput.addEventListener('change', async () => {
-      await this.renderMText(this.mtextInput.value)
+      await this.renderCurrentContent()
     })
     this.byBlockColorInput.addEventListener('change', async () => {
-      await this.renderMText(this.mtextInput.value)
+      await this.renderCurrentContent()
     })
+  }
+
+  private updateContentPanels(): void {
+    const isShape = this.contentTypeSelect.value === 'shape'
+    this.mtextPanel.classList.toggle('hidden', isShape)
+    this.shapePanel.classList.toggle('hidden', !isShape)
+    this.renderBtn.textContent = isShape ? 'Render Shape' : 'Render'
+    this.showCharBoxesCheckbox.disabled = isShape
+    this.showLineBoxesCheckbox.disabled = isShape
+  }
+
+  private async renderCurrentContent(content?: string): Promise<void> {
+    if (this.contentTypeSelect.value === 'shape') {
+      await this.renderShape(content)
+      return
+    }
+    await this.renderMText(content ?? this.mtextInput.value)
   }
 
   private getSelectedDefaultFontsPreset(): DefaultFontsPreset {
@@ -263,7 +341,12 @@ class MTextRendererExample {
     const textChain = this.unifiedRenderer.getDefaultFontsPreset(preset)
     const symbolChain = this.unifiedRenderer.getSymbolFontsPreset(preset)
     const fontsToLoad = [
-      ...new Set([...textChain, ...symbolChain, this.fontSelect.value])
+      ...new Set([
+        ...textChain,
+        ...symbolChain,
+        this.fontSelect.value,
+        this.shapeFontSelect.value
+      ])
     ]
     await this.unifiedRenderer.loadFonts(fontsToLoad)
     this.statusDiv.textContent = `Preset "${preset}": text ${textChain.join(' → ')} | symbol ${symbolChain.join(' → ')}`
@@ -279,9 +362,15 @@ class MTextRendererExample {
 
         // Clear existing options
         this.fontSelect.innerHTML = ''
+        this.shapeFontSelect.innerHTML = ''
 
         // Add all available fonts to dropdown
-        fonts.forEach(font => {
+        fonts.forEach(rawFont => {
+          const font = rawFont as {
+            name: string[]
+            file?: string
+            type?: 'mesh' | 'shx'
+          }
           const option = document.createElement('option')
           option.value = font.name[0]
           option.textContent = font.name[0] // Use the first name from the array
@@ -289,6 +378,16 @@ class MTextRendererExample {
             option.selected = true
           }
           this.fontSelect.appendChild(option)
+
+          if (font.type === 'shx' || font.file?.toLowerCase().endsWith('.shx')) {
+            const shapeOption = document.createElement('option')
+            shapeOption.value = font.name[0]
+            shapeOption.textContent = font.name[0]
+            if (font.name[0] === 'complex') {
+              shapeOption.selected = true
+            }
+            this.shapeFontSelect.appendChild(shapeOption)
+          }
         })
       }
 
@@ -811,6 +910,214 @@ class MTextRendererExample {
     }
   }
 
+  private createShapeTextStyle(font: string, size: number): TextStyle {
+    return {
+      name: 'Standard',
+      standardFlag: 0,
+      fixedTextHeight: size,
+      widthFactor: 1,
+      obliqueAngle: 0,
+      textGenerationFlag: 0,
+      lastHeight: size,
+      font,
+      bigFont: ''
+    }
+  }
+
+  private buildShapeDataFromInputs(): ShapeData {
+    const size = Number(this.shapeSizeInput.value) || 24
+    const widthFactor = Number(this.shapeWidthFactorInput.value) || 1
+    const rotationDeg = Number(this.shapeRotationInput.value) || 0
+    const shapeNumber = Number(this.shapeNumberInput.value)
+    const shapeName = this.shapeNameInput.value.trim()
+
+    const shapeData: ShapeData = {
+      size,
+      widthFactor,
+      position: new THREE.Vector3(120, 420, 0),
+      rotation: (rotationDeg * Math.PI) / 180
+    }
+
+    if (shapeName) {
+      shapeData.name = shapeName
+    }
+    if (Number.isFinite(shapeNumber) && shapeNumber > 0) {
+      shapeData.shapeNumber = shapeNumber
+    }
+
+    return shapeData
+  }
+
+  private createShapeTestData(): {
+    shapeData: ShapeData
+    textStyle: TextStyle
+  }[] {
+    const font = this.shapeFontSelect.value || 'complex'
+    const size = 28
+    const shapeNumbers = [128, 129, 130, 131, 132]
+    const originX = 90
+    const originY = 420
+    const gapX = 110
+
+    return shapeNumbers.map((shapeNumber, index) => ({
+      shapeData: {
+        shapeNumber,
+        size,
+        widthFactor: 1,
+        position: new THREE.Vector3(originX + index * gapX, originY, 0)
+      },
+      textStyle: this.createShapeTextStyle(font, size)
+    }))
+  }
+
+  private clearSceneContent(): void {
+    if (this.currentMText) {
+      this.scene.remove(this.currentMText)
+      this.currentMText = null
+    }
+    if (this.mtextBox) {
+      this.scene.remove(this.mtextBox)
+      this.mtextBox = null
+    }
+    this.charBoxOverlays = []
+    this.lineBoxOverlays = []
+  }
+
+  private isShapeRenderEmpty(shapeObj: MTextObject): boolean {
+    return shapeObj.children.length === 0 || shapeObj.box.isEmpty()
+  }
+
+  private validateShapeInputs(shapeData: ShapeData, font: string): string | null {
+    const name = shapeData.name?.trim()
+    const number = shapeData.shapeNumber
+    const hasName = Boolean(name)
+    const hasNumber = number != null && number > 0
+
+    if (!hasName && !hasNumber) {
+      return 'Provide a shape name or shape number'
+    }
+    if (hasName && !hasNumber) {
+      return `Shape name "${name}" not found in ${font}.shx`
+    }
+    if (!hasName && hasNumber) {
+      return `Shape number ${number} not found in ${font}.shx`
+    }
+    return `Shape name "${name}" and number ${number} not found in ${font}.shx`
+  }
+
+  private async renderShape(content?: string): Promise<void> {
+    try {
+      const startTime = performance.now()
+      this.statusDiv.textContent = 'Rendering SHAPE...'
+      this.statusDiv.style.color = '#ffa500'
+
+      this.clearSceneContent()
+      const colorSettings = this.getColorSettings()
+      const shapeFont = this.shapeFontSelect.value || 'complex'
+      await this.unifiedRenderer.loadFonts([shapeFont])
+
+      const isGrid = content === 'shapes'
+
+      if (!isGrid) {
+        const shapeData = this.buildShapeDataFromInputs()
+        const hasName = Boolean(shapeData.name?.trim())
+        const hasNumber =
+          shapeData.shapeNumber != null && shapeData.shapeNumber > 0
+        if (!hasName && !hasNumber) {
+          this.statusDiv.textContent = 'Provide a shape name or shape number'
+          this.statusDiv.style.color = '#f00'
+          return
+        }
+      }
+
+      const items = isGrid
+        ? this.createShapeTestData()
+        : [
+            {
+              shapeData: this.buildShapeDataFromInputs(),
+              textStyle: this.createShapeTextStyle(
+                shapeFont,
+                Number(this.shapeSizeInput.value) || 24
+              )
+            }
+          ]
+
+      const shapeObjects = await Promise.all(
+        items.map(({ shapeData, textStyle }) =>
+          this.unifiedRenderer.asyncRenderShape(
+            shapeData,
+            textStyle,
+            colorSettings
+          )
+        )
+      )
+
+      if (!isGrid) {
+        const shapeObj = shapeObjects[0]
+        if (this.isShapeRenderEmpty(shapeObj)) {
+          this.statusDiv.textContent = this.validateShapeInputs(
+            items[0].shapeData,
+            shapeFont
+          )
+          this.statusDiv.style.color = '#f00'
+          return
+        }
+      }
+
+      const group = new THREE.Group()
+      let combinedBox: THREE.Box3 | null = null
+
+      if (isGrid) {
+        items.forEach(({ shapeData }) => {
+          group.add(
+            this.createInsertionCrosshair(
+              shapeData.position.x,
+              shapeData.position.y,
+              14
+            )
+          )
+        })
+      } else {
+        const { position } = items[0].shapeData
+        group.add(
+          this.createInsertionCrosshair(position.x, position.y, 18)
+        )
+      }
+
+      shapeObjects.forEach(shapeObj => {
+        group.add(shapeObj)
+        if (shapeObj.box && !shapeObj.box.isEmpty()) {
+          if (combinedBox === null) {
+            combinedBox = shapeObj.box.clone()
+          } else {
+            combinedBox.union(shapeObj.box)
+          }
+          if (
+            this.showBoundingBoxCheckbox.checked &&
+            !shapeObj.box.isEmpty()
+          ) {
+            group.add(this.createMTextBox(shapeObj.box))
+          }
+        }
+      })
+
+      ;(group as unknown as MTextObject).box = combinedBox ?? new THREE.Box3()
+      this.currentMText = group as unknown as MTextObject
+      this.scene.add(this.currentMText)
+
+      const renderTime = performance.now() - startTime
+      const label = isGrid
+        ? `${shapeObjects.length} SHX shapes (128–132)`
+        : `SHAPE #${items[0].shapeData.shapeNumber ?? items[0].shapeData.name ?? '?'}`
+      this.statusDiv.textContent = `Rendered ${label} in ${renderTime.toFixed(2)}ms (main thread; SHAPE uses sync path)`
+      this.statusDiv.style.color = '#0f0'
+    } catch (error) {
+      console.error('Error rendering SHAPE:', error)
+      this.statusDiv.textContent = 'Error rendering SHAPE'
+      this.statusDiv.style.color = '#f00'
+    }
+  }
+
   private async renderMText(content: string): Promise<void> {
     try {
       const startTime = performance.now()
@@ -819,18 +1126,8 @@ class MTextRendererExample {
       this.statusDiv.textContent = 'Rendering MText...'
       this.statusDiv.style.color = '#ffa500'
 
-      // Remove existing MText if any
-      if (this.currentMText) {
-        this.scene.remove(this.currentMText)
-      }
-
-      // Remove existing bounding boxes
-      if (this.mtextBox) {
-        this.scene.remove(this.mtextBox)
-        this.mtextBox = null
-      }
-      this.charBoxOverlays = []
-      this.lineBoxOverlays = []
+      // Remove existing content if any
+      this.clearSceneContent()
 
       let renderTime: number
       const colorSettings = this.getColorSettings()

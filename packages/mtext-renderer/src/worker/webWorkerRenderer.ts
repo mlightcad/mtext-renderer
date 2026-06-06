@@ -13,6 +13,7 @@ import {
   LineLayout,
   MTextData,
   MTextLayout,
+  ShapeData,
   TextStyle
 } from '../renderer/types'
 import { MTextBaseRenderer, MTextObject } from './baseRenderer'
@@ -478,6 +479,26 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   ): MTextObject {
     throw new Error(
       'Fuction \'syncRenderMText\' isn\'t supported in \'WebWorkerRenderer\'!'
+    )
+  }
+
+  async asyncRenderShape(
+    _shapeContent: ShapeData,
+    _textStyle: TextStyle,
+    _colorSettings: ColorSettings = createDefaultColorSettings()
+  ): Promise<MTextObject> {
+    throw new Error(
+      'Function \'asyncRenderShape\' isn\'t supported in \'WebWorkerRenderer\'!'
+    )
+  }
+
+  syncRenderShape(
+    _shapeContent: ShapeData,
+    _textStyle: TextStyle,
+    _colorSettings: ColorSettings = createDefaultColorSettings()
+  ): MTextObject {
+    throw new Error(
+      'Function \'syncRenderShape\' isn\'t supported in \'WebWorkerRenderer\'!'
     )
   }
 

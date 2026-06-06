@@ -806,6 +806,170 @@ export class MTextProcessor {
   }
 
   /**
+   * Renders one SHX shape glyph for AutoCAD SHAPE entities.
+   *
+   * The glyph is resolved by {@link shapeName} first, then by {@link shapeNumber}.
+   */
+  processShapeGlyph(
+    shapeName?: string,
+    shapeNumber?: number
+  ): THREE.Object3D | undefined {
+    const resolved = this.resolveShapeGlyph(shapeName, shapeNumber)
+    if (!resolved) {
+      return undefined
+    }
+
+    const geometries: THREE.BufferGeometry[] = []
+    const lineGeometries: THREE.BufferGeometry[] = []
+    const meshCharBoxes: CharBox[] = []
+    const lineCharBoxes: CharBox[] = []
+    const charY =
+      this.flowDirection === MTextFlowDirection.BOTTOM_TO_TOP
+        ? 0
+        : -this.currentLayoutFontSize
+
+    const advance = this.buildShapeGeometry(
+      resolved.shape,
+      resolved.label,
+      0,
+      charY,
+      geometries,
+      lineGeometries,
+      meshCharBoxes,
+      lineCharBoxes
+    )
+
+    this._totalHeight = this.currentLayoutFontSize
+    this._maxFontSize = this.currentLayoutFontSize
+    this._maxLineAdvance = advance
+
+    const object = this.toThreeObject(
+      geometries,
+      lineGeometries,
+      meshCharBoxes,
+      lineCharBoxes,
+      CharBoxType.CHAR
+    )
+    if (object) {
+      object.userData.logicalAdvanceWidth = advance
+    }
+    return object
+  }
+
+  private resolveShapeGlyph(
+    shapeName?: string,
+    shapeNumber?: number
+  ): { shape: BaseTextShape; label: string } | undefined {
+    const size = this.currentLayoutFontSize
+    const fontName = this.textStyle.font.toLowerCase()
+    const trimmedName = shapeName?.trim()
+    const hasNumber = shapeNumber != null && shapeNumber !== 0
+
+    if (trimmedName) {
+      const byName = this.fontManager.getShapeByName(trimmedName, fontName, size)
+      if (byName) {
+        return { shape: byName, label: trimmedName }
+      }
+    }
+
+    if (hasNumber) {
+      const byCode = this.fontManager.getShapeByCode(shapeNumber!, fontName, size)
+      if (byCode) {
+        return { shape: byCode, label: String.fromCharCode(shapeNumber!) }
+      }
+    }
+
+    // SHAPE entities have no "?" placeholder when name/number lookup fails.
+    return undefined
+  }
+
+  /**
+   * Builds geometry for one glyph and appends it to the output buffers.
+   *
+   * @returns Horizontal advance width after width factor and oblique skew.
+   */
+  private buildShapeGeometry(
+    shape: BaseTextShape,
+    label: string,
+    charX: number,
+    charY: number,
+    geometries: THREE.BufferGeometry[],
+    lineGeometries: THREE.BufferGeometry[],
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[]
+  ): number {
+    const geometry = shape.toGeometry()
+    geometry.scale(this.currentWidthFactor, 1, 1)
+    const charHeight = this.currentLayoutFontSize
+
+    let obliqueAngle = this._currentContext.oblique
+    if (this._currentContext.italic) {
+      obliqueAngle += 15
+    }
+    let obliqueExtraAdvance = 0
+    if (obliqueAngle) {
+      const angleRad = (obliqueAngle * Math.PI) / 180
+      const skewMatrix = new THREE.Matrix4()
+      skewMatrix.set(
+        1,
+        Math.tan(angleRad),
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      )
+      geometry.applyMatrix4(skewMatrix)
+      obliqueExtraAdvance = Math.tan(angleRad) * charHeight
+    }
+
+    const fontType = this.fontManager.getFontType(this.currentFont)
+    if (this._currentContext.bold && fontType === 'mesh') {
+      geometry.scale(1.06, 1.06, 1)
+    }
+
+    geometry.translate(charX, charY, 0)
+    geometries.push(geometry)
+
+    if (this._options.collectCharBoxes !== false) {
+      geometry.userData.char = label
+      if (!geometry.boundingBox) {
+        geometry.computeBoundingBox()
+      }
+      const box = new THREE.Box3().copy(geometry.boundingBox!)
+      if (geometry instanceof THREE.ShapeGeometry) {
+        meshCharBoxes.push({
+          type: CharBoxType.CHAR,
+          box,
+          char: label,
+          children: []
+        })
+      } else {
+        lineCharBoxes.push({
+          type: CharBoxType.CHAR,
+          box,
+          char: label,
+          children: []
+        })
+      }
+    }
+
+    return (
+      shape.width * this.currentWidthFactor +
+      obliqueExtraAdvance * this.currentWidthFactor
+    )
+  }
+
+  /**
    * Render the specified texts
    * @param item Input texts to render
    */
