@@ -73,6 +73,13 @@ export abstract class BaseFont {
   abstract getCodeShape(code: number, size: number): BaseTextShape | undefined
 
   /**
+   * Gets a named SHX shape glyph when supported by the font implementation.
+   */
+  getShapeByName(_name: string, _size: number): BaseTextShape | undefined {
+    return undefined
+  }
+
+  /**
    * Gets the scale factor for this font.
    * This is used to adjust the size of characters when rendering.
    * @returns The scale factor as a number

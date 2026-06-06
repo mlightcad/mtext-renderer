@@ -366,6 +366,30 @@ export class FontManager {
   }
 
   /**
+   * Resolves a named SHX shape glyph from the specified font.
+   */
+  public getShapeByName(
+    name: string,
+    fontName: string,
+    size: number
+  ): BaseTextShape | undefined {
+    const currentFont = this.getFontByName(fontName)
+    return currentFont?.getShapeByName(name, size)
+  }
+
+  /**
+   * Resolves an SHX shape glyph by numeric character code from the specified font.
+   */
+  public getShapeByCode(
+    code: number,
+    fontName: string,
+    size: number
+  ): BaseTextShape | undefined {
+    const currentFont = this.getFontByName(fontName)
+    return currentFont?.getCodeShape(code, size)
+  }
+
+  /**
    * Gets the text shape from the first loaded default font that contains the character.
    * Used after primary and optional bigFont lookups per AutoCAD text-style semantics.
    */

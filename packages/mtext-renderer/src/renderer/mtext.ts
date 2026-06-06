@@ -24,6 +24,7 @@ import {
   MTextFlowDirection,
   MTextLayout,
   Point2d,
+  ShapeData,
   TextStyle
 } from './types'
 
@@ -320,6 +321,41 @@ export class MText extends THREE.Object3D {
       return undefined
     }
 
+    return this.finalizePlacement(object, mtextData, layoutHeight)
+  }
+
+  /**
+   * Builds and places one SHX shape glyph.
+   */
+  loadShape(shapeData: ShapeData, style: TextStyle) {
+    const { object, height: layoutHeight } = this.createShapeGroup(
+      shapeData,
+      style
+    )
+    if (!object) {
+      return undefined
+    }
+
+    const placementData: MTextData = {
+      text: '',
+      height: shapeData.size,
+      width: Infinity,
+      widthFactor: shapeData.widthFactor ?? style.widthFactor ?? 1,
+      position: shapeData.position,
+      rotation: shapeData.rotation,
+      directionVector: shapeData.directionVector,
+      attachmentPoint: MTextAttachmentPoint.BaselineLeft,
+      drawingDirection: MTextFlowDirection.BOTTOM_TO_TOP,
+      collectCharBoxes: false
+    }
+    return this.finalizePlacement(object, placementData, layoutHeight)
+  }
+
+  private finalizePlacement(
+    object: THREE.Object3D,
+    mtextData: MTextData,
+    layoutHeight: number
+  ) {
     // When the caller does not pre-declare the text width (e.g. AcDbText
     // and AcDbAttribute, which let the renderer's own font metrics drive
     // layout), `mtextData.width` is `Infinity`. Using that value verbatim
@@ -414,6 +450,40 @@ export class MText extends THREE.Object3D {
     object.updateMatrix()
     object.updateMatrixWorld(true)
     return object
+  }
+
+  private createShapeGroup(shapeData: ShapeData, style: TextStyle) {
+    const defaultFontSize = shapeData.size || style.fixedTextHeight || 0
+    const defaultWidthFactor =
+      shapeData.widthFactor ?? style.widthFactor ?? 1.0
+    const textLineFormatOptions: MTextFormatOptions = {
+      fontSize: defaultFontSize,
+      widthFactor: defaultWidthFactor,
+      lineSpaceFactor: 0.3,
+      horizontalAlignment: MTextParagraphAlignment.LEFT,
+      maxWidth: 0,
+      flowDirection: MTextFlowDirection.BOTTOM_TO_TOP,
+      byBlockColor: this._colorSettings.byBlockColor,
+      byLayerColor: this._colorSettings.byLayerColor,
+      removeFontExtension: true,
+      collectCharBoxes: false
+    }
+
+    const textLine = new MTextProcessor(
+      style,
+      this._colorSettings,
+      this._styleManager,
+      this._fontManager,
+      textLineFormatOptions
+    )
+    const object = textLine.processShapeGlyph(
+      shapeData.name,
+      shapeData.shapeNumber
+    )
+    return {
+      object,
+      height: textLine.totalHeight
+    }
   }
 
   /**

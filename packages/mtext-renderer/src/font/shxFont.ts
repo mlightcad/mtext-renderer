@@ -119,6 +119,20 @@ export class ShxFont extends BaseFont {
     return new ShxTextShape(code, size, shape, this)
   }
 
+  /**
+   * Gets the shape data for a named SHX shape at a given size.
+   *
+   * Shape names are matched case-insensitively via the underlying SHX parser.
+   */
+  public getShapeByName(name: string, size: number) {
+    const shape = this.font.getShapeByName(name, size)
+    if (!shape || !ShxFont.hasRenderableStrokes(shape)) {
+      return undefined
+    }
+    const code = this.font.getShapeCode(name)
+    return new ShxTextShape(code ?? 0, size, shape, this)
+  }
+
   /** True when the SHX glyph has drawable strokes or a non-zero pen advance. */
   private static hasRenderableStrokes(shape: ShxShape): boolean {
     if (shape.polylines.some(line => line.length >= 2)) {

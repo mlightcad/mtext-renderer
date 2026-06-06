@@ -196,6 +196,26 @@ export interface MTextData {
 }
 
 /**
+ * Describes one AutoCAD SHAPE entity for rendering.
+ */
+export interface ShapeData {
+  /** Shape name within the SHX font (DXF group 2). */
+  name?: string
+  /** Numeric shape code within the SHX font. */
+  shapeNumber?: number
+  /** Shape height (DXF group 40). */
+  size: number
+  /** Insertion point in WCS coordinates. */
+  position: Point3d
+  /** Rotation relative to the shape OCS X axis, in radians. */
+  rotation?: number
+  /** Extrusion/normal vector. */
+  directionVector?: Point3d
+  /** Relative X-scale factor. */
+  widthFactor?: number
+}
+
+/**
  * Represents a text style configuration that defines the visual appearance and formatting of text.
  * This interface contains properties that control various aspects of text rendering including font,
  * dimensions, and display characteristics.

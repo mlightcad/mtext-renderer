@@ -5,6 +5,7 @@ import {
   ColorSettings,
   MTextData,
   MTextLayout,
+  ShapeData,
   TextStyle
 } from '../renderer/types'
 
@@ -74,6 +75,24 @@ export interface MTextBaseRenderer {
     textStyle: TextStyle,
     colorSettings?: ColorSettings
   ): MTextObject
+
+  /**
+   * Render one SHX shape glyph synchronously.
+   */
+  syncRenderShape(
+    shapeContent: ShapeData,
+    textStyle: TextStyle,
+    colorSettings?: ColorSettings
+  ): MTextObject
+
+  /**
+   * Render one SHX shape glyph asynchronously.
+   */
+  asyncRenderShape(
+    shapeContent: ShapeData,
+    textStyle: TextStyle,
+    colorSettings?: ColorSettings
+  ): Promise<MTextObject>
 
   /**
    * Ensure the specified fonts are available to the renderer.

@@ -1,6 +1,7 @@
 export * from './colorUtils'
 export * from './constants'
 export * from './mtext'
+export * from './shape'
 export * from './mtextDataUtils'
 export * from './styleManager'
 export * from './types'

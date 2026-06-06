@@ -1,11 +1,13 @@
 import { FontManager } from '../font'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { MText } from '../renderer/mtext'
+import { Shape } from '../renderer/shape'
 import { StyleManager } from '../renderer/styleManager'
 import {
   ColorSettings,
   createDefaultColorSettings,
   MTextData,
+  ShapeData,
   TextStyle
 } from '../renderer/types'
 import { MTextBaseRenderer, MTextObject } from './baseRenderer'
@@ -84,6 +86,41 @@ export class MainThreadRenderer implements MTextBaseRenderer {
     mtext.syncDraw()
     mtext.updateMatrixWorld(true)
     return mtext as MTextObject
+  }
+
+  async asyncRenderShape(
+    shapeContent: ShapeData,
+    textStyle: TextStyle,
+    colorSettings: ColorSettings = createDefaultColorSettings()
+  ): Promise<MTextObject> {
+    await this.ensureInitialized()
+    const shape = new Shape(
+      shapeContent,
+      textStyle,
+      this.defaultStyleManager,
+      this.fontManager,
+      colorSettings
+    )
+    await shape.asyncDraw()
+    shape.updateMatrixWorld(true)
+    return shape as unknown as MTextObject
+  }
+
+  syncRenderShape(
+    shapeContent: ShapeData,
+    textStyle: TextStyle,
+    colorSettings: ColorSettings = createDefaultColorSettings()
+  ): MTextObject {
+    const shape = new Shape(
+      shapeContent,
+      textStyle,
+      this.defaultStyleManager,
+      this.fontManager,
+      colorSettings
+    )
+    shape.syncDraw()
+    shape.updateMatrixWorld(true)
+    return shape as unknown as MTextObject
   }
 
   /**
