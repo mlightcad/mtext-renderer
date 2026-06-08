@@ -5,7 +5,9 @@ vi.mock('../../src/cache', () => ({
     instance: {
       get: vi.fn().mockResolvedValue(undefined),
       set: vi.fn().mockResolvedValue(undefined),
-      getAll: vi.fn().mockResolvedValue([])
+      getAll: vi.fn().mockResolvedValue([]),
+      find: vi.fn().mockResolvedValue(undefined),
+      has: vi.fn().mockResolvedValue(false)
     }
   }
 }))
@@ -97,13 +99,68 @@ describe('FontManager', () => {
     ]
     const loader = createFontLoader('https://cdn.example.com/fonts/')
     vi.mocked(loader.getAvailableFonts).mockResolvedValue(fonts)
+    vi.mocked(FontCacheManager.instance.getAll).mockResolvedValue([])
     const manager = FontManager.instance
 
     manager.setFontLoader(loader)
     const result = await manager.getAvailableFonts()
 
     expect(loader.getAvailableFonts).toHaveBeenCalledOnce()
-    expect(result).toBe(fonts)
+    expect(result).toEqual([
+      {
+        name: ['TestFont'],
+        file: 'test.shx',
+        type: 'shx',
+        url: 'https://cdn.example.com/fonts/test.shx',
+        source: 'remote'
+      }
+    ])
+  })
+
+  it('merges cache-only fonts into the available font list', async () => {
+    const loader = createFontLoader('https://cdn.example.com/fonts/')
+    vi.mocked(loader.getAvailableFonts).mockResolvedValue([
+      {
+        name: ['Romans'],
+        file: 'romans.shx',
+        type: 'shx',
+        url: 'https://cdn.example.com/fonts/romans.shx'
+      }
+    ])
+    vi.mocked(FontCacheManager.instance.getAll).mockResolvedValue([
+      {
+        name: 'customfont',
+        alias: ['customfont', 'MyCustom'],
+        type: 'shx',
+        data: new ArrayBuffer(4)
+      },
+      {
+        name: 'romans',
+        alias: ['Romans'],
+        type: 'shx',
+        data: new ArrayBuffer(4)
+      }
+    ])
+    FontManager.instance.setFontLoader(loader)
+
+    const result = await FontManager.instance.getAvailableFonts()
+
+    expect(result).toEqual([
+      {
+        name: ['customfont', 'MyCustom'],
+        file: 'customfont.shx',
+        type: 'shx',
+        url: '',
+        source: 'cache'
+      },
+      {
+        name: ['Romans'],
+        file: 'romans.shx',
+        type: 'shx',
+        url: 'https://cdn.example.com/fonts/romans.shx',
+        source: 'remote'
+      }
+    ])
   })
 
   it('loads fonts by names through the configured font loader', async () => {
@@ -433,6 +490,197 @@ describe('FontManager', () => {
     expect(FontManager.instance.isFontLoaded('simfang')).toBe(false)
     expect(FontManager.instance.isFontLoaded('仿宋_GB2312')).toBe(false)
     expect(manager.loadedFontMap.size).toBe(0)
+  })
+
+  it('adds cached fonts to the available font library after cacheFont succeeds', async () => {
+    const cacheStore = new Map<
+      string,
+      {
+        name: string
+        alias?: string[]
+        type: 'shx' | 'mesh'
+        encoding?: string
+        data: ArrayBuffer
+      }
+    >()
+    vi.mocked(FontCacheManager.instance.set).mockImplementation(
+      async (name, fontData) => {
+        cacheStore.set(name, fontData)
+      }
+    )
+    vi.mocked(FontCacheManager.instance.getAll).mockImplementation(async () => [
+      ...cacheStore.values()
+    ])
+
+    const loader = createFontLoader('https://cdn.example.com/fonts/')
+    vi.mocked(loader.getAvailableFonts).mockResolvedValue([
+      {
+        name: ['Romans'],
+        file: 'romans.shx',
+        type: 'shx',
+        url: 'https://cdn.example.com/fonts/romans.shx'
+      }
+    ])
+    FontManager.instance.setFontLoader(loader)
+
+    const buffer = new ArrayBuffer(8)
+    const font = createFakeFont({
+      names: new Set(['customfont', 'CustomFont', 'MyCustom'])
+    })
+    vi.mocked(FontFactory.instance.createFont).mockReturnValue(font as any)
+
+    const status = await FontManager.instance.cacheFont(
+      buffer,
+      'CustomFont.shx',
+      ['MyCustom']
+    )
+    expect(status.status).toBe('Success')
+
+    const available = await FontManager.instance.getAvailableFonts()
+
+    expect(available).toEqual([
+      {
+        name: ['customfont', 'CustomFont', 'MyCustom'],
+        file: 'customfont.shx',
+        type: 'shx',
+        url: '',
+        encoding: undefined,
+        source: 'cache'
+      },
+      {
+        name: ['Romans'],
+        file: 'romans.shx',
+        type: 'shx',
+        url: 'https://cdn.example.com/fonts/romans.shx',
+        source: 'remote'
+      }
+    ])
+  })
+
+  it('caches uploaded SHX fonts and registers them for rendering', async () => {
+    const manager = FontManager.instance as any
+    const buffer = new ArrayBuffer(8)
+    const font = createFakeFont({ names: new Set(['custom', 'CustomFont']) })
+    vi.mocked(FontFactory.instance.createFont).mockReturnValue(font as any)
+
+    const status = await FontManager.instance.cacheFont(
+      buffer,
+      'CustomFont.shx',
+      ['MyCustom']
+    )
+
+    expect(FontFactory.instance.createFont).toHaveBeenCalledWith({
+      name: 'customfont',
+      alias: ['customfont', 'CustomFont', 'MyCustom'],
+      type: 'shx',
+      encoding: undefined,
+      data: buffer
+    })
+    expect(FontCacheManager.instance.set).toHaveBeenCalledWith('customfont', {
+      name: 'customfont',
+      alias: ['customfont', 'CustomFont', 'MyCustom'],
+      type: 'shx',
+      encoding: undefined,
+      data: buffer
+    })
+    expect(FontManager.instance.isFontLoaded('customfont')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('MyCustom')).toBe(true)
+    expect(status).toEqual({
+      fontName: 'customfont',
+      url: '',
+      status: 'Success'
+    })
+    expect(manager.fileNames).toEqual([])
+  })
+
+  it('caches uploaded TTF and WOFF fonts as mesh fonts', async () => {
+    const buffer = new ArrayBuffer(8)
+    const ttfFont = createFakeFont({
+      names: new Set(['simkai']),
+      type: 'mesh'
+    })
+    const woffFont = createFakeFont({
+      names: new Set(['simfang']),
+      type: 'mesh'
+    })
+    vi.mocked(FontFactory.instance.createFont)
+      .mockReturnValueOnce(ttfFont as any)
+      .mockReturnValueOnce(woffFont as any)
+
+    const ttfStatus = await FontManager.instance.cacheFont(
+      buffer,
+      'simkai.ttf',
+      ['楷体']
+    )
+    const woffStatus = await FontManager.instance.cacheFont(
+      buffer,
+      'simfang.woff'
+    )
+
+    expect(FontFactory.instance.createFont).toHaveBeenNthCalledWith(1, {
+      name: 'simkai',
+      alias: ['simkai', '楷体'],
+      type: 'mesh',
+      encoding: undefined,
+      data: buffer
+    })
+    expect(FontFactory.instance.createFont).toHaveBeenNthCalledWith(2, {
+      name: 'simfang',
+      alias: ['simfang'],
+      type: 'mesh',
+      encoding: undefined,
+      data: buffer
+    })
+    expect(FontManager.instance.isFontLoaded('simkai')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('楷体')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('simfang')).toBe(true)
+    expect(ttfStatus.status).toBe('Success')
+    expect(woffStatus.status).toBe('Success')
+  })
+
+  it('rejects unsupported uploaded font extensions', async () => {
+    const status = await FontManager.instance.cacheFont(
+      new ArrayBuffer(8),
+      'custom.woff2'
+    )
+
+    expect(FontFactory.instance.createFont).not.toHaveBeenCalled()
+    expect(status).toEqual({
+      fontName: 'custom',
+      url: '',
+      status: 'FailedToLoad'
+    })
+  })
+
+  it('loads fonts on demand from IndexedDB cache by name or alias', async () => {
+    const manager = FontManager.instance as any
+    const font = createFakeFont({ names: new Set(['customfont', 'MyCustom']) })
+    const cachedFontData = {
+      name: 'customfont',
+      alias: ['customfont', 'MyCustom'],
+      type: 'shx' as const,
+      encoding: undefined,
+      data: new ArrayBuffer(4)
+    }
+    vi.mocked(FontCacheManager.instance.find).mockResolvedValue(cachedFontData)
+    vi.mocked(FontFactory.instance.createFont).mockReturnValue(font as any)
+
+    const loaded = await FontManager.instance.loadFontFromCache('MyCustom.shx')
+
+    expect(FontCacheManager.instance.find).toHaveBeenCalledWith('MyCustom.shx')
+    expect(FontFactory.instance.createFont).toHaveBeenCalledWith(cachedFontData)
+    expect(FontManager.instance.isFontLoaded('customfont')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('MyCustom')).toBe(true)
+    expect(loaded).toBe(true)
+  })
+
+  it('skips IndexedDB lookup when font caching is disabled', async () => {
+    FontManager.instance.enableFontCache = false
+
+    const loaded = await FontManager.instance.loadFontFromCache('customfont')
+
+    expect(FontCacheManager.instance.find).not.toHaveBeenCalled()
+    expect(loaded).toBe(false)
   })
 
   it('loads fonts from cache without requesting the font URL', async () => {

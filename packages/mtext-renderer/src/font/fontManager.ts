@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { FontCacheManager } from '../cache'
 import {
   EventManager,
+  getExtension,
   getFileName,
   getFileNameWithoutExtension
 } from '../common'
@@ -199,12 +200,35 @@ export class FontManager {
 
   /**
    * Retrieves information about all available fonts in the system.
-   * Loads font metadata from a CDN if not already loaded.
+   * Merges remote font metadata with fonts stored in IndexedDB (cache-only
+   * entries are included; remote entries win when names collide).
    * @returns Promise that resolves to an array of FontInfo objects
    * @throws {Error} If font metadata cannot be loaded from the CDN
    */
-  async getAvailableFonts() {
-    return await this.fontLoader.getAvailableFonts()
+  async getAvailableFonts(): Promise<FontInfo[]> {
+    const remoteFonts = await this.fontLoader.getAvailableFonts()
+    if (!this.enableFontCache) {
+      return remoteFonts.map(font => ({ ...font, source: 'remote' as const }))
+    }
+
+    const fontMap = new Map<string, FontInfo>()
+    for (const font of remoteFonts) {
+      const key = getFileNameWithoutExtension(font.file).toLowerCase()
+      fontMap.set(key, { ...font, source: 'remote' })
+    }
+
+    const cachedFonts = await FontCacheManager.instance.getAll()
+    for (const cached of cachedFonts) {
+      const key = cached.name.toLowerCase()
+      if (fontMap.has(key)) {
+        continue
+      }
+      fontMap.set(key, this.cachedFontDataToFontInfo(cached))
+    }
+
+    return [...fontMap.values()].sort((a, b) =>
+      a.name[0].localeCompare(b.name[0], undefined, { sensitivity: 'base' })
+    )
   }
 
   /**
@@ -238,6 +262,135 @@ export class FontManager {
   ): Promise<FontLoadStatus[]> {
     const list = typeof names === 'string' ? [names] : [...names]
     return await this.fontLoader.load(list)
+  }
+
+  /**
+   * Parses a user-uploaded font file, registers it for rendering, and stores
+   * it in IndexedDB when {@link enableFontCache} is true.
+   *
+   * Supported formats: `.shx`, `.ttf`, `.otf`, `.woff`.
+   *
+   * @param data - Font file contents or a browser `File` selected by the user
+   * @param fileName - Font file name (e.g. `custom.shx`, `simkai.ttf`). Required when `data` is an `ArrayBuffer`
+   * @param aliases - Optional alias names for the font (e.g. AutoCAD style names)
+   * @param encoding - Optional character encoding for SHX bigfonts
+   * @returns Promise that resolves to the font load status
+   */
+  async cacheFont(
+    data: ArrayBuffer | File,
+    fileName?: string,
+    aliases?: string[],
+    encoding?: string
+  ): Promise<FontLoadStatus> {
+    let buffer: ArrayBuffer
+    let resolvedFileName: string
+
+    if (typeof File !== 'undefined' && data instanceof File) {
+      buffer = await data.arrayBuffer()
+      resolvedFileName = fileName ?? data.name
+    } else {
+      buffer = data as ArrayBuffer
+      resolvedFileName = fileName ?? ''
+    }
+
+    if (!resolvedFileName) {
+      throw new Error('fileName is required when caching an ArrayBuffer')
+    }
+
+    const fontName = getFileNameWithoutExtension(resolvedFileName).toLowerCase()
+    if (!fontName) {
+      return {
+        fontName: '',
+        url: '',
+        status: 'FailedToLoad'
+      }
+    }
+
+    const fontType = this.resolveUploadedFontType(resolvedFileName)
+    if (!fontType) {
+      return {
+        fontName,
+        url: '',
+        status: 'FailedToLoad'
+      }
+    }
+
+    if (this.isFontLoaded(fontName)) {
+      return {
+        fontName,
+        url: '',
+        status: 'Success'
+      }
+    }
+
+    const aliasList = this.buildUploadedFontAliases(
+      fontName,
+      resolvedFileName,
+      aliases
+    )
+    const fontData: FontData = {
+      name: fontName,
+      alias: aliasList,
+      type: fontType,
+      encoding,
+      data: buffer
+    }
+
+    try {
+      const font = FontFactory.instance.createFont(fontData)
+      aliasList.forEach(name => font.names.add(name))
+      this.registerFontInMap(fontName, font)
+
+      if (this.enableFontCache) {
+        await FontCacheManager.instance.set(fontName, fontData)
+      }
+
+      this.events.fontLoaded.dispatch({ fontName })
+      return {
+        fontName,
+        url: '',
+        status: 'Success'
+      }
+    } catch {
+      return {
+        fontName,
+        url: '',
+        status: 'FailedToLoad'
+      }
+    }
+  }
+
+  /**
+   * Loads a font from IndexedDB by primary name or alias.
+   * No-op when {@link enableFontCache} is false.
+   *
+   * @param fontName - Font name or alias (with or without file extension)
+   * @returns True if the font was found in cache and registered for rendering
+   */
+  async loadFontFromCache(fontName: string): Promise<boolean> {
+    if (!this.enableFontCache || !fontName) {
+      return false
+    }
+
+    const normalized = getFileNameWithoutExtension(fontName).toLowerCase()
+    if (this.isFontLoaded(normalized)) {
+      return true
+    }
+
+    const fontData = await FontCacheManager.instance.find(fontName)
+    if (!fontData) {
+      return false
+    }
+
+    try {
+      const font = FontFactory.instance.createFont(fontData)
+      fontData.alias?.forEach(name => font.names.add(name))
+      this.registerFontInMap(fontData.name, font)
+      this.events.fontLoaded.dispatch({ fontName: fontData.name })
+      return true
+    } catch {
+      return false
+    }
   }
 
   /**
@@ -555,6 +708,47 @@ export class FontManager {
       const font = FontFactory.instance.createFont(fontFileData)
       this.registerFontInMap(name, font)
     }
+  }
+
+  private cachedFontDataToFontInfo(data: FontData): FontInfo {
+    const file = `${data.name}.${data.type === 'shx' ? 'shx' : 'ttf'}`
+    const names =
+      data.alias && data.alias.length > 0 ? [...data.alias] : [data.name]
+    return {
+      name: names,
+      file,
+      type: data.type,
+      url: '',
+      encoding: data.encoding,
+      source: 'cache'
+    }
+  }
+
+  private resolveUploadedFontType(fileName: string): FontType | undefined {
+    const ext = getExtension(fileName).toLowerCase()
+    if (ext === 'shx') {
+      return 'shx'
+    }
+    if (['ttf', 'otf', 'woff'].includes(ext)) {
+      return 'mesh'
+    }
+    return undefined
+  }
+
+  private buildUploadedFontAliases(
+    fontName: string,
+    fileName: string,
+    aliases?: string[]
+  ): string[] {
+    const names = new Set<string>()
+    names.add(fontName)
+    names.add(getFileNameWithoutExtension(fileName))
+    aliases?.forEach(alias => {
+      if (alias) {
+        names.add(alias)
+      }
+    })
+    return [...names]
   }
 
   /**

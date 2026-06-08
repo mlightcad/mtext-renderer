@@ -15,6 +15,8 @@ export interface FontInfo {
    * https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API/Encodings
    */
   encoding?: string
+  /** Where this font entry comes from */
+  source?: 'remote' | 'cache'
 }
 
 /**

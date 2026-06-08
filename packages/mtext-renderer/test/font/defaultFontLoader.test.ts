@@ -4,7 +4,8 @@ vi.mock('../../src/font/fontManager', () => ({
   FontManager: {
     instance: {
       isFontLoaded: vi.fn().mockReturnValue(false),
-      loadFonts: vi.fn().mockResolvedValue([])
+      loadFonts: vi.fn().mockResolvedValue([]),
+      loadFontFromCache: vi.fn().mockResolvedValue(false)
     }
   }
 }))
@@ -41,6 +42,7 @@ describe('DefaultFontLoader', () => {
   beforeEach(() => {
     vi.mocked(FontManager.instance.isFontLoaded).mockReturnValue(false)
     vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([])
+    vi.mocked(FontManager.instance.loadFontFromCache).mockResolvedValue(false)
     vi.stubGlobal(
       'fetch',
       vi
@@ -224,6 +226,39 @@ describe('DefaultFontLoader', () => {
       {
         fontName: 'old',
         url: 'https://cdn.example.com/fonts/old.shx',
+        status: 'Success'
+      }
+    ])
+  })
+
+  it('loads fonts from IndexedDB cache when they are missing from the remote repository', async () => {
+    vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([
+      {
+        fontName: 'old',
+        url: 'https://cdn.example.com/fonts/old.shx',
+        status: 'Success'
+      }
+    ])
+    vi.mocked(FontManager.instance.loadFontFromCache).mockImplementation(
+      async fontName => fontName.toLowerCase() === 'cachedfont'
+    )
+    const loader = new DefaultFontLoader()
+    loader.baseUrl = 'https://cdn.example.com/fonts/'
+
+    const statuses = await loader.load(['old', 'CachedFont'])
+
+    expect(FontManager.instance.loadFontFromCache).toHaveBeenCalledWith(
+      'CachedFont'
+    )
+    expect(statuses).toEqual([
+      {
+        fontName: 'old',
+        url: 'https://cdn.example.com/fonts/old.shx',
+        status: 'Success'
+      },
+      {
+        fontName: 'cachedfont',
+        url: '',
         status: 'Success'
       }
     ])

@@ -120,21 +120,25 @@ export class DefaultFontLoader implements FontLoader {
     ;[...alreadyLoadedStatuses, ...newlyLoadedStatuses].forEach(s => {
       statusMap[s.fontName] = s
     })
-    return fontNames.map(font => {
+
+    const statuses: FontLoadStatus[] = []
+    for (const font of fontNames) {
       const lowerCaseFontName = font.toLowerCase()
       const directStatus = statusMap[lowerCaseFontName]
       if (directStatus) {
-        return directStatus
+        statuses.push(directStatus)
+        continue
       }
 
       const fontInfo = requestedFontInfos.get(lowerCaseFontName)
       if (fontInfo) {
         if (FontManager.instance.isFontLoaded(lowerCaseFontName)) {
-          return {
+          statuses.push({
             fontName: lowerCaseFontName,
             url: fontInfo.url,
             status: 'Success'
-          }
+          })
+          continue
         }
 
         const fileBaseName = getFileNameWithoutExtension(
@@ -142,20 +146,31 @@ export class DefaultFontLoader implements FontLoader {
         ).toLowerCase()
         const loadedByFile = statusMap[fileBaseName]
         if (loadedByFile) {
-          return {
+          statuses.push({
             fontName: lowerCaseFontName,
             url: fontInfo.url,
             status: loadedByFile.status
-          }
+          })
+          continue
         }
       }
 
-      return {
+      if (await FontManager.instance.loadFontFromCache(font)) {
+        statuses.push({
+          fontName: lowerCaseFontName,
+          url: '',
+          status: 'Success'
+        })
+        continue
+      }
+
+      statuses.push({
         fontName: lowerCaseFontName,
         url: '',
         status: 'NotFound'
-      }
-    })
+      })
+    }
+    return statuses
   }
 
   /**

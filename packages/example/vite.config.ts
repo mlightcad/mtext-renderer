@@ -29,7 +29,7 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
-          src: './node_modules/@mlightcad/mtext-renderer/dist/mtext-renderer-worker.js',
+          src: '../mtext-renderer/dist/mtext-renderer-worker.js',
           dest: 'assets'
         }
       ]

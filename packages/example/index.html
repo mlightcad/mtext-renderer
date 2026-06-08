@@ -130,6 +130,31 @@
             color: #bbb;
             margin: 4px 0 8px;
         }
+        .font-cache-panel {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px dashed #666;
+            border-radius: 4px;
+            background: #2a2a2a;
+        }
+        .font-cache-panel label {
+            display: block;
+            margin-bottom: 6px;
+        }
+        .font-cache-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .font-cache-actions input[type="file"] {
+            flex: 1;
+            min-width: 220px;
+            color: #ddd;
+        }
+        .font-cache-actions button {
+            margin: 0;
+        }
     </style>
 </head>
 <body>
@@ -166,6 +191,14 @@
                     <option value="worker">Web Worker</option>
                 </select>
             </div>
+        </div>
+        <div class="font-cache-panel">
+            <label for="font-cache-input">Cache Local Font (.shx, .ttf, .otf, .woff):</label>
+            <div class="font-cache-actions">
+                <input type="file" id="font-cache-input" accept=".shx,.ttf,.otf,.woff,application/font-sfnt,font/woff" />
+                <button type="button" id="font-cache-btn">Cache Font</button>
+            </div>
+            <p class="hint">Cached fonts appear in the font lists with a <code>[cached]</code> label and can be used for MText / SHAPE rendering.</p>
         </div>
         <div class="row">
             <div class="field">

@@ -1,5 +1,6 @@
 import { type IDBPDatabase, openDB } from 'idb'
 
+import { getFileNameWithoutExtension } from '../common'
 import { FontData } from '../font'
 import { DB_STORES, DbFontCacheSchema, dbSchema } from './schema'
 
@@ -51,6 +52,27 @@ export class FontCacheManager {
   public async get(fileName: string): Promise<FontData | undefined> {
     const db = await this.getDatabase()
     return await db.get(DB_STORES.fonts, fileName)
+  }
+
+  /**
+   * Finds a font in the cache by primary name or alias.
+   * Font names may include or omit a file extension (e.g. `romans` or `romans.shx`).
+   * @param fontName The font name or alias to look up
+   * @returns The font data if found, undefined otherwise
+   */
+  public async find(fontName: string): Promise<FontData | undefined> {
+    const normalized = getFileNameWithoutExtension(fontName).toLowerCase()
+    const direct = await this.get(normalized)
+    if (direct) {
+      return direct
+    }
+
+    const all = await this.getAll()
+    return all.find(
+      font =>
+        font.name === normalized ||
+        font.alias?.some(alias => alias.toLowerCase() === normalized)
+    )
   }
 
   /**

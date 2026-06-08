@@ -2,6 +2,7 @@ import {
   CharBox,
   CharBoxType,
   DefaultFontsPreset,
+  FontInfo,
   LineLayout,
   MTextAttachmentPoint,
   MTextColor,
@@ -47,7 +48,15 @@ class MTextRendererExample {
   private renderModeSelect: HTMLSelectElement
   private byLayerColorInput: HTMLInputElement
   private byBlockColorInput: HTMLInputElement
+  private fontCacheInput: HTMLInputElement
+  private fontCacheBtn: HTMLButtonElement
   private readonly defaultLayerName = '0'
+  private readonly supportedFontExtensions = new Set([
+    '.shx',
+    '.ttf',
+    '.otf',
+    '.woff'
+  ])
 
   // Example texts
   private readonly exampleTexts = {
@@ -162,6 +171,12 @@ class MTextRendererExample {
     this.byBlockColorInput = document.getElementById(
       'by-block-color'
     ) as HTMLInputElement
+    this.fontCacheInput = document.getElementById(
+      'font-cache-input'
+    ) as HTMLInputElement
+    this.fontCacheBtn = document.getElementById(
+      'font-cache-btn'
+    ) as HTMLButtonElement
 
     // Add lights
     this.setupLights()
@@ -312,6 +327,15 @@ class MTextRendererExample {
     this.byBlockColorInput.addEventListener('change', async () => {
       await this.renderCurrentContent()
     })
+
+    this.fontCacheBtn.addEventListener('click', async () => {
+      await this.cacheSelectedFontFile()
+    })
+    this.fontCacheInput.addEventListener('change', () => {
+      const file = this.fontCacheInput.files?.[0]
+      this.fontCacheBtn.disabled = !file
+    })
+    this.fontCacheBtn.disabled = !this.fontCacheInput.files?.[0]
   }
 
   private updateContentPanels(): void {
@@ -353,42 +377,132 @@ class MTextRendererExample {
     this.statusDiv.style.color = '#0f0'
   }
 
+  private getFontExtension(fileName: string): string {
+    const dotIndex = fileName.lastIndexOf('.')
+    if (dotIndex < 0) {
+      return ''
+    }
+    return fileName.slice(dotIndex).toLowerCase()
+  }
+
+  private isSupportedFontFile(file: File): boolean {
+    return this.supportedFontExtensions.has(this.getFontExtension(file.name))
+  }
+
+  private formatFontLabel(font: FontInfo): string {
+    const label = font.name[0]
+    return font.source === 'cache' ? `${label} [cached]` : label
+  }
+
+  private populateFontSelects(
+    fonts: FontInfo[],
+    selectedTextFont?: string,
+    selectedShapeFont?: string
+  ): void {
+    const previousTextFont = selectedTextFont ?? this.fontSelect.value
+    const previousShapeFont = selectedShapeFont ?? this.shapeFontSelect.value
+
+    this.fontSelect.innerHTML = ''
+    this.shapeFontSelect.innerHTML = ''
+
+    let textFontMatched = false
+    let shapeFontMatched = false
+
+    const matchesSelection = (
+      font: FontInfo,
+      selectedName: string
+    ): boolean =>
+      font.name.some(
+        name => name.toLowerCase() === selectedName.toLowerCase()
+      )
+
+    fonts.forEach(font => {
+      const option = document.createElement('option')
+      option.value = font.name[0]
+      option.textContent = this.formatFontLabel(font)
+      if (matchesSelection(font, previousTextFont)) {
+        option.selected = true
+        textFontMatched = true
+      } else if (!textFontMatched && font.name[0] === 'simkai') {
+        option.selected = true
+        textFontMatched = true
+      }
+      this.fontSelect.appendChild(option)
+
+      if (font.type === 'shx' || font.file.toLowerCase().endsWith('.shx')) {
+        const shapeOption = document.createElement('option')
+        shapeOption.value = font.name[0]
+        shapeOption.textContent = this.formatFontLabel(font)
+        if (matchesSelection(font, previousShapeFont)) {
+          shapeOption.selected = true
+          shapeFontMatched = true
+        } else if (!shapeFontMatched && font.name[0] === 'complex') {
+          shapeOption.selected = true
+          shapeFontMatched = true
+        }
+        this.shapeFontSelect.appendChild(shapeOption)
+      }
+    })
+  }
+
+  private async refreshAvailableFonts(
+    selectedTextFont?: string,
+    selectedShapeFont?: string
+  ): Promise<FontInfo[]> {
+    const result = await this.unifiedRenderer.getAvailableFonts()
+    const fonts = result.fonts as FontInfo[]
+    this.populateFontSelects(fonts, selectedTextFont, selectedShapeFont)
+    return fonts
+  }
+
+  private async cacheSelectedFontFile(): Promise<void> {
+    const file = this.fontCacheInput.files?.[0]
+    if (!file) {
+      this.statusDiv.textContent = 'Select a font file to cache'
+      this.statusDiv.style.color = '#f00'
+      return
+    }
+
+    if (!this.isSupportedFontFile(file)) {
+      this.statusDiv.textContent =
+        'Unsupported font type. Use .shx, .ttf, .otf, or .woff'
+      this.statusDiv.style.color = '#f00'
+      return
+    }
+
+    try {
+      this.statusDiv.textContent = `Caching ${file.name}...`
+      this.statusDiv.style.color = '#ffa500'
+      this.fontCacheBtn.disabled = true
+
+      const status = await this.unifiedRenderer.cacheFont(file)
+      if (status.status !== 'Success') {
+        this.statusDiv.textContent = `Failed to cache ${file.name}`
+        this.statusDiv.style.color = '#f00'
+        return
+      }
+
+      await this.refreshAvailableFonts(status.fontName, status.fontName)
+
+      await this.applyDefaultFontsPreset()
+      await this.renderCurrentContent()
+
+      this.statusDiv.textContent = `Cached and loaded ${file.name} (${status.fontName})`
+      this.statusDiv.style.color = '#0f0'
+      this.fontCacheInput.value = ''
+    } catch (error) {
+      console.error('Error caching font:', error)
+      this.statusDiv.textContent = 'Error caching font'
+      this.statusDiv.style.color = '#f00'
+    } finally {
+      this.fontCacheBtn.disabled = !this.fontCacheInput.files?.[0]
+    }
+  }
+
   private async initializeFonts(isResetAvaiableFonts = true): Promise<void> {
     try {
       if (isResetAvaiableFonts) {
-        // Load available fonts for the dropdown
-        const result = await this.unifiedRenderer.getAvailableFonts()
-        const fonts = result.fonts
-
-        // Clear existing options
-        this.fontSelect.innerHTML = ''
-        this.shapeFontSelect.innerHTML = ''
-
-        // Add all available fonts to dropdown
-        fonts.forEach(rawFont => {
-          const font = rawFont as {
-            name: string[]
-            file?: string
-            type?: 'mesh' | 'shx'
-          }
-          const option = document.createElement('option')
-          option.value = font.name[0]
-          option.textContent = font.name[0] // Use the first name from the array
-          if (font.name[0] === 'simkai') {
-            option.selected = true
-          }
-          this.fontSelect.appendChild(option)
-
-          if (font.type === 'shx' || font.file?.toLowerCase().endsWith('.shx')) {
-            const shapeOption = document.createElement('option')
-            shapeOption.value = font.name[0]
-            shapeOption.textContent = font.name[0]
-            if (font.name[0] === 'complex') {
-              shapeOption.selected = true
-            }
-            this.shapeFontSelect.appendChild(shapeOption)
-          }
-        })
+        await this.refreshAvailableFonts()
       }
 
       await this.applyDefaultFontsPreset()
