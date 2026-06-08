@@ -6,6 +6,18 @@
   "type": "module",
   "license": "MIT",
   "author": "MLight Lee <mlight.lee@outlook.com>",
+  "nx": {
+    "implicitDependencies": [
+      "@mlightcad/mtext-renderer"
+    ],
+    "targets": {
+      "build": {
+        "dependsOn": [
+          "@mlightcad/mtext-renderer:build"
+        ]
+      }
+    }
+  },
   "scripts": {
     "build": "tsc && vite build",
     "clean": "rimraf dist lib tsconfig.tsbuildinfo",

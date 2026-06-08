@@ -24,6 +24,16 @@
     "README.md",
     "package.json"
   ],
+  "nx": {
+    "targets": {
+      "build": {
+        "outputs": [
+          "{projectRoot}/dist",
+          "{projectRoot}/lib"
+        ]
+      }
+    }
+  },
   "scripts": {
     "build": "tsc && vite build -c vite.config.main.ts && vite build -c vite.config.worker.ts",
     "build:main": "vite build -c vite.config.main.ts",

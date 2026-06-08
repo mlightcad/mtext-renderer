@@ -1,4 +1,4 @@
-import { DefaultFontsPreset, FontManager } from '../font'
+import { DefaultFontsPreset, FontLoadStatus, FontManager } from '../font'
 import { StyleManager } from '../renderer'
 import {
   ColorSettings,
@@ -192,6 +192,20 @@ export class UnifiedRenderer {
    */
   async getAvailableFonts(): Promise<{ fonts: Array<{ name: string[] }> }> {
     return this.renderer.getAvailableFonts()
+  }
+
+  /**
+   * Parse and cache a user-uploaded font file in IndexedDB.
+   * Always runs on the main-thread {@link FontManager} so the cache is shared
+   * with the web worker renderer.
+   */
+  async cacheFont(
+    data: ArrayBuffer | File,
+    fileName?: string,
+    aliases?: string[],
+    encoding?: string
+  ): Promise<FontLoadStatus> {
+    return FontManager.instance.cacheFont(data, fileName, aliases, encoding)
   }
 
   /**
