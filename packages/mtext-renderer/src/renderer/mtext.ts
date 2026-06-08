@@ -613,7 +613,8 @@ export class MText extends THREE.Object3D {
     )
     const parser = new MTextParser(expandPercentControlCodes(mtextData.text), context, {
       resetParagraphParameters: true,
-      yieldPropertyCommands: true
+      yieldPropertyCommands: true,
+      yieldPercentSymbols: true
     })
     const tokens = parser.parse()
     const object = textLine.processText(tokens)

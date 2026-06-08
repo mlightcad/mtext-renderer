@@ -37,8 +37,8 @@ describe('symbolFonts config (integration)', () => {
     registerFont('simsun', await loadFont('simsun', 'simsun.ttf', 'mesh'))
     registerFont('amgdt', await loadFont('amgdt', 'amgdt.shx'))
 
-    const degree = FontManager.instance.getCharShapeFromSymbolFonts('°', 10)
-    const pm = FontManager.instance.getCharShapeFromSymbolFonts('±', 10)
+    const degree = FontManager.instance.getCodeShapeFromSymbolFonts(0xb0, 10)
+    const pm = FontManager.instance.getCodeShapeFromSymbolFonts(0xb1, 10)
 
     expect(degree?.width).toBeCloseTo(2.857142857142857, 5)
     expect(pm?.width).toBeCloseTo(9.285714285714286, 5)

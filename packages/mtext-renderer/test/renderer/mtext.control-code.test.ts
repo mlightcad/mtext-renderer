@@ -77,7 +77,7 @@ describe('controlCode example %%1326@600 (integration)', () => {
       registerFont('amgdt', await loadShx('amgdt', 'amgdt.shx'))
 
       const ch132 = String.fromCharCode(132)
-      const amgdt132 = FontManager.instance.getCharShapeFromSymbolFonts(ch132, 10)
+      const amgdt132 = FontManager.instance.getCodeShapeFromSymbolFonts(132, 10)
       const geometry = amgdt132?.toGeometry()
       geometry?.computeBoundingBox()
 
