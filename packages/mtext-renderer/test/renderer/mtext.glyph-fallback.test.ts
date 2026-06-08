@@ -147,6 +147,15 @@ function resolveCharShape(
   return fontGlyphs?.[char]
 }
 
+function resolveCodeShape(
+  code: number,
+  fontName: string,
+  glyphs: Record<string, Record<number, GlyphShape | undefined>>
+): GlyphShape | undefined {
+  const fontGlyphs = glyphs[fontName]
+  return fontGlyphs?.[code]
+}
+
 describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
   const primaryFont = 'txt'
   const bigFontName = 'hztxt'
@@ -275,54 +284,54 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
   it.each([
     {
       label: '%%c diameter',
+      symbolData: { kind: 'named', code: 'c', char: 'Ø' },
       char: 'Ø',
-      lookupChars: [String.fromCharCode(129), '\u2205'],
+      lookupCodes: [129, 0x2205],
       primaryWidth: 10,
       symbolWidth: 6.78
     },
     {
       label: '%%d degree',
+      symbolData: { kind: 'named', code: 'd', char: '°' },
       char: '°',
-      lookupChars: [String.fromCharCode(126), String.fromCharCode(176)],
+      lookupCodes: [126, 176],
       primaryWidth: 4.6,
       symbolWidth: 2.85
     },
     {
       label: '%%p plus/minus',
+      symbolData: { kind: 'named', code: 'p', char: '±' },
       char: '±',
-      lookupChars: [String.fromCharCode(177)],
+      lookupCodes: [177],
       primaryWidth: 5.4,
       symbolWidth: 9.28
     }
-  ])(
+  ] as const)(
     'prefers SHX symbol-font control codes for $label before primary font',
-    ({ char, lookupChars, primaryWidth, symbolWidth }) => {
+    ({ char, symbolData, lookupCodes, primaryWidth, symbolWidth }) => {
       const primaryShape = createShape(primaryWidth)
       const symbolShape = createShape(symbolWidth)
-      const glyphs: Record<string, Record<string, GlyphShape | undefined>> = {
-        isocp: { [char]: primaryShape },
+      const charGlyphs: Record<string, Record<string, GlyphShape | undefined>> = {
+        isocp: { [char]: primaryShape }
+      }
+      const codeGlyphs: Record<string, Record<number, GlyphShape | undefined>> = {
         simsun: Object.fromEntries(
-          [
-            String.fromCharCode(127),
-            String.fromCharCode(128),
-            String.fromCharCode(126),
-            String.fromCharCode(129),
-            '°',
-            '±',
-            '\u2205'
-          ].map(ch => [ch, createShape(99)])
+          [127, 128, 126, 129, 0xb0, 0xb1, 0x2205].map(code => [
+            code,
+            createShape(99)
+          ])
         ),
         amgdt: Object.fromEntries(
-          lookupChars.map(lookupChar => [lookupChar, symbolShape])
+          lookupCodes.map(lookupCode => [lookupCode, symbolShape])
         )
       }
 
       const getCharShape = vi.fn((lookupChar: string, fontName: string) =>
-        resolveCharShape(lookupChar, fontName, glyphs)
+        resolveCharShape(lookupChar, fontName, charGlyphs)
       )
-      const getCharShapeFromSymbolFonts = vi.fn((lookupChar: string) => {
+      const getCodeShapeFromSymbolFonts = vi.fn((lookupCode: number) => {
         for (const fontName of ['amgdt', 'simsun']) {
-          const shape = resolveCharShape(lookupChar, fontName, glyphs)
+          const shape = resolveCodeShape(lookupCode, fontName, codeGlyphs)
           if (shape) return shape
         }
         return undefined
@@ -336,20 +345,20 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
           findAndReplaceFont: (name: string) => name,
           getCharShape,
           getCharShapeFromDefaults: vi.fn(),
-          getCharShapeFromSymbolFonts,
+          getCodeShapeFromSymbolFonts,
           getNotFoundTextShape: () => undefined
         }
       )
 
       getCharShape.mockClear()
-      getCharShapeFromSymbolFonts.mockClear()
+      getCodeShapeFromSymbolFonts.mockClear()
 
-      const shape = (processor as any).getCharShape(char)
+      const shape = (processor as any).resolvePercentSymbolShape(symbolData)
 
       expect(shape).toBe(symbolShape)
-      expect(getCharShapeFromSymbolFonts).toHaveBeenCalledTimes(1)
-      expect(lookupChars).toContain(
-        getCharShapeFromSymbolFonts.mock.calls[0][0]
+      expect(getCodeShapeFromSymbolFonts).toHaveBeenCalledTimes(1)
+      expect(lookupCodes).toContain(
+        getCodeShapeFromSymbolFonts.mock.calls[0][0]
       )
       expect(getCharShape).not.toHaveBeenCalled()
     }
@@ -359,25 +368,27 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
     const ch132 = String.fromCharCode(132)
     const defaultShape = createShape(0)
     const symbolShape = createShape(6.5)
-    const glyphs: Record<string, Record<string, GlyphShape | undefined>> = {
+    const charGlyphs: Record<string, Record<string, GlyphShape | undefined>> = {
       txt: {},
-      simkai: { [ch132]: defaultShape },
-      amgdt: { [ch132]: symbolShape }
+      simkai: { [ch132]: defaultShape }
+    }
+    const codeGlyphs: Record<string, Record<number, GlyphShape | undefined>> = {
+      amgdt: { 132: symbolShape }
     }
 
     const getCharShape = vi.fn((lookupChar: string, fontName: string) =>
-      resolveCharShape(lookupChar, fontName, glyphs)
+      resolveCharShape(lookupChar, fontName, charGlyphs)
     )
     const getCharShapeFromDefaults = vi.fn((lookupChar: string) => {
       for (const fontName of ['txt', 'simkai']) {
-        const shape = resolveCharShape(lookupChar, fontName, glyphs)
+        const shape = resolveCharShape(lookupChar, fontName, charGlyphs)
         if (shape) return shape
       }
       return undefined
     })
-    const getCharShapeFromSymbolFonts = vi.fn((lookupChar: string) => {
+    const getCodeShapeFromSymbolFonts = vi.fn((lookupCode: number) => {
       for (const fontName of ['amgdt']) {
-        const shape = resolveCharShape(lookupChar, fontName, glyphs)
+        const shape = resolveCodeShape(lookupCode, fontName, codeGlyphs)
         if (shape) return shape
       }
       return undefined
@@ -391,19 +402,23 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
         findAndReplaceFont: (name: string) => name,
         getCharShape,
         getCharShapeFromDefaults,
-        getCharShapeFromSymbolFonts,
+        getCodeShapeFromSymbolFonts,
         getNotFoundTextShape: () => undefined
       }
     )
 
     getCharShape.mockClear()
     getCharShapeFromDefaults.mockClear()
-    getCharShapeFromSymbolFonts.mockClear()
+    getCodeShapeFromSymbolFonts.mockClear()
 
-    const shape = (processor as any).getCharShape(ch132)
+    const shape = (processor as any).resolvePercentSymbolShape({
+      kind: 'numeric',
+      charCode: 132,
+      char: ch132
+    })
 
     expect(shape).toBe(symbolShape)
-    expect(getCharShapeFromSymbolFonts).toHaveBeenCalledWith(ch132, 10)
+    expect(getCodeShapeFromSymbolFonts).toHaveBeenCalledWith(132, 10)
     expect(getCharShapeFromDefaults).not.toHaveBeenCalled()
     expect(getCharShape).not.toHaveBeenCalled()
   })
@@ -412,17 +427,19 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
     const ch132 = String.fromCharCode(132)
     const primaryShape = createShape(0)
     const symbolShape = createShape(6.5)
-    const glyphs: Record<string, Record<string, GlyphShape | undefined>> = {
-      txt: { [ch132]: primaryShape },
-      amgdt: { [ch132]: symbolShape }
+    const charGlyphs: Record<string, Record<string, GlyphShape | undefined>> = {
+      txt: { [ch132]: primaryShape }
+    }
+    const codeGlyphs: Record<string, Record<number, GlyphShape | undefined>> = {
+      amgdt: { 132: symbolShape }
     }
 
     const getCharShape = vi.fn((lookupChar: string, fontName: string) =>
-      resolveCharShape(lookupChar, fontName, glyphs)
+      resolveCharShape(lookupChar, fontName, charGlyphs)
     )
-    const getCharShapeFromSymbolFonts = vi.fn((lookupChar: string) => {
+    const getCodeShapeFromSymbolFonts = vi.fn((lookupCode: number) => {
       for (const fontName of ['amgdt']) {
-        const shape = resolveCharShape(lookupChar, fontName, glyphs)
+        const shape = resolveCodeShape(lookupCode, fontName, codeGlyphs)
         if (shape) return shape
       }
       return undefined
@@ -436,19 +453,68 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
         findAndReplaceFont: (name: string) => name,
         getCharShape,
         getCharShapeFromDefaults: vi.fn(),
-        getCharShapeFromSymbolFonts,
+        getCodeShapeFromSymbolFonts,
         getNotFoundTextShape: () => undefined
       }
     )
 
     getCharShape.mockClear()
-    getCharShapeFromSymbolFonts.mockClear()
+    getCodeShapeFromSymbolFonts.mockClear()
 
-    const shape = (processor as any).getCharShape(ch132)
+    const shape = (processor as any).resolvePercentSymbolShape({
+      kind: 'numeric',
+      charCode: 132,
+      char: ch132
+    })
 
     expect(shape).toBe(symbolShape)
-    expect(getCharShapeFromSymbolFonts).toHaveBeenCalledWith(ch132, 10)
+    expect(getCodeShapeFromSymbolFonts).toHaveBeenCalledWith(132, 10)
     expect(getCharShape).not.toHaveBeenCalled()
+  })
+
+  it('prefers primary font for superscript ² instead of amgdt symbol fallback', () => {
+    const superscriptTwo = '²'
+    const primaryShape = createShape(3)
+    const symbolShape = createShape(20)
+    const charGlyphs: Record<string, Record<string, GlyphShape | undefined>> = {
+      'gost common': { [superscriptTwo]: primaryShape }
+    }
+    const codeGlyphs: Record<string, Record<number, GlyphShape | undefined>> = {
+      amgdt: { 0xb2: symbolShape }
+    }
+
+    const getCharShape = vi.fn((lookupChar: string, fontName: string) =>
+      resolveCharShape(lookupChar, fontName, charGlyphs)
+    )
+    const getCodeShapeFromSymbolFonts = vi.fn((lookupCode: number) => {
+      for (const fontName of ['amgdt']) {
+        const shape = resolveCodeShape(lookupCode, fontName, codeGlyphs)
+        if (shape) return shape
+      }
+      return undefined
+    })
+
+    const processor = createGlyphFallbackProcessor(
+      { font: 'GOST Common', bigFont: '' },
+      {
+        getFontScaleFactor: () => 1,
+        getFontType: () => 'shx' as const,
+        findAndReplaceFont: (name: string) => name,
+        getCharShape,
+        getCharShapeFromDefaults: vi.fn(),
+        getCodeShapeFromSymbolFonts,
+        getNotFoundTextShape: () => undefined
+      }
+    )
+
+    getCharShape.mockClear()
+    getCodeShapeFromSymbolFonts.mockClear()
+
+    const shape = (processor as any).getCharShape(superscriptTwo)
+
+    expect(shape).toBe(primaryShape)
+    expect(getCharShape).toHaveBeenCalledWith(superscriptTwo, 'gost common', 10)
+    expect(getCodeShapeFromSymbolFonts).not.toHaveBeenCalled()
   })
 
   it('stops at primary font when the glyph is present there', () => {
@@ -530,7 +596,7 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
 
     const getCharShape = vi.fn(() => undefined)
     const getCharShapeFromDefaults = vi.fn(() => undefined)
-    const getCharShapeFromSymbolFonts = vi.fn(() => undefined)
+    const getCodeShapeFromSymbolFonts = vi.fn(() => undefined)
     const getNotFoundTextShape = vi.fn(() => notFoundShape)
 
     const processor = createGlyphFallbackProcessor(
@@ -541,14 +607,14 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
         findAndReplaceFont: (name: string) => name,
         getCharShape,
         getCharShapeFromDefaults,
-        getCharShapeFromSymbolFonts,
+        getCodeShapeFromSymbolFonts,
         getNotFoundTextShape
       }
     )
 
     getCharShape.mockClear()
     getCharShapeFromDefaults.mockClear()
-    getCharShapeFromSymbolFonts.mockClear()
+    getCodeShapeFromSymbolFonts.mockClear()
     getNotFoundTextShape.mockClear()
 
     const shape = (processor as any).getCharShape(cjkChar)
@@ -557,7 +623,10 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
     expect(getCharShape).toHaveBeenCalledWith(cjkChar, primaryFont, 10)
     expect(getCharShape).toHaveBeenCalledWith(cjkChar, bigFontName, 10)
     expect(getCharShapeFromDefaults).toHaveBeenCalledWith(cjkChar, 10)
-    expect(getCharShapeFromSymbolFonts).toHaveBeenCalledWith(cjkChar, 10)
+    expect(getCodeShapeFromSymbolFonts).toHaveBeenCalledWith(
+      cjkChar.codePointAt(0),
+      10
+    )
     expect(getNotFoundTextShape).toHaveBeenCalledWith(10)
   })
 })

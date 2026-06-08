@@ -50,6 +50,7 @@ function createFakeFont(overrides: Record<string, unknown> = {}) {
     unsupportedChars: { '?': 1 },
     hasChar: vi.fn().mockReturnValue(false),
     getCharShape: vi.fn(),
+    getCodeShape: vi.fn(),
     getScaleFactor: vi.fn().mockReturnValue(1),
     getNotFoundTextShape: vi.fn(),
     ...overrides
@@ -219,8 +220,8 @@ describe('FontManager', () => {
       getCharShape: vi.fn().mockReturnValue(meshShape)
     })
     const symbol = createFakeFont({
-      hasChar: vi.fn((char: string) => char === '°'),
-      getCharShape: vi.fn().mockReturnValue(symbolShape)
+      hasCode: vi.fn((code: number) => code === 0xb0),
+      getCodeShape: vi.fn().mockReturnValue(symbolShape)
     })
     manager.defaultFonts = new Set(['simsun'])
     manager.symbolFonts = new Set(['amgdt'])
@@ -230,11 +231,11 @@ describe('FontManager', () => {
     expect(FontManager.instance.getCharShapeFromDefaults('°', 10)).toBe(
       meshShape
     )
-    expect(FontManager.instance.getCharShapeFromSymbolFonts('°', 10)).toBe(
+    expect(FontManager.instance.getCodeShapeFromSymbolFonts(0xb0, 10)).toBe(
       symbolShape
     )
     expect(mesh.getCharShape).toHaveBeenCalled()
-    expect(symbol.getCharShape).toHaveBeenCalled()
+    expect(symbol.getCodeShape).toHaveBeenCalledWith(0xb0, 10)
   })
 
   it('finds fonts by character without using getCharShape on a missing font name', () => {
@@ -373,7 +374,7 @@ describe('FontManager', () => {
 
     await manager.loadDefaultFont()
 
-    expect(loader.load).toHaveBeenCalledWith(['hztxt', 'simsun', 'amgdt'])
+    expect(loader.load).toHaveBeenCalledWith(['hztxt', 'simsun', 'simplex', 'amgdt'])
   })
 
   it('resolves fonts by alias names after loading', async () => {

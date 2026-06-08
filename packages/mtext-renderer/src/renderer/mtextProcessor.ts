@@ -3,6 +3,7 @@ import {
   MTextContext,
   MTextParagraphAlignment,
   MTextToken,
+  PercentSymbolData,
   TokenType
 } from '@mlightcad/mtext-parser'
 import * as THREE from 'three'
@@ -16,10 +17,7 @@ import {
   LINE_SPACING_SCALE_FACTOR,
   STACK_VERTICAL_SHIFT_FACTOR
 } from './constants'
-import {
-  getShxControlCodeCandidates,
-  isAutoCadNumericPercentControlCodeChar
-} from './shxSymbolControlCodes'
+import { getPercentSymbolLookupCodes } from './shxSymbolControlCodes'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
@@ -1014,6 +1012,14 @@ export class MTextProcessor {
         }
       } else if (token.type === TokenType.SPACE) {
         this.processBlank(meshCharBoxes, lineCharBoxes)
+      } else if (token.type === TokenType.PERCENT_SYMBOL) {
+        this.processPercentSymbol(
+          token.data as PercentSymbolData,
+          geometries,
+          lineGeometries,
+          meshCharBoxes,
+          lineCharBoxes
+        )
       } else if (token.type === TokenType.PROPERTIES_CHANGED) {
         // FLUSH before changing style: ensures all geometries up to this point use the previous style.
         // This is critical for correct color/formatting application within a line.
@@ -1590,14 +1596,38 @@ export class MTextProcessor {
     })
   }
 
-  private processChar(
-    char: string,
+  private processPercentSymbol(
+    data: PercentSymbolData,
     geometries: THREE.BufferGeometry[],
     lineGeometries: THREE.BufferGeometry[],
     meshCharBoxes: CharBox[],
     lineCharBoxes: CharBox[]
   ): void {
-    const shape = this.getCharShape(char)
+    if (data.kind === 'literal') {
+      this.processChar(data.char, geometries, lineGeometries, meshCharBoxes, lineCharBoxes)
+      return
+    }
+
+    const shape = this.resolvePercentSymbolShape(data)
+    this.processChar(
+      data.char,
+      geometries,
+      lineGeometries,
+      meshCharBoxes,
+      lineCharBoxes,
+      shape
+    )
+  }
+
+  private processChar(
+    char: string,
+    geometries: THREE.BufferGeometry[],
+    lineGeometries: THREE.BufferGeometry[],
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[],
+    shapeOverride?: BaseTextShape
+  ): void {
+    const shape = shapeOverride ?? this.getCharShape(char)
     if (!shape) {
       this.processBlank(meshCharBoxes, lineCharBoxes)
       return
@@ -1832,41 +1862,25 @@ export class MTextProcessor {
     return char === ' ' && shape.width > 0
   }
 
+  private resolvePercentSymbolShape(
+    data: PercentSymbolData
+  ): BaseTextShape | undefined {
+    for (const lookupCode of getPercentSymbolLookupCodes(data)) {
+      const symbolShape = this.fontManager.getCodeShapeFromSymbolFonts(
+        lookupCode,
+        this.currentFontSize
+      )
+      if (symbolShape && this.shapeHasStrokeGeometry(symbolShape, data.char)) {
+        if (this.currentFontSize > this._maxFontSize) {
+          this._maxFontSize = this.currentFontSize
+        }
+        return symbolShape
+      }
+    }
+    return this.getCharShape(data.char)
+  }
+
   private getCharShape(char: string) {
-    // Named AutoCAD percent codes (%%c/%%d/%%p) are expanded to Unicode by
-    // mtext-parser before rendering, but AutoCAD itself resolves those symbols
-    // from GDT/symbol SHX fonts (e.g. amgdt.shx) via legacy control-code code
-    // points—not from the primary text font's Unicode glyphs. Try the ordered
-    // SHX control-code candidates in the default symbol-font chain first so
-    // rendering matches AutoCAD and avoids incorrect glyphs from the text font.
-    for (const controlChar of getShxControlCodeCandidates(char)) {
-      const symbolShape = this.fontManager.getCharShapeFromSymbolFonts(
-        controlChar,
-        this.currentFontSize
-      )
-      if (symbolShape && this.shapeHasStrokeGeometry(symbolShape, char)) {
-        if (this.currentFontSize > this._maxFontSize) {
-          this._maxFontSize = this.currentFontSize
-        }
-        return symbolShape
-      }
-    }
-
-    // Numeric `%%ddd` codes (e.g. %%130, %%132) expand to raw byte values and
-    // must be resolved from symbol SHX fonts before the primary text font.
-    if (isAutoCadNumericPercentControlCodeChar(char)) {
-      const symbolShape = this.fontManager.getCharShapeFromSymbolFonts(
-        char,
-        this.currentFontSize
-      )
-      if (symbolShape && this.shapeHasStrokeGeometry(symbolShape, char)) {
-        if (this.currentFontSize > this._maxFontSize) {
-          this._maxFontSize = this.currentFontSize
-        }
-        return symbolShape
-      }
-    }
-
     let shape = this.fontManager.getCharShape(
       char,
       this.currentFont,
@@ -1887,10 +1901,13 @@ export class MTextProcessor {
       )
     }
     if (!shape) {
-      shape = this.fontManager.getCharShapeFromSymbolFonts(
-        char,
-        this.currentFontSize
-      )
+      const code = char.codePointAt(0)
+      if (code != null) {
+        shape = this.fontManager.getCodeShapeFromSymbolFonts(
+          code,
+          this.currentFontSize
+        )
+      }
     }
     if (!shape || !this.shapeHasStrokeGeometry(shape, char)) {
       shape = this.fontManager.getNotFoundTextShape(this.currentFontSize)

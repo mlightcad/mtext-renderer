@@ -73,7 +73,7 @@ export class FontManager {
    * `%%nnn`, etc.). Separate from {@link defaultFonts} so text fallbacks are not
    * polluted by symbol-font code-point matches.
    */
-  public symbolFonts = new Set<string>(['amgdt'])
+  public symbolFonts = new Set<string>(['simplex', 'amgdt'])
 
   /** Event managers for font-related events */
   public readonly events = {
@@ -408,16 +408,20 @@ export class FontManager {
   }
 
   /**
-   * Gets the text shape from configured GDT / symbol fonts (e.g. `amgdt.shx`).
-   * Used for AutoCAD percent codes and other symbol-font code points.
+   * Gets the text shape from configured GDT / symbol fonts (e.g. `amgdt.shx`)
+   * by font-internal character code.
+   *
+   * AutoCAD `%%` symbols resolve against SHX code points (e.g. 126, 129, 132),
+   * not Unicode text semantics. Use {@link BaseFont.getCodeShape} so BIGFONT and
+   * Unicode SHX fonts are queried consistently.
    */
-  public getCharShapeFromSymbolFonts(
-    char: string,
+  public getCodeShapeFromSymbolFonts(
+    code: number,
     size: number
   ): BaseTextShape | undefined {
     for (const fontName of this.symbolFonts) {
       const font = this.loadedFontMap.get(fontName.toLowerCase())
-      const shape = font?.getCharShape(char, size)
+      const shape = font?.getCodeShape(code, size)
       if (shape) {
         return shape
       }

@@ -47,7 +47,7 @@ describe('AutoCAD percent symbols with isocp primary font (integration)', () => 
         {
           label: '%%c',
           unicodeChar: 'Ø',
-          symbolChar: '\u2205',
+          symbolCode: 0x2205,
           isocpWidth: 12.230769230769234,
           symbolWidth: 6.785714285714286
         },
@@ -73,12 +73,12 @@ describe('AutoCAD percent symbols with isocp primary font (integration)', () => 
           'isocp',
           10
         )
-        const symbolLookupChar =
-          'symbolChar' in testCase
-            ? testCase.symbolChar
-            : String.fromCharCode(testCase.controlCode)
-        const symbolShape = FontManager.instance.getCharShapeFromSymbolFonts(
-          symbolLookupChar,
+        const symbolLookupCode =
+          'symbolCode' in testCase
+            ? testCase.symbolCode
+            : testCase.controlCode
+        const symbolShape = FontManager.instance.getCodeShapeFromSymbolFonts(
+          symbolLookupCode,
           10
         )
 
@@ -125,7 +125,7 @@ describe('%%130 %%131 glyph fallback (integration)', () => {
   )
 
   it(
-    'getCharShapeFromSymbolFonts skips gdt.ttf and uses amgdt when configured',
+    'getCodeShapeFromSymbolFonts skips gdt.ttf and uses amgdt when configured',
     async () => {
       FontManager.instance.release()
       FontManager.instance.enableFontCache = false
@@ -135,8 +135,8 @@ describe('%%130 %%131 glyph fallback (integration)', () => {
       registerFont('amgdt', await loadFont('amgdt', 'amgdt.shx'))
       registerFont('gdt', await loadFont('gdt', 'gdt.ttf', 'mesh'))
 
-      const shape130 = FontManager.instance.getCharShapeFromSymbolFonts(ch130, 10)
-      const shape131 = FontManager.instance.getCharShapeFromSymbolFonts(ch131, 10)
+      const shape130 = FontManager.instance.getCodeShapeFromSymbolFonts(130, 10)
+      const shape131 = FontManager.instance.getCodeShapeFromSymbolFonts(131, 10)
 
       expect(shape130).toBeDefined()
       expect(shape131).toBeDefined()

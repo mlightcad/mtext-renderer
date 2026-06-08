@@ -40,11 +40,11 @@ export const SYMBOL_FONTS_PRESETS: Record<
   DefaultFontsPreset,
   readonly string[]
 > = {
-  minimal: ['amgdt'],
-  r12r14: ['amgdt'],
-  modern: ['amgdt'],
-  international: ['amgdt'],
-  cjk: ['amgdt']
+  minimal: ['simplex', 'amgdt'],
+  r12r14: ['simplex', 'amgdt'],
+  modern: ['simplex', 'amgdt'],
+  international: ['simplex', 'amgdt'],
+  cjk: ['simplex', 'amgdt']
 }
 
 export function isDefaultFontsPreset(
