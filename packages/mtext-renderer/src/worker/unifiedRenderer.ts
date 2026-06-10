@@ -17,10 +17,12 @@ export type RenderMode = 'main' | 'worker'
  * Unified renderer that can work in both main thread and web worker modes
  */
 export class UnifiedRenderer {
-  private webWorkerRenderer: WebWorkerRenderer
+  private webWorkerRenderer: WebWorkerRenderer | null = null
   private mainThreadRenderer: MainThreadRenderer
   private renderer: MTextBaseRenderer
   private defaultMode: RenderMode
+  private workerConfig: WebWorkerRendererConfig
+  private webWorkerConfigured = false
   /**
    * Constructor
    *
@@ -33,12 +35,33 @@ export class UnifiedRenderer {
     workerConfig: WebWorkerRendererConfig = {}
   ) {
     this.defaultMode = defaultMode
+    this.workerConfig = workerConfig
     this.mainThreadRenderer = new MainThreadRenderer()
-    this.webWorkerRenderer = new WebWorkerRenderer(workerConfig)
     this.renderer = this.mainThreadRenderer
     if (defaultMode === 'worker') {
-      this.renderer = this.webWorkerRenderer
+      this.renderer = this.ensureWebWorkerRenderer()
     }
+  }
+
+  private ensureWebWorkerRenderer(): WebWorkerRenderer {
+    if (!this.webWorkerRenderer) {
+      this.webWorkerRenderer = new WebWorkerRenderer(this.workerConfig)
+      this.webWorkerRenderer.styleManager = this.mainThreadRenderer.styleManager
+      this.webWorkerConfigured = false
+    }
+    return this.webWorkerRenderer
+  }
+
+  private async activateWebWorkerRenderer(): Promise<WebWorkerRenderer> {
+    const renderer = this.ensureWebWorkerRenderer()
+    if (!this.webWorkerConfigured) {
+      await renderer.setDefaultFonts(
+        [...FontManager.instance.defaultFonts],
+        [...FontManager.instance.symbolFonts]
+      )
+      this.webWorkerConfigured = true
+    }
+    return renderer
   }
 
   /**
@@ -53,7 +76,9 @@ export class UnifiedRenderer {
    */
   setStyleManager(value: StyleManager) {
     this.mainThreadRenderer.styleManager = value
-    this.webWorkerRenderer.styleManager = value
+    if (this.webWorkerRenderer) {
+      this.webWorkerRenderer.styleManager = value
+    }
   }
 
   /**
@@ -66,7 +91,7 @@ export class UnifiedRenderer {
     }
     this.defaultMode = mode
     if (mode === 'worker') {
-      this.renderer = this.webWorkerRenderer
+      this.renderer = this.ensureWebWorkerRenderer()
     } else {
       this.renderer = this.mainThreadRenderer
     }
@@ -98,17 +123,16 @@ export class UnifiedRenderer {
     colorSettings: ColorSettings = createDefaultColorSettings(),
     mode?: RenderMode
   ): Promise<MTextObject> {
-    if (mode) {
-      const renderer =
-        mode === 'worker' ? this.webWorkerRenderer : this.mainThreadRenderer
+    const effectiveMode = mode ?? this.defaultMode
+    if (effectiveMode === 'worker') {
+      const renderer = await this.activateWebWorkerRenderer()
       return renderer.asyncRenderMText(mtextContent, textStyle, colorSettings)
-    } else {
-      return this.renderer.asyncRenderMText(
-        mtextContent,
-        textStyle,
-        colorSettings
-      )
     }
+    return this.mainThreadRenderer.asyncRenderMText(
+      mtextContent,
+      textStyle,
+      colorSettings
+    )
   }
 
   /**
@@ -160,10 +184,13 @@ export class UnifiedRenderer {
     fonts: DefaultFontsPreset | string | readonly string[]
   ): Promise<void> {
     FontManager.instance.setDefaultFonts(fonts)
-    await this.webWorkerRenderer.setDefaultFonts(
-      [...FontManager.instance.defaultFonts],
-      [...FontManager.instance.symbolFonts]
-    )
+    if (this.webWorkerRenderer) {
+      await this.webWorkerRenderer.setDefaultFonts(
+        [...FontManager.instance.defaultFonts],
+        [...FontManager.instance.symbolFonts]
+      )
+      this.webWorkerConfigured = true
+    }
   }
 
   /**
@@ -209,12 +236,24 @@ export class UnifiedRenderer {
   }
 
   /**
+   * Terminate web workers and release their memory.
+   *
+   * The unified renderer keeps working on the main thread. Workers are
+   * recreated lazily the next time worker rendering is requested.
+   * Safe to call when no workers were created.
+   */
+  terminateWorkers(): void {
+    this.webWorkerRenderer?.terminate()
+    this.webWorkerRenderer = null
+    this.webWorkerConfigured = false
+    this.renderer = this.mainThreadRenderer
+  }
+
+  /**
    * Clean up resources
    */
   destroy(): void {
-    if (this.webWorkerRenderer) {
-      this.webWorkerRenderer.terminate()
-    }
+    this.terminateWorkers()
     this.mainThreadRenderer.destroy()
   }
 }
