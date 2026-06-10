@@ -541,6 +541,24 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     const baseByLayer = colorSettings.color.aci === 256
     const group = new THREE.Group()
 
+    // Large drawing coordinates live on the root transform; glyph geometry stays local.
+    group.position.set(
+      serializedData.position.x,
+      serializedData.position.y,
+      serializedData.position.z
+    )
+    group.quaternion.set(
+      serializedData.rotation.x,
+      serializedData.rotation.y,
+      serializedData.rotation.z,
+      serializedData.rotation.w
+    )
+    group.scale.set(
+      serializedData.scale.x,
+      serializedData.scale.y,
+      serializedData.scale.z
+    )
+
     // Reconstruct all child objects
     serializedData.children.forEach(childData => {
       const geometry = new THREE.BufferGeometry()
@@ -646,7 +664,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
         geometry.computeBoundingSphere()
       }
 
-      // Set position, rotation, and scale directly (already in world coordinates)
+      // Child transforms are local to the MText root group.
       object.position.set(
         childData.position.x,
         childData.position.y,
