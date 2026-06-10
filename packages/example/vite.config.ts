@@ -6,6 +6,11 @@ export default defineConfig({
   base: './',
   resolve: {
     alias: {
+      // Use package source in dev so worker lazy-loading changes apply without rebuilding dist.
+      '@mlightcad/mtext-renderer': resolve(
+        __dirname,
+        '../mtext-renderer/src/index.ts'
+      ),
       // iconv-lite (used by SHX bigfont encoding) probes stream.Transform at init.
       stream: resolve(__dirname, 'src/shims/stream.ts')
     }
