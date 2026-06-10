@@ -133,6 +133,49 @@ describe('DefaultFontLoader', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('downloads non-default fonts from the remote repository when requested by name', async () => {
+    vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([
+      {
+        fontName: 'romans',
+        url: 'https://cdn.example.com/fonts/romans.shx',
+        status: 'Success'
+      }
+    ])
+    const loader = new DefaultFontLoader()
+    loader.baseUrl = 'https://cdn.example.com/fonts/'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse([
+          {
+            name: ['Romans', 'romans'],
+            file: 'romans.shx',
+            type: 'shx',
+            url: ''
+          }
+        ])
+      )
+    )
+
+    const statuses = await loader.load(['romans'])
+
+    expect(FontManager.instance.loadFonts).toHaveBeenCalledWith([
+      {
+        name: ['Romans', 'romans'],
+        file: 'romans.shx',
+        type: 'shx',
+        url: 'https://cdn.example.com/fonts/romans.shx'
+      }
+    ])
+    expect(statuses).toEqual([
+      {
+        fontName: 'romans',
+        url: 'https://cdn.example.com/fonts/romans.shx',
+        status: 'Success'
+      }
+    ])
+  })
+
   it('loads requested fonts by name and preserves NotFound statuses', async () => {
     vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([
       {

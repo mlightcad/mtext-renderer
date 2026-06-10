@@ -222,21 +222,23 @@ function serializeMText(mtext: MText): {
   data: unknown
   transferableObjects: ArrayBuffer[]
 } {
-  // Get the world matrix to capture all transformations
-  const worldMatrix = mtext.matrixWorld.clone()
+  // `MText` is a wrapper Object3D; insertion/rotation live on the rendered child group
+  // created in `loadMText`. Keep large drawing coordinates on that root transform, not
+  // in Float32 geometry buffers.
+  const renderRoot = mtext.children[0] as THREE.Object3D | undefined
+  const rootForTransform = renderRoot ?? mtext
+
+  const worldMatrix = rootForTransform.matrixWorld.clone()
   const position = new THREE.Vector3()
   const quaternion = new THREE.Quaternion()
   const scale = new THREE.Vector3()
 
-  // Decompose the world matrix to get the final position, rotation, and scale
   worldMatrix.decompose(position, quaternion, scale)
 
-  // Transform the bounding box to world coordinates
+  // `mtext.box` is already accumulated in world space during `syncDraw`.
   const transformedBox = mtext.box.clone()
-  transformedBox.applyMatrix4(worldMatrix)
 
-  // Serialize children and collect transferable objects
-  const { children, transferableObjects } = serializeChildren(mtext)
+  const { children, transferableObjects } = serializeChildren(rootForTransform)
 
   // Create a comprehensive JSON-serializable representation
   const serialized = {
@@ -277,26 +279,36 @@ function serializeMText(mtext: MText): {
   return { data: serialized, transferableObjects }
 }
 
+const rootWorldInverse = /*@__PURE__*/ new THREE.Matrix4()
+const childRelativeMatrix = /*@__PURE__*/ new THREE.Matrix4()
+
 // Serialize all child objects as JSON with transferable objects
-function serializeChildren(mtext: MText): {
+function serializeChildren(root: THREE.Object3D): {
   children: unknown[]
   transferableObjects: ArrayBuffer[]
 } {
   const children: unknown[] = []
   const allTransferableObjects: ArrayBuffer[] = []
 
-  mtext.traverse(child => {
+  root.updateWorldMatrix(true, true)
+  rootWorldInverse.copy(root.matrixWorld).invert()
+
+  root.traverse(child => {
     if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
       const geometry = child.geometry
       const material = child.material
 
       if (geometry instanceof THREE.BufferGeometry) {
-        // Get world matrix for transformations
-        const worldMatrix = child.matrixWorld.clone()
+        // Keep glyph geometry local and express each child transform relative to
+        // the MText root so large insertion coordinates stay on the root group.
         const position = new THREE.Vector3()
         const quaternion = new THREE.Quaternion()
         const scale = new THREE.Vector3()
-        worldMatrix.decompose(position, quaternion, scale)
+        childRelativeMatrix.multiplyMatrices(
+          rootWorldInverse,
+          child.matrixWorld
+        )
+        childRelativeMatrix.decompose(position, quaternion, scale)
 
         // Serialize geometry attributes using transferable objects
         const attributes: Record<string, unknown> = {}

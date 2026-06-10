@@ -1467,7 +1467,7 @@ export class MTextProcessor {
           'position',
           new THREE.BufferAttribute(lineVertices, 3)
         )
-        lineGeometry.setIndex(null)
+        lineGeometry.setIndex([0, 1])
         lineGeometry.userData = { isDecoration: true }
         lineGeometries.push(lineGeometry)
       }
@@ -1756,7 +1756,7 @@ export class MTextProcessor {
           3
         )
       )
-      underlineGeom.setIndex(null)
+      underlineGeom.setIndex([0, 1])
       underlineGeom.userData = { isDecoration: true }
       lineGeometries.push(underlineGeom)
     }
@@ -1778,7 +1778,7 @@ export class MTextProcessor {
           3
         )
       )
-      overlineGeom.setIndex(null)
+      overlineGeom.setIndex([0, 1])
       overlineGeom.userData = { isDecoration: true }
       lineGeometries.push(overlineGeom)
     }
@@ -1800,7 +1800,7 @@ export class MTextProcessor {
           3
         )
       )
-      strikeGeom.setIndex(null)
+      strikeGeom.setIndex([0, 1])
       strikeGeom.userData = { isDecoration: true }
       lineGeometries.push(strikeGeom)
     }
