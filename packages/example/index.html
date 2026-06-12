@@ -5,35 +5,56 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MText Renderer Example</title>
     <style>
-        body { 
-            margin: 0; 
-            padding: 20px;
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            padding: 0;
             font-family: Arial, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            background: #e8e8e8;
+        }
+        #app-layout {
             display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            background: #f0f0f0;
+            height: 100vh;
+            width: 100vw;
         }
         #controls {
-            width: 1000px;
+            flex: 0 0 50%;
+            width: 50%;
+            min-width: 360px;
             background: #333;
             color: white;
             padding: 20px;
-            box-sizing: border-box;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            overflow-y: auto;
+            border-right: 1px solid #222;
         }
         #render-area {
-            width: 1000px;
-            height: 600px;
+            flex: 1;
+            min-width: 0;
+            height: 100%;
             position: relative;
-            border: 1px solid #ccc;
-            border-radius: 5px;
             overflow: hidden;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            background: white;
+            background: #fff;
+        }
+        #wcs-coords {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 4px 12px;
+            background: rgba(0, 0, 0, 0.65);
+            color: #fff;
+            font-family: Consolas, 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            pointer-events: none;
+            z-index: 10;
+            border-radius: 4px;
+            white-space: nowrap;
+            visibility: hidden;
         }
         canvas { 
             display: block;
@@ -42,13 +63,12 @@
         }
         #mtext-input {
             width: 100%;
-            height: 100px;
+            height: 140px;
             margin: 10px 0;
-            padding: 5px;
-            box-sizing: border-box;
+            padding: 8px;
             resize: vertical;
-            min-height: 50px;
-            max-height: 300px;
+            min-height: 80px;
+            max-height: 360px;
         }
         select {
             width: 100%;
@@ -100,6 +120,12 @@
         .examples {
             margin: 10px 0;
         }
+        .examples h3 {
+            margin: 0 0 8px;
+            font-size: 14px;
+            font-weight: normal;
+            color: #ccc;
+        }
         .example-btn {
             background: #444;
             color: white;
@@ -108,6 +134,7 @@
             margin: 2px;
             cursor: pointer;
             border-radius: 3px;
+            font-size: 12px;
         }
         .example-btn:hover {
             background: #555;
@@ -155,9 +182,20 @@
         .font-cache-actions button {
             margin: 0;
         }
+        .action-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 8px 0;
+        }
+        .action-row .checkbox-container {
+            margin: 0;
+        }
     </style>
 </head>
 <body>
+    <div id="app-layout">
     <div id="controls">
         <h2>MText Renderer Example</h2>
         <div class="row">
@@ -168,6 +206,15 @@
                     <option value="shape">SHAPE (SHX shape entity)</option>
                 </select>
             </div>
+            <div class="field">
+                <label for="render-mode">Render Mode:</label>
+                <select id="render-mode">
+                    <option value="main">Main Thread</option>
+                    <option value="worker">Web Worker</option>
+                </select>
+            </div>
+        </div>
+        <div class="row">
             <div class="field">
                 <label for="font-select">Text Style Font:</label>
                 <select id="font-select">
@@ -182,13 +229,6 @@
                     <option value="modern">modern (hztxt → gdt)</option>
                     <option value="international">international (txt → gdt)</option>
                     <option value="cjk">cjk (gbcbig → gdt)</option>
-                </select>
-            </div>
-            <div class="field">
-                <label for="render-mode">Render Mode:</label>
-                <select id="render-mode">
-                    <option value="main">Main Thread</option>
-                    <option value="worker">Web Worker</option>
                 </select>
             </div>
         </div>
@@ -247,17 +287,17 @@
             </div>
             <p class="hint">Uses <code>complex.shx</code> by default. Shape number 128–132 render distinct glyphs; name lookup is tried first when provided.</p>
         </div>
-        <div style="display: flex; align-items: center; gap: 10px;">
+        <div class="action-row">
             <button id="render-btn">Render</button>
-            <div class="checkbox-container" style="margin: 0;">
+            <div class="checkbox-container">
                 <input type="checkbox" id="show-bounding-box" checked>
                 <label for="show-bounding-box">Show Bounding Box</label>
             </div>
-            <div class="checkbox-container" style="margin: 0;">
+            <div class="checkbox-container">
                 <input type="checkbox" id="show-char-boxes">
                 <label for="show-char-boxes">Show Char Boxes</label>
             </div>
-            <div class="checkbox-container" style="margin: 0;">
+            <div class="checkbox-container">
                 <input type="checkbox" id="show-line-boxes">
                 <label for="show-line-boxes">Show Line Boxes</label>
             </div>
@@ -276,10 +316,15 @@
             <button class="example-btn" data-example="stacking">Stacking</button>
             <button class="example-btn" data-example="multiple">Multiple MText</button>
             <button class="example-btn" data-example="attachmentGrid">Attachment Points</button>
+            <button class="example-btn" data-example="largeCoordinatesRebase" title="Large WCS coords with rebase to origin; two MText blocks (\P\P); fonts via \Fname;">Large Coordinates (Rebase)</button>
+            <button class="example-btn" data-example="largeCoordinatesNoRebase" title="Same WCS coords without rebase — compare float32 behavior; \P\P separates blocks; fonts via \Fname;">Large Coordinates (No Rebase)</button>
         </div>
         <div id="status"></div>
     </div>
-    <div id="render-area"></div>
+    <div id="render-area">
+        <div id="wcs-coords" aria-live="polite"></div>
+    </div>
+    </div>
     <!-- Load bundled example -->
     <script type="module" src="./src/main.ts"></script>
 </body>
