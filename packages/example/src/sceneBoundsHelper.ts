@@ -13,8 +13,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
  *    `userData.excludeFromFit`.
  * 2. Records the shift in {@link wcsOriginOffset} so {@link WcsCoordinateDisplay}
  *    can report true WCS coordinates.
- * 3. Adjusts the orthographic frustum via {@link zoomToFit} instead of moving
- *    the camera to large coordinates (which would reintroduce precision loss).
+ * 3. Frames content with a camera centered on its bounds so large WCS insertions
+ *    cancel in modelView before local glyph vertices are projected.
  */
 export class SceneBoundsHelper {
   /**
@@ -203,42 +203,15 @@ export class SceneBoundsHelper {
   }
 
   /**
-   * Moves large WCS insertion transforms to the origin while preserving local glyph geometry.
-   *
-   * @param currentContent - Root group whose descendants may carry survey-scale positions.
-   *
-   * @remarks
-   * The first node with |position| above the threshold supplies {@link wcsOriginOffset}.
-   * Used by the large-coordinates example when rebase is enabled.
-   */
-  rebaseInsertionToOrigin(currentContent: THREE.Object3D | null): void {
-    let capturedOffset = false
-    currentContent?.traverse(child => {
-      if (
-        Math.abs(child.position.x) > this.largeWorldCoordinateThreshold ||
-        Math.abs(child.position.y) > this.largeWorldCoordinateThreshold
-      ) {
-        if (!capturedOffset) {
-          this.wcsOriginOffset.set(child.position.x, child.position.y, 0)
-          capturedOffset = true
-        }
-        child.position.set(0, 0, child.position.z)
-        child.updateMatrix()
-      }
-    })
-    currentContent?.updateWorldMatrix(true, true)
-    this.refreshDrawableBounds(currentContent)
-  }
-
-  /**
    * Frames `currentContent` in the viewport by adjusting the orthographic frustum.
    *
    * @param currentContent - Content to fit; when `null`, resets frustum to the full pane.
    * @param paddingRatio - Fractional padding added on each side of the content bounds (default `0.08`).
    *
    * @remarks
-   * The camera stays at the origin; only `left`/`right`/`top`/`bottom` change. Aspect
-   * ratio is preserved by expanding the narrower axis when content and view aspects differ.
+   * The camera moves to the content center and uses a symmetric local frustum so
+   * survey-scale insertions cancel in modelView before local glyph vertices are
+   * projected. Aspect ratio is preserved by expanding the narrower axis.
    */
   zoomToFit(
     currentContent: THREE.Object3D | null,
@@ -247,52 +220,45 @@ export class SceneBoundsHelper {
     const { width: viewW, height: viewH } = this.getRenderAreaSize()
 
     this.camera.zoom = 1
-    this.camera.position.set(0, 0, 100)
-    this.controls.target.set(0, 0, 0)
 
     if (!currentContent) {
+      this.camera.position.set(0, 0, 100)
+      this.controls.target.set(0, 0, 0)
       this.setDefaultFrustum(viewW, viewH)
       return
     }
 
     const worldBox = this.computeRenderableBounds(currentContent)
     if (worldBox.isEmpty()) {
+      this.camera.position.set(0, 0, 100)
+      this.controls.target.set(0, 0, 0)
       this.setDefaultFrustum(viewW, viewH)
       return
     }
 
-    const minX = worldBox.min.x
-    const maxX = worldBox.max.x
-    const minY = worldBox.min.y
-    const maxY = worldBox.max.y
-    const padX = Math.max((maxX - minX) * paddingRatio, 1e-6)
-    const padY = Math.max((maxY - minY) * paddingRatio, 1e-6)
-    let fitMinX = minX - padX
-    let fitMaxX = maxX + padX
-    let fitMinY = minY - padY
-    let fitMaxY = maxY + padY
+    const center = worldBox.getCenter(new THREE.Vector3())
+    this.camera.position.set(center.x, center.y, 100)
+    this.controls.target.set(center.x, center.y, 0)
 
-    const fitW = fitMaxX - fitMinX
-    const fitH = fitMaxY - fitMinY
+    const spanX = Math.max(worldBox.max.x - worldBox.min.x, 1e-6)
+    const spanY = Math.max(worldBox.max.y - worldBox.min.y, 1e-6)
+    let fitW = spanX * (1 + paddingRatio * 2)
+    let fitH = spanY * (1 + paddingRatio * 2)
     const viewAspect = viewW / viewH
     const fitAspect = fitW / fitH
 
     if (fitAspect > viewAspect) {
-      const expandedH = fitW / viewAspect
-      const centerY = (minY + maxY) / 2
-      fitMinY = centerY - expandedH / 2
-      fitMaxY = centerY + expandedH / 2
+      fitH = fitW / viewAspect
     } else {
-      const expandedW = fitH * viewAspect
-      const centerX = (minX + maxX) / 2
-      fitMinX = centerX - expandedW / 2
-      fitMaxX = centerX + expandedW / 2
+      fitW = fitH * viewAspect
     }
 
-    this.camera.left = fitMinX
-    this.camera.right = fitMaxX
-    this.camera.top = fitMaxY
-    this.camera.bottom = fitMinY
+    // Frame in camera-local coordinates so large WCS insertions cancel in
+    // modelView before local glyph vertices are transformed.
+    this.camera.left = -fitW / 2
+    this.camera.right = fitW / 2
+    this.camera.top = fitH / 2
+    this.camera.bottom = -fitH / 2
     this.camera.updateProjectionMatrix()
     this.controls.update()
   }
@@ -334,7 +300,7 @@ export class SceneBoundsHelper {
    *
    * @param root - Subtree whose drawable primitives should be refreshed.
    */
-  private refreshDrawableBounds(root: THREE.Object3D | null): void {
+  refreshDrawableBounds(root: THREE.Object3D | null): void {
     if (!root) {
       return
     }

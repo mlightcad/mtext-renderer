@@ -623,10 +623,8 @@ class MTextRendererExample {
         this.viewport.scene.add(this.currentMText)
 
         if (LargeCoordinatesExample.isExample(content)) {
-          if (LargeCoordinatesExample.shouldRebase(content)) {
-            this.boundsHelper.rebaseInsertionToOrigin(this.currentMText)
-            LargeCoordinatesExample.layoutPair(mtextObjects)
-          }
+          LargeCoordinatesExample.layoutPair(mtextObjects)
+          this.boundsHelper.refreshDrawableBounds(this.currentMText)
         } else {
           this.boundsHelper.rebaseSceneOrigin(this.currentMText)
         }
@@ -645,14 +643,12 @@ class MTextRendererExample {
         const label =
           content === 'attachmentGrid'
             ? 'attachment-point grid'
-            : content === 'largeCoordinatesRebase'
-              ? 'large-coordinates MText (rebase ON; fonts via \\F)'
-              : content === 'largeCoordinatesNoRebase'
-                ? 'large-coordinates MText (rebase OFF; fonts via \\F)'
-                : 'MText batch'
+            : content === 'largeCoordinates'
+              ? 'large-coordinates MText (fonts via \\F)'
+              : 'MText batch'
         this.statusDiv.textContent = `Rendered ${mtextObjects.length}/${multiData.length} (${label}) in ${renderTime.toFixed(2)}ms (${this.renderModeSelect.value} thread)${
           LargeCoordinatesExample.isExample(content)
-            ? ` · DXF WCS insertion (38425645.89, 4069531.44); example width 100 (DXF group 41 was 128307003)${LargeCoordinatesExample.shouldRebase(content) ? '' : ' · rebase OFF'}`
+            ? ' · DXF WCS insertion (38425645.89, 4069531.44); example width 100 (DXF group 41 was 128307003)'
             : ''
         }`
       } else {

@@ -40,10 +40,8 @@ export const EXAMPLE_TEXTS = {
   shapes: 'shapes',
   /** Marker: 3×4 attachment-point grid with insertion crosshairs (see {@link createAttachmentPointTestData}). */
   attachmentGrid: 'attachmentGrid',
-  /** Marker: large WCS sample with insertion rebase enabled (see {@link LargeCoordinatesExample}). */
-  largeCoordinatesRebase: 'largeCoordinatesRebase',
-  /** Marker: same large WCS sample without rebase — exposes float32 precision issues. */
-  largeCoordinatesNoRebase: 'largeCoordinatesNoRebase'
+  /** Marker: large WCS sample with survey-scale insertion (see {@link LargeCoordinatesExample}). */
+  largeCoordinates: 'largeCoordinates'
 } as const
 
 /**

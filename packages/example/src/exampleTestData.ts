@@ -234,15 +234,14 @@ export function createMultipleMTextData(textFont: string): MTextTestCase[] {
  * @remarks
  * Sample geometry is taken from a real DXF entity inserted near
  * `(38425645.89, 4069531.44)`. Two MText blocks (SHX + mesh) are separated by
- * {@link LargeCoordinatesExample.TEXT_DELIMITER} in the textarea. The rebase
- * variant moves insertion to the origin; the no-rebase variant deliberately
- * preserves survey coordinates to demonstrate float32 precision loss.
+ * {@link LargeCoordinatesExample.TEXT_DELIMITER} in the textarea. Insertion stays at
+ * survey coordinates; the two blocks are stacked vertically for comparison.
  */
 export class LargeCoordinatesExample {
   /** Paragraph break sequence separating two editable MText blocks in the textarea. */
   static readonly TEXT_DELIMITER = '\\P\\P'
 
-  /** Default textarea content when either large-coordinate example button is clicked. */
+  /** Default textarea content when the large-coordinate example button is clicked. */
   static readonly DEFAULT_TEXT =
     '{\\Ftxt;SHX (476.473)}\\P\\P{\\Fsimkai;Mesh 大坐标 (476.473)}'
 
@@ -251,18 +250,7 @@ export class LargeCoordinatesExample {
    * @returns Whether `content` selects a large-coordinate demo path.
    */
   static isExample(content: string): boolean {
-    return (
-      content === 'largeCoordinatesRebase' ||
-      content === 'largeCoordinatesNoRebase'
-    )
-  }
-
-  /**
-   * @param content - Example marker passed to the render pipeline.
-   * @returns `true` only for the rebase-enabled variant.
-   */
-  static shouldRebase(content: string): boolean {
-    return content === 'largeCoordinatesRebase'
+    return content === 'largeCoordinates'
   }
 
   /**
@@ -342,18 +330,40 @@ export class LargeCoordinatesExample {
   }
 
   /**
-   * Vertically stacks rebased MText objects for side-by-side comparison in the viewport.
+   * Vertically stacks MText objects while preserving their large WCS insertion points.
    *
-   * @param mtextObjects - Rendered entities whose positions are rewritten in scene space.
+   * @param mtextObjects - Rendered entities whose insertion transform lives on the
+   *   render root (or another node with survey-scale coordinates).
    *
    * @remarks
-   * Uses a fixed row gap of 67 drawing units, centered around Y=0 when two blocks are present.
+   * Prevents SHX and mesh samples from overlapping at the exact same insertion point.
+   * Uses a fixed row gap of 67 drawing units, centered around the insertion Y.
    */
   static layoutPair(mtextObjects: MTextObject[]): void {
     const rowGap = 67
     const startY = ((mtextObjects.length - 1) * rowGap) / 2
+    const threshold = 1e5
+
     mtextObjects.forEach((obj, index) => {
-      obj.position.set(0, startY - index * rowGap, 0)
+      const offsetY = startY - index * rowGap
+      let applied = false
+
+      obj.traverse(child => {
+        if (
+          Math.abs(child.position.x) > threshold ||
+          Math.abs(child.position.y) > threshold
+        ) {
+          child.position.y += offsetY
+          child.updateMatrix()
+          applied = true
+        }
+      })
+
+      if (!applied) {
+        obj.position.y += offsetY
+        obj.updateMatrix()
+      }
+
       obj.updateMatrixWorld(true)
     })
   }
