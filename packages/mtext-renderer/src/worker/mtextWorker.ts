@@ -294,7 +294,7 @@ function serializeChildren(root: THREE.Object3D): {
   rootWorldInverse.copy(root.matrixWorld).invert()
 
   root.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
+    if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
       const geometry = child.geometry
       const material = child.material
 

@@ -783,7 +783,10 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       return
     }
 
-    if (object instanceof THREE.Line || object instanceof THREE.Mesh) {
+    if (
+      object instanceof THREE.LineSegments ||
+      object instanceof THREE.Mesh
+    ) {
       const geometry = object.geometry
       if (!geometry.userData?.isDecoration) {
         if (geometry.boundingBox === null) {
