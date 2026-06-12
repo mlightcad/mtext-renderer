@@ -46,6 +46,20 @@ describe('resolveMTextWrapWidth', () => {
 
     expect(resolveMTextWrapWidth(mtextData)).toBe(Number.POSITIVE_INFINITY)
   })
+
+  it('replaces absurdly large declared widths with a content estimate', () => {
+    const mtextData = {
+      text: '{(474.410)}',
+      height: 4.0222404674496,
+      width: 128_307_003.20375
+    }
+
+    const estimated = estimateMTextWrapWidth(mtextData.text, mtextData.height)
+
+    expect(resolveMTextWrapWidth(mtextData)).toBe(estimated)
+    expect(resolveMTextWrapWidth(mtextData)).toBeLessThan(1_000)
+    expect(mtextData.width).toBe(128_307_003.20375)
+  })
 })
 
 describe('estimateMTextWrapWidth', () => {
