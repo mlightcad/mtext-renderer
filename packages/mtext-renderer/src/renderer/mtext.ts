@@ -344,17 +344,21 @@ export class MText extends THREE.Object3D {
       position: shapeData.position,
       rotation: shapeData.rotation,
       directionVector: shapeData.directionVector,
-      attachmentPoint: MTextAttachmentPoint.BaselineLeft,
       drawingDirection: MTextFlowDirection.BOTTOM_TO_TOP,
       collectCharBoxes: false
     }
-    return this.finalizePlacement(object, placementData, layoutHeight)
+    return this.finalizePlacement(object, placementData, layoutHeight, { enforceAnchorToZero: true })
   }
 
+  /**
+   * 
+   * @param options.enforceAnchorToZero For SHAPE entities, the insertion anchor is always the entity's local (0, 0).
+   */
   private finalizePlacement(
     object: THREE.Object3D,
     mtextData: MTextData,
-    layoutHeight: number
+    layoutHeight: number,
+    options?: { enforceAnchorToZero?: boolean }
   ) {
     // When the caller does not pre-declare the text width (e.g. AcDbText
     // and AcDbAttribute, which let the renderer's own font metrics drive
@@ -381,10 +385,12 @@ export class MText extends THREE.Object3D {
       bbox,
       mtextData.drawingDirection
     )
-    const anchorPoint = this.calculateAnchorPoint(
-      anchorMetrics,
-      mtextData.attachmentPoint
-    )
+    const anchorPoint = options?.enforceAnchorToZero
+      ? { x: 0, y: 0 }
+      : this.calculateAnchorPoint(
+          anchorMetrics,
+          mtextData.attachmentPoint
+        )
     object.userData.logicalBounds = {
       minX: anchorMetrics.minX + anchorPoint.x,
       maxX: anchorMetrics.maxX + anchorPoint.x,
