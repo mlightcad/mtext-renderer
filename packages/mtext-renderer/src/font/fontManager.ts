@@ -1,3 +1,4 @@
+import { ShxFontData, ShxFontType } from '@mlightcad/shx-parser'
 import * as THREE from 'three'
 
 import { FontCacheManager } from '../cache'
@@ -600,6 +601,16 @@ export class FontManager {
   getFontType(fontName: string): FontType | undefined {
     const font = this.loadedFontMap.get(fontName.toLowerCase())
     return font?.type
+  }
+
+  /**
+   * Gets the type of the SHX font. Such as BIGFONT, SHAPES, UNIFONT.
+   * @param fontName - The name of the font
+   * @returns The type of the SHX font, or undefined if the specified font is not a SHX font
+   */
+  getShxFontType(fontName: string): ShxFontType | undefined {
+    const font = this.loadedFontMap.get(fontName.toLowerCase())
+    return font?.type === 'shx' ? (font.data as ShxFontData).header.fontType : undefined
   }
 
   /**

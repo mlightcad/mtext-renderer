@@ -5,6 +5,7 @@ import {
   MTextParagraphAlignment,
   MTextParser
 } from '@mlightcad/mtext-parser'
+import { ShxFontType } from '@mlightcad/shx-parser'
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
@@ -347,18 +348,23 @@ export class MText extends THREE.Object3D {
       drawingDirection: MTextFlowDirection.BOTTOM_TO_TOP,
       collectCharBoxes: false
     }
-    return this.finalizePlacement(object, placementData, layoutHeight, { enforceAnchorToZero: true })
+    return this.finalizePlacement(
+      object,
+      placementData,
+      layoutHeight,
+      { shxFontType: this._fontManager.getShxFontType(style.font) }
+    )
   }
 
   /**
    * 
-   * @param options.enforceAnchorToZero For SHAPE entities, the insertion anchor is always the entity's local (0, 0).
+   * @param options.shxFontType The type of SHX font.
    */
   private finalizePlacement(
     object: THREE.Object3D,
     mtextData: MTextData,
     layoutHeight: number,
-    options?: { enforceAnchorToZero?: boolean }
+    options?: { shxFontType?: ShxFontType }
   ) {
     // When the caller does not pre-declare the text width (e.g. AcDbText
     // and AcDbAttribute, which let the renderer's own font metrics drive
@@ -385,12 +391,15 @@ export class MText extends THREE.Object3D {
       bbox,
       mtextData.drawingDirection
     )
-    const anchorPoint = options?.enforceAnchorToZero
-      ? { x: 0, y: 0 }
-      : this.calculateAnchorPoint(
-          anchorMetrics,
-          mtextData.attachmentPoint
-        )
+
+    let anchorPoint = { x: 0, y: 0 }
+    // For SHAPE entities, the insertion anchor is always the entity's local (0, 0).
+    if (options?.shxFontType === ShxFontType.SHAPES) {
+      anchorPoint = { x: 0, y: 0 }
+    } else {
+      anchorPoint = this.calculateAnchorPoint(anchorMetrics, mtextData.attachmentPoint)
+    }
+
     object.userData.logicalBounds = {
       minX: anchorMetrics.minX + anchorPoint.x,
       maxX: anchorMetrics.maxX + anchorPoint.x,
@@ -441,7 +450,9 @@ export class MText extends THREE.Object3D {
     // Keep insertion coordinates out of glyph vertices. Large drawing
     // positions are applied as object transforms after local anchor offsets.
     let rotateAngle = mtextData.rotation || 0
-    if (mtextData.directionVector) {
+    // SHAPES entity does not have MText’s direction property.
+    // Only rotation, so direction cannot be computed from directionVector.
+    if (mtextData.directionVector && options?.shxFontType !== ShxFontType.SHAPES) {
       const dv = mtextData.directionVector
       const vec = new THREE.Vector3(dv.x, dv.y, dv.z)
       const v = vec.clone().cross(AxisX)
