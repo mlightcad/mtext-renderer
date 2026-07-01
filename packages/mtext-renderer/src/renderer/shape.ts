@@ -6,7 +6,6 @@ import { StyleManager } from './styleManager'
 import {
   ColorSettings,
   createDefaultColorSettings,
-  MTextAttachmentPoint,
   MTextFlowDirection,
   MTextLayout,
   ShapeData,
@@ -107,7 +106,6 @@ export class Shape extends THREE.Object3D {
       position: this._shapeData.position,
       rotation: this._shapeData.rotation,
       directionVector: this._shapeData.directionVector,
-      attachmentPoint: MTextAttachmentPoint.BaselineLeft,
       drawingDirection: MTextFlowDirection.BOTTOM_TO_TOP,
       collectCharBoxes: false
     }
