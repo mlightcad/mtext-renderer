@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FontData } from '../../src/font/font'
 import { FontFactory } from '../../src/font/fontFactory'
 import { FontManager } from '../../src/font/fontManager'
+import { MeshFont } from '../../src/font/meshFont'
 import { ShxFont } from '../../src/font/shxFont'
 import { MText } from '../../src/renderer/mtext'
 import {
@@ -27,7 +28,19 @@ async function loadShx(name: string, file: string): Promise<ShxFont> {
   return FontFactory.instance.createFont(fontData) as ShxFont
 }
 
-function registerFont(name: string, font: ShxFont) {
+async function loadMeshFont(name: string, file: string): Promise<MeshFont> {
+  const response = await fetch(FONT_BASE + file)
+  if (!response.ok) throw new Error(`Failed to fetch ${file}`)
+  const fontData: FontData = {
+    name,
+    type: 'mesh',
+    data: await response.arrayBuffer(),
+    alias: [name]
+  }
+  return FontFactory.instance.createFont(fontData) as MeshFont
+}
+
+function registerFont(name: string, font: ShxFont | MeshFont) {
   const key = name.toLowerCase()
   font.names.add(key)
   ;(
@@ -125,6 +138,81 @@ describe('controlCode example %%1326@600 (integration)', () => {
       const gap132ToSix = sixBox!.box.min.x - ch132Box!.box.max.x
       expect(gap132ToSix).toBeGreaterThan(1.5)
       expect(boxes.map(entry => entry.char).join('')).toContain('6@600')
+    },
+    120_000
+  )
+})
+
+/** MTEXT contents from Drawing1.dwg handles 51E / 51B (ISO hole callouts). */
+const DRAWING1_MTEXT_51E =
+  '4-\\fAIGDT|b0|i0;\\H5.0000;n\\f仿宋|b0|i0;\\H5.0000;7 通孔\\P\\fAIGDT|b0|i0;\\H5.0000;v\\f仿宋|b0|i0;\\H5.0000; \\fAIGDT|b0|i0;\\H5.0000;n\\f仿宋|b0|i0;\\H5.0000;11 \\fAIGDT|b0|i0;\\H5.0000;x\\f仿宋|b0|i0;\\H5.0000; 6'
+
+describe('Drawing1 ISO hole callout MText (\\fAIGDT inline font)', () => {
+  const styleManager = {
+    unsupportedTextStyles: {},
+    getMeshBasicMaterial: vi
+      .fn()
+      .mockReturnValue(new THREE.MeshBasicMaterial()),
+    getLineBasicMaterial: vi.fn().mockReturnValue(new THREE.LineBasicMaterial())
+  }
+
+  afterEach(() => {
+    FontManager.instance.release()
+    FontManager.instance.enableFontCache = true
+  })
+
+  it(
+    'renders handle 51E with loaded AIGDT.ttf instead of default text fallback',
+    async () => {
+      FontManager.instance.release()
+      FontManager.instance.enableFontCache = false
+      FontManager.instance.setDefaultFonts('minimal')
+
+      registerFont('aigdt', await loadMeshFont('aigdt', 'AIGDT.ttf'))
+      registerFont('txt', await loadShx('txt', 'txt.shx'))
+
+      expect(FontManager.instance.findAndReplaceFont('AIGDT')).toBe('AIGDT')
+
+      const nShape = FontManager.instance.getCharShape('n', 'AIGDT', 5)
+      expect(nShape).toBeDefined()
+      expect((nShape!.toGeometry().attributes.position?.count ?? 0) > 0).toBe(
+        true
+      )
+
+      const style: TextStyle = {
+        name: 'standard',
+        standardFlag: 0,
+        fixedTextHeight: 5,
+        widthFactor: 1,
+        obliqueAngle: 0,
+        textGenerationFlag: 0,
+        lastHeight: 5,
+        font: 'txt',
+        bigFont: ''
+      }
+
+      const mtext = new MText(
+        {
+          text: DRAWING1_MTEXT_51E,
+          height: 5,
+          width: 0,
+          position: { x: 0, y: 0, z: 0 },
+          attachmentPoint: MTextAttachmentPoint.TopLeft,
+          collectCharBoxes: true
+        },
+        style,
+        styleManager as any,
+        FontManager.instance as any,
+        createDefaultColorSettings()
+      )
+
+      mtext.syncDraw()
+
+      const rendered = collectCharBoxes(mtext).map(entry => entry.char).join('')
+      expect(rendered).toContain('n')
+      expect(rendered).toContain('v')
+      expect(rendered).toContain('x')
+      expect(rendered).toContain('通孔')
     },
     120_000
   )

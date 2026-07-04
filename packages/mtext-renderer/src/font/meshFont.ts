@@ -24,6 +24,12 @@ interface MeshGlyph {
 }
 
 /**
+ * Windows Symbol / PDF private-use offset used by GDT TrueType fonts such as
+ * AIGDT.ttf. AutoCAD types ASCII `n` but the glyph lives at U+F06E, not U+006E.
+ */
+const SYMBOL_FONT_ENCODING_OFFSET = 0xf000
+
+/**
  * Represents the data structure for mesh-based fonts.
  * Extends the base ThreeFontData interface with additional properties specific to mesh fonts.
  */
@@ -176,6 +182,32 @@ export class MeshFont extends BaseFont {
   }
 
   /**
+   * Resolves the opentype lookup character for a drawing character.
+   * Tries Unicode first, then Symbol encoding (0xF000 + ASCII) for GDT fonts.
+   */
+  private opentypeLookupChar(char: string): string {
+    if (!this.opentypeFont || char.length !== 1) {
+      return char
+    }
+
+    const code = char.charCodeAt(0)
+    const directIndex = this.opentypeFont.charToGlyphIndex(char)
+    if (directIndex != null && directIndex > 0) {
+      return char
+    }
+
+    if (code >= 0x20 && code <= 0x7e) {
+      const symbolChar = String.fromCharCode(SYMBOL_FONT_ENCODING_OFFSET + code)
+      const symbolIndex = this.opentypeFont.charToGlyphIndex(symbolChar)
+      if (symbolIndex != null && symbolIndex > 0) {
+        return symbolChar
+      }
+    }
+
+    return char
+  }
+
+  /**
    * Whether opentype maps the character to a real glyph (not .notdef at index 0).
    *
    * opentype.js ≤1.3.4: {@link OpenTypeFont.hasChar} used `charToGlyphIndex(c) !== null`,
@@ -185,7 +217,8 @@ export class MeshFont extends BaseFont {
    */
   private opentypeHasGlyph(char: string): boolean {
     if (!this.opentypeFont) return false
-    const index = this.opentypeFont.charToGlyphIndex(char)
+    const lookupChar = this.opentypeLookupChar(char)
+    const index = this.opentypeFont.charToGlyphIndex(lookupChar)
     return index != null && index > 0
   }
 
@@ -222,7 +255,8 @@ export class MeshFont extends BaseFont {
     }
 
     if (this.opentypeHasGlyph(char)) {
-      const glyph = this.opentypeFont.charToGlyph(char)
+      const lookupChar = this.opentypeLookupChar(char)
+      const glyph = this.opentypeFont.charToGlyph(lookupChar)
       if (!glyph || !glyph.path) return
 
       const round = Math.round
