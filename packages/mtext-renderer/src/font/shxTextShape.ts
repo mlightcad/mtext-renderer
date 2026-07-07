@@ -1,4 +1,4 @@
-import { Point, ShxFontType, ShxShape } from '@mlightcad/shx-parser'
+import { Point, resolveAdvanceWidth, ShxShape } from '@mlightcad/shx-parser'
 import * as THREE from 'three'
 
 import { BaseTextShape } from './baseTextShape'
@@ -17,86 +17,64 @@ export class ShxTextShape extends BaseTextShape {
   private readonly fontSize: number
 
   /**
-   * Creates a new instance of ShxTextShape
-   * @param code - The character code this shape represents
-   * @param shape - The shape data for this character
+   * Creates a new SHX text shape wrapper.
+   * @param code - The character code represented by this shape.
+   * @param fontSize - The font size used to resolve the shape advance width.
+   * @param shape - The parsed SHX shape data.
+   * @param font - The SHX font instance that owns the shape.
    */
   constructor(code: number, fontSize: number, shape: ShxShape, font: ShxFont) {
     super()
+
     this.fontSize = fontSize
     this.shape = shape
     this.font = font
     this.code = code
-    this.width = this.resolveAdvanceWidth(shape)
+    this.width = resolveAdvanceWidth(shape, font.data, fontSize)
   }
 
   /**
-   * Resolves horizontal advance for SHX glyphs.
-   *
-   * - Unicode / shapes fonts: prefer the pen-down end X (lastPoint), which matches
-   *   AutoCAD's advance for single-byte SHX.
-   * - Big fonts (CJK): advance is the scaled font cell width (content.width /
-   *   content.height * fontSize). Glyph bbox or lastPoint can be narrower than the
-   *   cell; using only bbox caused successive Han characters to overlap visually.
+   * Computes the width of the shape from its bounding box.
+   * @returns The width of the shape's bounding box.
    */
-  private resolveAdvanceWidth(shape: ShxShape): number {
-    const bboxWidth = this.calcWidth()
-    const penAdvance = shape.lastPoint?.x ?? 0
-    const bboxMaxX = shape.bbox.maxX
-    const fontType = this.font.data.header.fontType
-    const { width: cellWidth, height: cellHeight } = this.font.data.content
-    const scaledCellWidth =
-      cellHeight > 0 ? (cellWidth / cellHeight) * this.fontSize : 0
-
-    if (fontType === ShxFontType.BIGFONT) {
-      return Math.max(bboxWidth, penAdvance, scaledCellWidth)
-    }
-
-    if (fontType === ShxFontType.UNIFONT) {
-      // Unifont GDT symbols (e.g. amgdt %%132) may draw past lastPoint; when
-      // ink extends beyond the pen advance, also enforce the font cell width.
-      const inkExtent = Math.max(bboxWidth, bboxMaxX)
-      let advance = Math.max(penAdvance, inkExtent)
-      if (inkExtent > penAdvance + 1e-6) {
-        advance = Math.max(advance, scaledCellWidth)
-      }
-      return advance
-    }
-
-    return penAdvance > 0 ? penAdvance : bboxWidth
-  }
-
   protected calcWidth() {
     const box = this.shape.bbox
+
     return box.maxX - box.minX
   }
 
+  /**
+   * Returns a translated copy of this shape.
+   * @param offset - The offset to apply to the shape.
+   * @returns A new shape shifted by the given offset.
+   */
   offset(offset: Point) {
-    return new ShxTextShape(
-      this.code,
-      this.fontSize,
-      this.shape.offset(offset),
-      this.font
-    )
+    return new ShxTextShape(this.code, this.fontSize, this.shape.offset(offset), this.font)
   }
 
   /**
-   * Converts the text shape to a THREE.js geometry
-   * @returns A THREE.js BufferGeometry representing the text shape
+   * Converts the text shape to a THREE.js geometry.
+   * @returns A BufferGeometry representing the text shape.
    */
   toGeometry() {
     let geometry = this.font.cache.getGeometry(this.code, this.fontSize)
+
     if (geometry == null) {
       const polylines = this.shape.polylines
       const positions = []
       const indices = []
       let index = 0
+
       geometry = new THREE.BufferGeometry()
+
       for (let i = 0; i < polylines.length; i++) {
         const line = polylines[i]
+
         for (let j = 0; j < line.length; j++) {
           const coord = line[j]
+
           positions.push(coord.x, coord.y, 0)
+
           if (j === line.length - 1) {
             index++
           } else {
@@ -105,12 +83,13 @@ export class ShxTextShape extends BaseTextShape {
           }
         }
       }
-      geometry.setAttribute(
-        'position',
-        new THREE.Float32BufferAttribute(positions, 3)
-      )
+
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
       geometry.setIndex(indices)
     }
+
     return geometry
   }
 }
+
+

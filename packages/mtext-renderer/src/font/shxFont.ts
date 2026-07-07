@@ -2,6 +2,7 @@ import {
   Point,
   ShxFont as ShxFontInternal,
   ShxFontData,
+  type ShxFontMetrics,
   ShxFontType,
   ShxShape
 } from '@mlightcad/shx-parser'
@@ -11,6 +12,9 @@ import { BaseFont } from './baseFont'
 import { FontData } from './font'
 import { ShxTextShape } from './shxTextShape'
 
+/** Scaled SHX font layout metrics (cap height, cell width, etc.) from `@mlightcad/shx-parser`. */
+export type { ShxFontMetrics } from '@mlightcad/shx-parser'
+
 /**
  * ShxFont is a class that extends BaseFont and represents a SHX font.
  * It provides methods to generate shapes for text and retrieve character shapes.
@@ -18,155 +22,204 @@ import { ShxTextShape } from './shxTextShape'
 export class ShxFont extends BaseFont {
   /** Internal shx font instance */
   private readonly font: ShxFontInternal
+
+  /** The type of font; always `'shx'`. */
   public readonly type = 'shx'
+
+  /** Parsed SHX font data used for glyph lookup and layout metrics. */
   public readonly data: ShxFontData
 
+  /**
+   * Creates a new SHX font wrapper.
+   * @param fontData - Font metadata and binary SHX data used to initialize the font.
+   */
   constructor(fontData: FontData) {
     super(fontData)
+
     this.font = new ShxFontInternal(fontData.data as ShxFontData | ArrayBuffer)
     this.data = this.font.fontData
   }
 
   /**
-   * Return true if this font contains glyph of the specified character. Otherwise, return false.
-   * @param char - The character to check
-   * @returns True if this font contains glyph of the specified character. Otherwise, return false.
+   * Returns whether the font contains a glyph for the given character.
+   * @param char - The character to look up.
+   * @returns True if the font contains the character; otherwise, false.
    */
   hasChar(char: string): boolean {
     const code = this.getCode(char)
+
     return this.font.hasChar(code)
   }
 
   /**
-   * Return true if this font contains glyph of the specified character code. Otherwise, return false.
-   * @param code - The character code to check
-   * @returns True if this font contains glyph of the specified character code. Otherwise, return false.
+   * Returns whether the font contains a glyph for the given character code.
+   * @param code - The character code to look up.
+   * @returns True if the font contains the code point; otherwise, false.
    */
   hasCode(code: number): boolean {
     return this.font.hasChar(code)
   }
 
   /**
-   * Horizontal advance for the space character (ASCII 32) at the given size.
-   * Uses the SHX glyph pen advance when defined; otherwise falls back to half the
-   * text height (common for AutoCAD SHX fonts).
+   * Computes the horizontal advance for a space at the requested size.
+   * @param size - The requested font size.
+   * @returns The width of the space advance.
    */
-  getSpaceAdvance(size: number) {
+  getSpaceAdvance(size: number): number {
     const spaceShape = this.getCharShape(' ', size)
+
     if (spaceShape) {
       return spaceShape.width
     }
+
     return size * 0.5
   }
 
-  generateShapes(text: string, size: number) {
+  /**
+   * Converts a text string into a list of SHX text shapes.
+   * @param text - The text to convert.
+   * @param size - The requested font size.
+   * @returns An array of generated SHX text shapes.
+   */
+  generateShapes(text: string, size: number): ShxTextShape[] {
     const shapes: ShxTextShape[] = []
     let hOffset = 0.0
+
     for (let i = 0; i < text.length; i++) {
       const char = text[i]
+
       if (char === ' ') {
         hOffset += this.getSpaceAdvance(size)
         continue
       }
+
       const shape = this.getCharShape(char, size)
+
       if (!shape) {
         hOffset += this.getSpaceAdvance(size)
         this.addUnsupportedChar(char)
-        // const notFund = this.getNotFoundTextShape(size);
-        // notFund && shapes.push(notFund);
         continue
       }
+
       shapes.push(shape.offset(new Point(hOffset, 0)))
       hOffset += shape.width
     }
+
     return shapes
   }
 
   /**
-   * SHX font always has fixed scale factor 1.
-   * @returns Always return value 1
+   * Returns the scale factor used by the SHX font implementation.
+   * @returns Always returns 1 for SHX fonts.
    */
-  getScaleFactor() {
+  getScaleFactor(): number {
     return 1
   }
 
   /**
-   * Gets the shape data for a specific character at a given size.
-   * If the font type is BIGFONT, please use getCodeShape to get the shape data
-   * because the character code for BIGFONT isn't unicode.
-   * @param char - The character to get the shape for
-   * @param size - The desired size of the character
-   * @returns The shape data for the character, or undefined if not found
+   * Gets the scaled layout metrics for the font at the requested size.
+   * @param size - The requested font size.
+   * @returns The SHX font metrics for the given size.
    */
-  public getCharShape(char: string, size: number) {
-    return this.getCodeShape(this.getCode(char), size)
+  getFontMetrics(size: number): ShxFontMetrics {
+    return this.font.getFontMetrics(size)
+  }
+
+  /**
+   * Gets the shape data for a specific character at a given size.
+   * @param char - The character to look up.
+   * @param size - The requested font size.
+   * @returns The shape data for the character, or undefined if not found.
+   */
+  public getCharShape(char: string, size: number): ShxTextShape | undefined {
+    const code = this.getCode(char)
+
+    return this.getCodeShape(code, size)
   }
 
   /**
    * Gets the shape data for a specific character code at a given size.
-   * The passed code must the code stored in font instead of unicode.
-   * - Unicode shx font uses unicode as character code.
-   * - Bigfont uses a custom encoding for double-byte characters.
-   * @param code - The character code to get the shape for
-   * @param size - The desired size of the character
-   * @returns The shape data for the character code, or undefined if not found
+   * @param code - The character code to look up.
+   * @param size - The requested font size.
+   * @returns The shape data for the code, or undefined if not found.
    */
-  public getCodeShape(code: number, size: number) {
-    const shape = this.font.getCharShape(code, size)
-    if (!shape || !ShxFont.hasRenderableStrokes(shape)) {
+  public getCodeShape(code: number, size: number): ShxTextShape | undefined {
+    const layout = this.font.getLayoutCharShape(code, size)
+
+    if (!layout || !ShxFont.hasRenderableStrokes(layout)) {
       return undefined
     }
-    return new ShxTextShape(code, size, shape, this)
+
+    return new ShxTextShape(code, size, layout, this)
   }
 
   /**
-   * Gets the shape data for a named SHX shape at a given size.
-   *
-   * Shape names are matched case-insensitively via the underlying SHX parser.
+   * Gets the shape data for a named SHX shape at the requested size.
+   * @param name - The SHX shape name to look up.
+   * @param size - The requested font size.
+   * @returns The matching shape, or undefined if unavailable.
    */
-  public getShapeByName(name: string, size: number) {
-    const shape = this.font.getShapeByName(name, size)
-    if (!shape || !ShxFont.hasRenderableStrokes(shape)) {
+  public getShapeByName(name: string, size: number): ShxTextShape | undefined {
+    const code = this.font.getShapeCode(name)
+
+    if (code === undefined) {
       return undefined
     }
-    const code = this.font.getShapeCode(name)
-    return new ShxTextShape(code ?? 0, size, shape, this)
+
+    return this.getCodeShape(code, size)
   }
 
-  /** True when the SHX glyph has drawable strokes or a non-zero pen advance. */
+  /**
+   * Checks whether a parsed SHX shape contains renderable strokes.
+   * @param shape - The shape to inspect.
+   * @returns True when the shape has at least one renderable segment.
+   */
   private static hasRenderableStrokes(shape: ShxShape): boolean {
     if (shape.polylines.some(line => line.length >= 2)) {
       return true
     }
-    // Advance-only glyphs (e.g. space) have no stroke geometry but valid width.
+
     return (shape.lastPoint?.x ?? 0) > 0
   }
 
   /**
-   * For an unsupported char, use "？" as a replacement.
+   * Gets the fallback text shape used for missing characters.
+   * @param size - The requested font size.
+   * @returns The fallback shape, or undefined if it cannot be built.
    */
-  public getNotFoundTextShape(size: number) {
-    const char =
-      this.font.fontData.header.fontType === ShxFontType.BIGFONT ? '？' : '?'
+  public getNotFoundTextShape(size: number): ShxTextShape | undefined {
+    const char = this.font.fontData.header.fontType === ShxFontType.BIGFONT ? '？' : '?'
+
     return this.getCharShape(char, size)
   }
 
   /**
-   * Gets encoded code of the specified character according to font character encoding
-   * @param char - The character to get its code
-   * @returns Returns encoded code of the specified character
+   * Resolves the internal SHX character code for a given Unicode character.
+   * @param char - The input character.
+   * @returns The internal SHX code used for lookup.
    */
-  private getCode(char: string) {
+  private getCode(char: string): number {
     const fontType = this.font.fontData.header.fontType
+    let code: number
+
     if (fontType === ShxFontType.BIGFONT && this.encoding) {
       const buffer = iconv.encode(char[0], this.encoding)
-      if (buffer.length === 1) {
-        return buffer[0]
-      } else {
-        return (buffer[0] << 8) | buffer[1]
-      }
+
+      code = buffer.length === 1 ? buffer[0] : (buffer[0] << 8) | buffer[1]
     } else {
-      return char.charCodeAt(0)
+      code = char.charCodeAt(0)
     }
+
+    if (fontType === ShxFontType.BIGFONT && code >= 0x20 && code <= 0x7e) {
+      const halfwidth = 0xa380 + code
+
+      if (this.font.hasChar(halfwidth)) {
+        return halfwidth
+      }
+    }
+
+    return code
   }
 }
+
+
