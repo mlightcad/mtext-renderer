@@ -1,9 +1,14 @@
-import { getAdvanceWidth, Point, ShxFont as ShxFontInternal } from '@mlightcad/shx-parser'
+import {
+  InkWidthAdvanceStrategy,
+  Point,
+  ShxFont as ShxFontInternal
+} from '@mlightcad/shx-parser'
 import { describe, expect, it } from 'vitest'
 
 import { FontData } from '../../src/font/font'
 import { FontFactory } from '../../src/font/fontFactory'
 import { ShxFont } from '../../src/font/shxFont'
+import { ShxTextShape } from '../../src/font/shxTextShape'
 
 const FONT_BASE = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
 
@@ -19,9 +24,13 @@ async function loadAehalf(): Promise<ShxFont> {
   return FontFactory.instance.createFont(fontData) as ShxFont
 }
 
+function expectedInkAdvance(shape: ShxTextShape, cellWidth: number): number {
+  return InkWidthAdvanceStrategy.computeAdvance(shape.shape, cellWidth)
+}
+
 describe('aehalf punctuation spacing in renderer', () => {
   it(
-    'uses cell width advance for quote and tilde with moderate ink gaps',
+    'uses center-origin ink advance for quote and tilde with moderate ink gaps',
     async () => {
       const font = await loadAehalf()
       const size = 30
@@ -35,7 +44,7 @@ describe('aehalf punctuation spacing in renderer', () => {
 
       for (const code of [34, 126]) {
         const shape = font.getCodeShape(code, size)!
-        expect(shape.width).toBeCloseTo(cellWidth)
+        expect(shape.width).toBeCloseTo(expectedInkAdvance(shape, cellWidth))
       }
 
       let cursor = 0
@@ -55,14 +64,15 @@ describe('aehalf punctuation spacing in renderer', () => {
   )
 
   it(
-    'uses cell width advance for each digit in 2180',
+    'uses center-origin ink advance for each digit in 2180',
     async () => {
       const font = await loadAehalf()
       const size = 30
       const cellWidth = font.getFontMetrics(size).cellWidth
 
       for (const ch of '2180') {
-        expect(font.getCharShape(ch, size)!.width).toBeCloseTo(cellWidth)
+        const shape = font.getCharShape(ch, size)!
+        expect(shape.width).toBeCloseTo(expectedInkAdvance(shape, cellWidth))
       }
 
       const placed = font.generateShapes('2180', size)
@@ -84,7 +94,7 @@ describe('aehalf punctuation spacing in renderer', () => {
 
       for (const ch of [';', ':', '(', ')', ',', '.']) {
         const shape = font.getCharShape(ch, size)!
-        expect(shape.width).toBeCloseTo(metrics.cellWidth)
+        expect(shape.width).toBeCloseTo(expectedInkAdvance(shape, metrics.cellWidth))
       }
 
       const letterA = font.getCharShape('A', size)!
@@ -96,14 +106,11 @@ describe('aehalf punctuation spacing in renderer', () => {
       const rawInternal = new ShxFontInternal(await quoteResponse.arrayBuffer())
       const rawQuote = rawInternal.getCharShape(34, size)!
       rawInternal.release()
-      expect(quote.shape.bbox.minY).toBeCloseTo(
-        rawQuote.bbox.minY + metrics.capHeight,
-        0
-      )
+      expect(quote.shape.bbox.minY).toBeCloseTo(rawQuote.bbox.minY, 0)
 
       for (const ch of 'gjpq') {
         const shape = font.getCharShape(ch, size)!
-        expect(shape.shape.bbox.minY).toBeCloseTo(0, 0)
+        expect(shape.shape.bbox.minY).toBeLessThanOrEqual(0)
       }
 
       const semicolon = font.getCharShape(';', size)!
@@ -111,6 +118,22 @@ describe('aehalf punctuation spacing in renderer', () => {
         .getCharShape('A', size)!
         .offset(new Point(semicolon.width, 0))
       const gap = placedA.shape.bbox.minX - semicolon.shape.bbox.maxX
+      expect(gap).toBeGreaterThan(0)
+    },
+    120_000
+  )
+
+  it(
+    'does not overlap comma and the following letter in Aa,Bb',
+    async () => {
+      const font = await loadAehalf()
+      const size = 30
+      const placed = font.generateShapes('Aa,Bb', size)
+      expect(placed).toHaveLength(5)
+
+      const comma = placed[2]
+      const letterB = placed[3]
+      const gap = letterB.shape.bbox.minX - comma.shape.bbox.maxX
       expect(gap).toBeGreaterThan(0)
     },
     120_000

@@ -47,7 +47,6 @@ export class ShxFont extends BaseFont {
    */
   hasChar(char: string): boolean {
     const code = this.getCode(char)
-
     return this.font.hasChar(code)
   }
 
@@ -67,11 +66,9 @@ export class ShxFont extends BaseFont {
    */
   getSpaceAdvance(size: number): number {
     const spaceShape = this.getCharShape(' ', size)
-
     if (spaceShape) {
       return spaceShape.width
     }
-
     return size * 0.5
   }
 
@@ -87,7 +84,6 @@ export class ShxFont extends BaseFont {
 
     for (let i = 0; i < text.length; i++) {
       const char = text[i]
-
       if (char === ' ') {
         hOffset += this.getSpaceAdvance(size)
         continue
@@ -133,7 +129,6 @@ export class ShxFont extends BaseFont {
    */
   public getCharShape(char: string, size: number): ShxTextShape | undefined {
     const code = this.getCode(char)
-
     return this.getCodeShape(code, size)
   }
 
@@ -145,11 +140,9 @@ export class ShxFont extends BaseFont {
    */
   public getCodeShape(code: number, size: number): ShxTextShape | undefined {
     const layout = this.font.getLayoutCharShape(code, size)
-
     if (!layout || !ShxFont.hasRenderableStrokes(layout)) {
       return undefined
     }
-
     return new ShxTextShape(code, size, layout, this)
   }
 
@@ -161,11 +154,9 @@ export class ShxFont extends BaseFont {
    */
   public getShapeByName(name: string, size: number): ShxTextShape | undefined {
     const code = this.font.getShapeCode(name)
-
     if (code === undefined) {
       return undefined
     }
-
     return this.getCodeShape(code, size)
   }
 
@@ -178,7 +169,6 @@ export class ShxFont extends BaseFont {
     if (shape.polylines.some(line => line.length >= 2)) {
       return true
     }
-
     return (shape.lastPoint?.x ?? 0) > 0
   }
 
@@ -189,7 +179,6 @@ export class ShxFont extends BaseFont {
    */
   public getNotFoundTextShape(size: number): ShxTextShape | undefined {
     const char = this.font.fontData.header.fontType === ShxFontType.BIGFONT ? '？' : '?'
-
     return this.getCharShape(char, size)
   }
 
@@ -204,7 +193,6 @@ export class ShxFont extends BaseFont {
 
     if (fontType === ShxFontType.BIGFONT && this.encoding) {
       const buffer = iconv.encode(char[0], this.encoding)
-
       code = buffer.length === 1 ? buffer[0] : (buffer[0] << 8) | buffer[1]
     } else {
       code = char.charCodeAt(0)
@@ -212,7 +200,6 @@ export class ShxFont extends BaseFont {
 
     if (fontType === ShxFontType.BIGFONT && code >= 0x20 && code <= 0x7e) {
       const halfwidth = 0xa380 + code
-
       if (this.font.hasChar(halfwidth)) {
         return halfwidth
       }
@@ -221,5 +208,4 @@ export class ShxFont extends BaseFont {
     return code
   }
 }
-
 

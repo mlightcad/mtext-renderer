@@ -1,4 +1,9 @@
-import { getAdvanceWidth, Point, ShxFont as ShxFontInternal } from '@mlightcad/shx-parser'
+import {
+  getAdvanceWidth,
+  InkWidthAdvanceStrategy,
+  Point,
+  ShxFont as ShxFontInternal
+} from '@mlightcad/shx-parser'
 import { describe, expect, it } from 'vitest'
 
 import { FontData } from '../../src/font/font'
@@ -113,7 +118,7 @@ describe('hztxt glyph alignment in renderer', () => {
 
 describe('unifont narrow punctuation advance in renderer', () => {
   it(
-    'uses cell width advance for tssdeng comma without pen vector',
+    'uses center-origin ink advance for tssdeng comma without pen vector',
     async () => {
       const response = await fetch(FONT_BASE + 'tssdeng.shx')
       if (!response.ok) return
@@ -125,8 +130,11 @@ describe('unifont narrow punctuation advance in renderer', () => {
       }
       const font = FontFactory.instance.createFont(fontData) as ShxFont
       const size = 16
+      const cellWidth = font.getFontMetrics(size).cellWidth
       const comma = font.getCharShape(',', size)!
-      expect(comma.width).toBeCloseTo(font.getFontMetrics(size).cellWidth)
+      expect(comma.width).toBeCloseTo(
+        InkWidthAdvanceStrategy.computeAdvance(comma.shape, cellWidth)
+      )
     },
     120_000
   )

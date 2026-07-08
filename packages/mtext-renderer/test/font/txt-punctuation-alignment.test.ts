@@ -1,4 +1,4 @@
-import { Point } from '@mlightcad/shx-parser'
+import { InkWidthAdvanceStrategy, Point } from '@mlightcad/shx-parser'
 import { describe, expect, it } from 'vitest'
 
 import { FontData } from '../../src/font/font'
@@ -21,7 +21,7 @@ async function loadTxt(): Promise<ShxFont> {
 
 describe('txt.shx punctuation alignment in renderer', () => {
   it(
-    'uses full cell advance for comma and hyphen in txt.shx',
+    'lays out comma and hyphen on the baseline band in txt.shx',
     async () => {
       const font = await loadTxt()
       const size = 16
@@ -30,17 +30,22 @@ describe('txt.shx punctuation alignment in renderer', () => {
       const hyphen = font.getCharShape('-', size)!
       const hyphenGeometry = hyphen.toGeometry()
       hyphenGeometry.computeBoundingBox()
-      expect(hyphenGeometry.boundingBox!.min.y).toBeCloseTo(metrics.capHeight, 0)
-      expect(hyphenGeometry.boundingBox!.max.y).toBeCloseTo(metrics.capHeight, 0)
-      expect(hyphen.width).toBeCloseTo(metrics.cellWidth)
+      expect(hyphenGeometry.boundingBox!.min.y).toBeCloseTo(metrics.capHeight / 2, 0)
+      expect(hyphenGeometry.boundingBox!.max.y).toBeCloseTo(metrics.capHeight / 2, 0)
+      expect(hyphen.width).toBeCloseTo(
+        InkWidthAdvanceStrategy.computeAdvance(hyphen.shape, metrics.cellWidth)
+      )
 
       const comma = font.getCharShape(',', size)!
-      expect(comma.width).toBeCloseTo(metrics.cellWidth)
+      const commaGeometry = comma.toGeometry()
+      commaGeometry.computeBoundingBox()
+      expect(commaGeometry.boundingBox!.max.y).toBeLessThanOrEqual(metrics.descenderHeight)
+      expect(comma.width).toBeCloseTo(
+        InkWidthAdvanceStrategy.computeAdvance(comma.shape, metrics.cellWidth)
+      )
 
       const letterG = font.getCharShape('G', size)!
       const placedG = letterG.offset(new Point(comma.width, 0))
-      const commaGeometry = comma.toGeometry()
-      commaGeometry.computeBoundingBox()
       const gGeometry = placedG.toGeometry()
       gGeometry.computeBoundingBox()
       const gap =
