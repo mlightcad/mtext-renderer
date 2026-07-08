@@ -21,7 +21,7 @@ export const EXAMPLE_TEXTS = {
   color:
     '{\\C0;By Block}\\P{\\C1;Red Text}\\P{\\C2;Yellow Text}\\P{\\C3;Green Text}\\P{\\C4;Cyan Text}\\P{\\C5;Blue Text}\\P{\\C6;Magenta Text}\\P{\\C7;White Text}\\P{\\C256;By Layer}\\P{\\c16761035;Pink (0x0FFC0CB)}\\PRestore ByLayer\\P\\C1;Old Context Color: Red, {\\C2; New Context Color: Yellow, } Restored Context Color: Red',
   /** SHX, BigFont, and TrueType font switches with CJK samples. */
-  font: '{\\C1;\\W2;\\FSimSun;SimSun 宋体}\\P{\\F仿宋_gb2312;SimFang 仿宋（面积、材料、8、①④⑧⑩⑫㉔㉚）}\\P{\\C2;\\W0.5;\\FArial;Arial Text}\\P{\\C3;30;\\Faehalf.shx;SHX Text “250~280”}\\P{\\C4;\\Fgbcbig.shx;东亚字符集字体}\\P{\\C5;\\Q1;\\FSimHei;SimHei Text，黑体}\\P{\\C6;\\Q0.5;\\FSimKai;SimKai 楷体}',
+  font: '{\\C1;\\W2;\\FSimSun;SimSun 宋体}\\P{\\F仿宋_gb2312;SimFang 仿宋（面积、材料、8、①④⑧⑩⑫㉔㉚）}\\P{\\Faigdt;r}{\\Fgdt;n} 0.05 {\\Fhztxt;一致性~“2.2,G1、01-1。”}\\P{\\Ftxt;“2.2,G101-1(*!#@+-;:{}[]<>)”}\\P{\\C2;\\W0.5;\\FArial;Arial Text}\\P{\\C3;30;\\Ftssdeng;1024\\Faehalf.shx;Aa,Bb.Cc:Dd;Ee?Ff*Gg!Hh@Ii#Jj$Kk%Ll Mm&Nn*Oo(Pp) "2510~2180"}\\P{\\C4;\\Fgbcbig.shx;东亚字符集字体}\\P{\\C5;\\Q1;\\FSimHei;SimHei Text，黑体}\\P{\\C6;\\Q0.5;\\FSimKai;SimKai 楷体}',
   /** Demonstrates default-font preset fallback chains (text + symbol). */
   defaultFonts:
     '{\\C1;Primary \\Ftxt;txt (SHX) — Latin: Hello %%c50}\\P{\\C2;CJK falls back via preset chain: 材料 装车 直径 你好}\\P{\\C3;Symbol %%c %%d %%p — may use gdt in chain}\\P{\\C4;Switch preset above and re-render to compare fallback order}',

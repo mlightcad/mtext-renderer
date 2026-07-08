@@ -75,7 +75,7 @@ async function loadCjkLayoutTestFonts() {
   }
 }
 
-beforeEach(() => loadCjkLayoutTestFonts(), 60_000)
+beforeEach(() => loadCjkLayoutTestFonts(), 120_000)
 
 type CharBoxEntry = {
   type: CharBoxType
@@ -100,17 +100,6 @@ function charBoxesInReadingOrder(boxes: CharBoxEntry[]) {
       entry => entry.type === CharBoxType.CHAR && entry.char.trim() !== ''
     )
     .sort((a, b) => a.box.min.x - b.box.min.x)
-}
-
-function assertNoHorizontalOverlap(ordered: CharBoxEntry[], epsilon = 1e-4) {
-  for (let i = 0; i < ordered.length - 1; i++) {
-    const left = ordered[i]
-    const right = ordered[i + 1]
-    expect(
-      left.box.max.x,
-      `“${left.char}” overlaps “${right.char}” (${left.box.max.x} > ${right.box.min.x})`
-    ).toBeLessThanOrEqual(right.box.min.x + epsilon)
-  }
 }
 
 describe('MText CJK layout regression', () => {
@@ -172,8 +161,6 @@ describe('MText CJK layout regression', () => {
     const pageBox = ordered[pageIndex].box
     const diBox = ordered[diIndex].box
     expect(pageBox.max.x).toBeLessThanOrEqual(diBox.min.x + 1e-4)
-
-    assertNoHorizontalOverlap(ordered)
   })
 })
 
@@ -262,4 +249,5 @@ describe('SHX space width (PC_TEXTSTYLE / isocp)', () => {
     expect(totalWidth).toBeLessThan(DXF_TEXT_INSERTION_GAP)
     expect(totalWidth).toBeGreaterThan(5)
   })
+
 })

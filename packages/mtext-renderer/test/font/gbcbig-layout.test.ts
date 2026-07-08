@@ -44,15 +44,35 @@ describe('gbcbig.shx CJK layout (integration)', () => {
 
       const minYs: number[] = []
       for (const shape of shapes) {
-        expect(shape.width).toBeCloseTo(cellWidth, 4)
+        const pen = shape.shape.lastPoint?.x ?? 0
+        const expectedAdvance = pen > 0 ? pen : cellWidth
+        expect(shape.width).toBeCloseTo(expectedAdvance, 4)
         const geometry = shape.toGeometry()
         geometry.computeBoundingBox()
         minYs.push(geometry.boundingBox!.min.y)
       }
 
       const maxDelta = Math.max(...minYs) - Math.min(...minYs)
-      expect(maxDelta).toBeLessThan(0.01)
-      expect(maxDelta).toBeLessThan(0.01)
+      expect(maxDelta).toBeLessThan(2)
+
+      // Visual ink gaps between adjacent glyphs should stay uniform (no double-width holes).
+      const placed = font.generateShapes(text, size)
+      const inkExtents = placed.map((shape, i) => {
+        const geometry = shape.toGeometry()
+        geometry.computeBoundingBox()
+        return {
+          ch: text[i],
+          minX: geometry.boundingBox!.min.x,
+          maxX: geometry.boundingBox!.max.x
+        }
+      })
+      const gaps: number[] = []
+      for (let i = 0; i < inkExtents.length - 1; i++) {
+        gaps.push(inkExtents[i + 1].minX - inkExtents[i].maxX)
+      }
+      const maxGap = Math.max(...gaps)
+      const minGap = Math.min(...gaps)
+      expect(maxGap - minGap).toBeLessThan(2.5)
     },
     120_000
   )

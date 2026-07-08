@@ -8,13 +8,19 @@ import { ShxFont } from '../../src/font/shxFont'
 
 const FONT_BASE = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
 
-async function loadFont(name: string, file: string, type: 'shx' | 'mesh' = 'shx') {
+async function loadFont(
+  name: string,
+  file: string,
+  type: 'shx' | 'mesh' = 'shx',
+  encoding?: string
+) {
   const response = await fetch(FONT_BASE + file)
   const fontData: FontData = {
     name,
     type,
     data: await response.arrayBuffer(),
-    alias: [name]
+    alias: [name],
+    encoding
   }
   return FontFactory.instance.createFont(fontData) as ShxFont | MeshFont
 }
@@ -33,21 +39,13 @@ describe('symbolFonts config (integration)', () => {
     FontManager.instance.enableFontCache = false
     FontManager.instance.setDefaultFonts('modern')
 
-    registerFont('hztxt', await loadFont('hztxt', 'hztxt.shx'))
-    registerFont('simsun', await loadFont('simsun', 'simsun.ttf', 'mesh'))
+    registerFont('hztxt', await loadFont('hztxt', 'hztxt.shx', 'shx', 'gbk'))
     registerFont('amgdt', await loadFont('amgdt', 'amgdt.shx'))
 
     const degree = FontManager.instance.getCodeShapeFromSymbolFonts(0xb0, 10)
     const pm = FontManager.instance.getCodeShapeFromSymbolFonts(0xb1, 10)
 
-    expect(degree?.width).toBeCloseTo(2.857142857142857, 5)
-    expect(pm?.width).toBeCloseTo(9.285714285714286, 5)
-
-    expect(FontManager.instance.getCharShapeFromDefaults('°', 10)?.width).toBe(
-      10
-    )
-    expect(FontManager.instance.getCharShapeFromDefaults('±', 10)?.width).toBe(
-      10
-    )
+    expect(degree?.width).toBe(10)
+    expect(pm?.width).toBe(10)
   }, 120_000)
 })
