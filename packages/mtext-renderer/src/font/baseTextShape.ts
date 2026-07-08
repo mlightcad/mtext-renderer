@@ -16,4 +16,11 @@ export abstract class BaseTextShape extends THREE.Shape {
    * @returns A THREE.js BufferGeometry representing the text shape
    */
   abstract toGeometry(): THREE.BufferGeometry
+
+  /**
+   * Whether the shape has drawable stroke or mesh geometry (not advance-only).
+   */
+  hasStrokeGeometry(): boolean {
+    return this.width > 0
+  }
 }

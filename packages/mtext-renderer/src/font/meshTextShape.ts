@@ -67,12 +67,18 @@ export class MeshTextShape extends BaseTextShape {
       if (geometry.hasAttribute('normal')) {
         geometry.deleteAttribute('normal')
       }
-      return mergeVertices(geometry, 1e-6)
+      geometry = mergeVertices(geometry, 1e-6)
+      this.font.cache.setGeometry(this.char.charCodeAt(0), this.fontSize, geometry)
     }
     if (!hasFinitePositions(geometry)) {
       return new THREE.BufferGeometry()
     }
     return geometry
+  }
+
+  /** @inheritdoc */
+  hasStrokeGeometry(): boolean {
+    return this.isFound && this.width > 0
   }
 
   /**

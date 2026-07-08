@@ -1,4 +1,7 @@
-import { ShxFontData, ShxFontType } from '@mlightcad/shx-parser'
+import {
+  ShxFontData,
+  ShxFontType
+} from '@mlightcad/shx-parser'
 import * as THREE from 'three'
 
 import { FontCacheManager } from '../cache'

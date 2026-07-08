@@ -12,6 +12,10 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { getColorByIndex } from '../common'
 import { FontManager } from '../font'
 import { BaseTextShape } from '../font/baseTextShape'
+import {
+  TextGeometryBuilder,
+  type TransformedLineGeometryEntry
+} from '../font/textGeometryBuilder'
 import { resolveMTextColor } from './colorUtils'
 import {
   LINE_SPACING_SCALE_FACTOR,
@@ -29,7 +33,20 @@ import {
   TextStyle
 } from './types'
 
+/** Reusable {@link THREE.Vector3} for bounding-box size calculations without per-call allocation. */
 const tempVector = /*@__PURE__*/ new THREE.Vector3()
+/** Identity matrix reused when line geometries need no additional transform. */
+const _identityMatrix = /*@__PURE__*/ new THREE.Matrix4()
+/** Reusable scale matrix for per-glyph width-factor transforms. */
+const _scaleMatrix = /*@__PURE__*/ new THREE.Matrix4()
+/** Reusable skew matrix for oblique/italic glyph shearing. */
+const _skewMatrix = /*@__PURE__*/ new THREE.Matrix4()
+/** Reusable scale matrix for mesh-font bold simulation. */
+const _boldMatrix = /*@__PURE__*/ new THREE.Matrix4()
+/** Reusable translation matrix for glyph placement. */
+const _translateMatrix = /*@__PURE__*/ new THREE.Matrix4()
+/** Reusable bounding box for transformed line-glyph hit testing. */
+const _charBox = /*@__PURE__*/ new THREE.Box3()
 
 /**
  * Options for formatting MText.
@@ -174,22 +191,39 @@ class RenderContext extends MTextContext {
 }
 
 /**
- * This class represents lines of texts.
+ * Converts parsed MText tokens into positioned THREE.js geometry.
+ *
+ * Owns line breaking, inline/paragraph formatting, stack fractions, alignment,
+ * and per-character bounding boxes used for picking.
  */
 export class MTextProcessor {
+  /** Active text style (font, height, oblique, big font, etc.). */
   private _style: TextStyle
+  /** Layer/block color resolution settings for ByLayer and ByBlock colors. */
   private _colorSettings: ColorSettings
+  /** Factory for mesh and line materials used when flushing geometry batches. */
   private _styleManager: StyleManager
+  /** Resolves font files, glyph shapes, and font-format-specific metrics. */
   private _fontManager: FontManager
+  /** Layout and formatting options supplied at construction time. */
   private _options: MTextFormatOptions
+  /** Accumulated vertical extent of completed lines, excluding the active line. */
   private _totalHeight: number
+  /** Horizontal pen position within the current visual line. */
   private _hOffset: number
+  /** Maximum logical pen advance seen across all processed visual lines. */
   private _maxLineAdvance: number
+  /** Vertical baseline position of the current visual line. */
   private _vOffset: number
+  /** Number of visual lines processed so far (1-based while rendering). */
   private _lineCount: number
+  /** THREE.js objects created for the current visual line before alignment. */
   private _currentLineObjects: THREE.Object3D[]
+  /** Saved {@link RenderContext} snapshots for nested `{}` formatting groups. */
   private _contextStack: RenderContext[] = []
+  /** Active inline formatting and font metric state. */
   private _currentContext: RenderContext
+  /** Largest font size encountered on the current visual line. */
   private _maxFontSize: number = 0
   /**
    * The current horizontal alignment for the paragraph.
@@ -201,20 +235,34 @@ export class MTextProcessor {
    * so it persists until explicitly changed by another paragraph alignment command.
    */
   private _currentHorizontalAlignment: MTextParagraphAlignment
+  /** Whether the most recently appended char box targeted mesh or line geometry. */
   private _lastCharBoxTarget: 'mesh' | 'line' | undefined
+  /** True once a visible glyph has been placed on the current visual line. */
   private _lineHasRenderableChar: boolean
+  /**
+   * Font size recorded when advancing from an empty line; used to correct
+   * vertical position when the first glyph on the next line uses a different height.
+   */
   private _pendingEmptyLineFontSizeAdjust?: number
+  /** Vertical layout metadata for each completed visual line. */
   private _lineLayouts: LineLayout[]
+  /** Character indices where automatic visual line breaks occurred. */
   private _lineBreakIndices: number[]
+  /** Running count of logical characters emitted into flushed geometry groups. */
   private _processedCharCount: number
-  // Paragraph properties
+  /** Line glyph entries collected for batch geometry merge within a style segment. */
+  private _lineBatchEntries: TransformedLineGeometryEntry[] = []
+  /** Current paragraph first-line indent in drawing units. */
   private _currentIndent: number = 0
+  /** Current paragraph left margin in drawing units. */
   private _currentLeftMargin: number = 0
+  /** Current paragraph right margin in drawing units. */
   private _currentRightMargin: number = 0
 
   /**
    * Construct one instance of this class and initialize some properties with default values.
    * @param style Input text style
+   * @param colorSettings Layer/block color resolution settings
    * @param styleManager Input text style manager instance
    * @param fontManager Input font manager instance
    * @param options Input formating options
@@ -276,14 +324,19 @@ export class MTextProcessor {
     this.initLineParams()
   }
 
+  /**
+   * Font manager used to resolve glyphs, shapes, and font metrics.
+   */
   get fontManager() {
     return this._fontManager
   }
 
+  /** Style manager used to create mesh and line materials. */
   get styleManager() {
     return this._styleManager
   }
 
+  /** Active CAD text style for the entity being rendered. */
   get textStyle() {
     return this._style
   }
@@ -445,6 +498,7 @@ export class MTextProcessor {
     return this._currentLineObjects
   }
 
+  /** Per-line vertical layout records accumulated during rendering. */
   get lineLayouts() {
     return this._lineLayouts
   }
@@ -455,6 +509,7 @@ export class MTextProcessor {
   get hOffset() {
     return this._hOffset
   }
+  /** @param value New horizontal pen position within the current line. */
   set hOffset(value: number) {
     this._hOffset = value
   }
@@ -465,22 +520,27 @@ export class MTextProcessor {
   get vOffset() {
     return this._vOffset
   }
+  /** @param value New vertical baseline position for the current line. */
   set vOffset(value: number) {
     this._vOffset = value
   }
 
+  /** Current paragraph first-line indent in drawing units. */
   get currentIndent() {
     return this._currentIndent
   }
 
+  /** Current paragraph left margin in drawing units. */
   get currentLeftMargin() {
     return this._currentLeftMargin
   }
 
+  /** Current paragraph right margin in drawing units. */
   get currentRightMargin() {
     return this._currentRightMargin
   }
 
+  /** Usable line width after subtracting left and right paragraph margins. */
   get maxLineWidth() {
     // The actual usable width for text in a line, considering margins
     return this.maxWidth - this._currentLeftMargin - this._currentRightMargin
@@ -488,7 +548,7 @@ export class MTextProcessor {
 
   /**
    * Process text format information
-   * @param item Input mtext inline codes
+   * @param item Inline formatting command or restore snapshot from the parser.
    */
   processFormat(item: ChangedProperties) {
     // When leaving a formatting group `{}`, parser emits a restore token with
@@ -566,6 +626,8 @@ export class MTextProcessor {
    * - width/height/tracking factors
    * - paragraph alignment and margins
    * - underline/overline/strike-through flags
+   *
+   * @param changes Full property snapshot to apply to the current render context.
    */
   private applyPropertyChanges(changes: ChangedProperties['changes']) {
     this.applyFontFaceChange(changes.fontFace)
@@ -780,6 +842,8 @@ export class MTextProcessor {
    * and starting a new line with indent applied.
    * @param geometries Current text geometries to process
    * @param lineGeometries Current line geometries to process
+   * @param meshCharBoxes Mesh char boxes to flush with the current line
+   * @param lineCharBoxes Line char boxes to flush with the current line
    * @param group The group to add processed geometries to
    */
   private startNewParagraph(
@@ -806,7 +870,9 @@ export class MTextProcessor {
   /**
    * Renders one SHX shape glyph for AutoCAD SHAPE entities.
    *
-   * The glyph is resolved by {@link shapeName} first, then by {@link shapeNumber}.
+   * @param shapeName Optional SHX shape name from the SHAPE entity.
+   * @param shapeNumber Optional SHX shape number from the SHAPE entity.
+   * @returns A single styled THREE.js object for the resolved shape, or `undefined` when lookup fails.
    */
   processShapeGlyph(
     shapeName?: string,
@@ -817,6 +883,7 @@ export class MTextProcessor {
       return undefined
     }
 
+    this._lineBatchEntries = []
     const geometries: THREE.BufferGeometry[] = []
     const lineGeometries: THREE.BufferGeometry[] = []
     const meshCharBoxes: CharBox[] = []
@@ -854,6 +921,16 @@ export class MTextProcessor {
     return object
   }
 
+  /**
+   * Resolves a SHX shape glyph by name and/or numeric code for SHAPE entities.
+   *
+   * Name lookup is attempted first; numeric lookup is used when the name is absent
+   * or does not match. Unlike MText, failed SHAPE lookups do not fall back to `?`.
+   *
+   * @param shapeName Optional SHX shape name.
+   * @param shapeNumber Optional SHX shape number.
+   * @returns Resolved shape and display label, or `undefined` when not found.
+   */
   private resolveShapeGlyph(
     shapeName?: string,
     shapeNumber?: number
@@ -896,19 +973,52 @@ export class MTextProcessor {
     meshCharBoxes: CharBox[],
     lineCharBoxes: CharBox[]
   ): number {
-    const geometry = shape.toGeometry()
-    geometry.scale(this.currentWidthFactor, 1, 1)
-    const charHeight = this.currentLayoutFontSize
+    const { matrix, obliqueExtraAdvance } = this.buildCharTransformMatrix(
+      charX,
+      charY,
+      this.currentLayoutFontSize
+    )
+    const canonical = shape.toGeometry()
+    this.appendCharGeometry(
+      shape,
+      label,
+      canonical,
+      matrix,
+      geometries,
+      meshCharBoxes,
+      lineCharBoxes
+    )
+
+    return (
+      shape.width * this.currentWidthFactor +
+      obliqueExtraAdvance * this.currentWidthFactor
+    )
+  }
+
+  /**
+   * Builds the world transform for one glyph (width factor, oblique, bold, translate).
+   *
+   * @param charX Horizontal glyph origin in drawing space.
+   * @param charY Vertical glyph origin in drawing space.
+   * @param charHeight Layout font height used for oblique advance calculation.
+   * @returns Composite transform matrix and extra horizontal advance introduced by oblique skew.
+   */
+  private buildCharTransformMatrix(
+    charX: number,
+    charY: number,
+    charHeight: number
+  ): { matrix: THREE.Matrix4; obliqueExtraAdvance: number } {
+    _scaleMatrix.makeScale(this.currentWidthFactor, 1, 1)
 
     let obliqueAngle = this._currentContext.oblique
     if (this._currentContext.italic) {
       obliqueAngle += 15
     }
+
     let obliqueExtraAdvance = 0
     if (obliqueAngle) {
       const angleRad = (obliqueAngle * Math.PI) / 180
-      const skewMatrix = new THREE.Matrix4()
-      skewMatrix.set(
+      _skewMatrix.set(
         1,
         Math.tan(angleRad),
         0,
@@ -926,53 +1036,116 @@ export class MTextProcessor {
         0,
         1
       )
-      geometry.applyMatrix4(skewMatrix)
       obliqueExtraAdvance = Math.tan(angleRad) * charHeight
+    } else {
+      _skewMatrix.identity()
     }
 
     const fontType = this.fontManager.getFontType(this.currentFont)
     if (this._currentContext.bold && fontType === 'mesh') {
-      geometry.scale(1.06, 1.06, 1)
+      _boldMatrix.makeScale(1.06, 1.06, 1)
+    } else {
+      _boldMatrix.identity()
     }
 
-    geometry.translate(charX, charY, 0)
-    geometries.push(geometry)
+    _translateMatrix.makeTranslation(charX, charY, 0)
 
-    if (this._options.collectCharBoxes !== false) {
-      geometry.userData.char = label
-      if (!geometry.boundingBox) {
-        geometry.computeBoundingBox()
-      }
-      const box = new THREE.Box3().copy(geometry.boundingBox!)
-      if (geometry instanceof THREE.ShapeGeometry) {
+    const matrix = new THREE.Matrix4()
+    matrix
+      .copy(_translateMatrix)
+      .multiply(_boldMatrix)
+      .multiply(_skewMatrix)
+      .multiply(_scaleMatrix)
+
+    return { matrix, obliqueExtraAdvance }
+  }
+
+  /**
+   * Appends one glyph's geometry to the active batch buffers and optional char boxes.
+   *
+   * Mesh fonts (`ShapeGeometry`) are transformed immediately; line fonts are queued in
+   * {@link _lineBatchEntries} for later merge via {@link TextGeometryBuilder.mergeLineGeometries}.
+   *
+   * @param shape Source text shape for the glyph.
+   * @param label Character label stored on geometry and char boxes.
+   * @param canonical Untransformed glyph geometry from the font.
+   * @param matrix World transform to apply to the glyph.
+   * @param geometries Accumulator for mesh (`ShapeGeometry`) primitives.
+   * @param meshCharBoxes Accumulator for mesh-glyph picking boxes.
+   * @param lineCharBoxes Accumulator for line-glyph picking boxes.
+   */
+  private appendCharGeometry(
+    shape: BaseTextShape,
+    label: string,
+    canonical: THREE.BufferGeometry,
+    matrix: THREE.Matrix4,
+    geometries: THREE.BufferGeometry[],
+    meshCharBoxes: CharBox[],
+    lineCharBoxes: CharBox[]
+  ): void {
+    if (canonical instanceof THREE.ShapeGeometry) {
+      const geometry = canonical.clone()
+      geometry.applyMatrix4(matrix)
+      geometries.push(geometry)
+
+      if (this._options.collectCharBoxes !== false) {
+        geometry.userData.char = label
+        if (!geometry.boundingBox) {
+          geometry.computeBoundingBox()
+        }
         meshCharBoxes.push({
           type: CharBoxType.CHAR,
-          box,
+          box: new THREE.Box3().copy(geometry.boundingBox!),
           char: label,
           children: []
         })
-      } else {
-        lineCharBoxes.push({
-          type: CharBoxType.CHAR,
-          box,
-          char: label,
-          children: []
-        })
+        this._lastCharBoxTarget = 'mesh'
       }
+      return
     }
 
-    return (
-      shape.width * this.currentWidthFactor +
-      obliqueExtraAdvance * this.currentWidthFactor
-    )
+    this._lineBatchEntries.push({ geometry: canonical, matrix })
+
+    if (this._options.collectCharBoxes !== false) {
+      if (!canonical.boundingBox) {
+        canonical.computeBoundingBox()
+      }
+      _charBox.copy(canonical.boundingBox!).applyMatrix4(matrix)
+      lineCharBoxes.push({
+        type: CharBoxType.CHAR,
+        box: new THREE.Box3().copy(_charBox),
+        char: label,
+        children: []
+      })
+      this._lastCharBoxTarget = 'line'
+    }
+  }
+
+  /**
+   * Creates a two-point line decoration geometry (underline, overline, strike-through).
+   *
+   * @param lineGeometries Accumulator for line-based decoration geometry.
+   * @param vertices Six floats: start `(x,y,z)` and end `(x,y,z)` in drawing space.
+   */
+  private pushDecorationLine(
+    lineGeometries: THREE.BufferGeometry[],
+    vertices: number[]
+  ): void {
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3))
+    geometry.setIndex([0, 1])
+    geometry.userData = { isDecoration: true }
+    lineGeometries.push(geometry)
   }
 
   /**
    * Render the specified texts
-   * @param item Input texts to render
+   * @param tokens Parsed MText token stream from the parser.
+   * @returns A {@link THREE.Group} containing merged line/mesh objects and layout metadata.
    */
   processText(tokens: Generator<MTextToken>) {
     this._lastCharBoxTarget = undefined
+    this._lineBatchEntries = []
     const geometries: THREE.BufferGeometry[] = []
     const lineGeometries: THREE.BufferGeometry[] = []
     const meshCharBoxes: CharBox[] = []
@@ -1077,7 +1250,11 @@ export class MTextProcessor {
       }
     }
 
-    if (geometries.length > 0 || lineGeometries.length > 0) {
+    if (
+      geometries.length > 0 ||
+      lineGeometries.length > 0 ||
+      this._lineBatchEntries.length > 0
+    ) {
       this.processGeometries(
         geometries,
         lineGeometries,
@@ -1111,6 +1288,19 @@ export class MTextProcessor {
     return group
   }
 
+  /**
+   * Flushes pending geometry and char boxes into a styled THREE.js object on `group`.
+   *
+   * When only char boxes exist (spaces, empty lines), creates a marker object with
+   * layout metadata and no visible geometry.
+   *
+   * @param geometries Pending mesh geometries for the current style segment.
+   * @param lineGeometries Pending line geometries and decorations for the current style segment.
+   * @param meshCharBoxes Mesh-glyph char boxes collected since the last flush.
+   * @param lineCharBoxes Line-glyph char boxes collected since the last flush.
+   * @param group Parent group receiving the created object.
+   * @param charBoxType Char-box classification stored on the flushed object.
+   */
   private processGeometries(
     geometries: THREE.BufferGeometry[],
     lineGeometries: THREE.BufferGeometry[],
@@ -1125,7 +1315,7 @@ export class MTextProcessor {
       charBoxType
     )
 
-    if (geometries.length > 0 || lineGeometries.length > 0) {
+    if (geometries.length > 0 || lineGeometries.length > 0 || this._lineBatchEntries.length > 0) {
       const object = this.toThreeObject(
         geometries,
         lineGeometries,
@@ -1137,6 +1327,7 @@ export class MTextProcessor {
       this._currentLineObjects.push(object)
       geometries.length = 0
       lineGeometries.length = 0
+      this._lineBatchEntries = []
       meshCharBoxes.length = 0
       lineCharBoxes.length = 0
       this._processedCharCount += finalCharCount
@@ -1155,6 +1346,15 @@ export class MTextProcessor {
     }
   }
 
+  /**
+   * Lays out and renders one parser word token, breaking to a new visual line when needed.
+   *
+   * @param word Character sequence for a single word token.
+   * @param geometries Mesh geometry accumulator for the active style segment.
+   * @param lineGeometries Line geometry accumulator for the active style segment.
+   * @param meshCharBoxes Mesh char-box accumulator.
+   * @param lineCharBoxes Line char-box accumulator.
+   */
   private processWord(
     word: string,
     geometries: THREE.BufferGeometry[],
@@ -1162,11 +1362,15 @@ export class MTextProcessor {
     meshCharBoxes: CharBox[],
     lineCharBoxes: CharBox[]
   ) {
-    // --- Word-level wrapping logic ---
-    // 1. Measure word width
+    const resolvedChars: Array<{ char: string; shape?: BaseTextShape }> = []
     let wordWidth = 0
+
     for (let i = 0; i < word.length; i++) {
-      const shape = this.getCharShape(word[i])
+      const char = word[i]
+      const resolved = this.resolveCharShape(char)
+      const shape = resolved?.shape
+      resolvedChars.push({ char, shape })
+
       if (shape) {
         if (
           this.currentHorizontalAlignment == MTextParagraphAlignment.DISTRIBUTED
@@ -1180,21 +1384,19 @@ export class MTextProcessor {
         wordWidth += this.currentBlankAdvance
       }
     }
-    // 2. If word would overflow, start a new line first (no indent for wrapped lines)
+
     if (this.hOffset + wordWidth > (this.maxLineWidth || Infinity)) {
-      // SPECIAL CASE:
-      // If this is the first word of the current paragraph (no rendered objects yet), do not wrap.
       if (this._vOffset <= 0 && this._currentLineObjects.length <= 0) {
         // Do nothing
       } else {
         this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
-        this.advanceToNextLine(false) // Start a new line for wrapped words
+        this.advanceToNextLine(false)
       }
     }
-    // 3. Render the word character by character
-    for (let i = 0; i < word.length; i++) {
+
+    for (const { char } of resolvedChars) {
       this.processChar(
-        word[i],
+        char,
         geometries,
         lineGeometries,
         meshCharBoxes,
@@ -1203,6 +1405,15 @@ export class MTextProcessor {
     }
   }
 
+  /**
+   * Renders an MText stack token (`\S...;`) as fraction, superscript, subscript, or tolerance layout.
+   *
+   * @param stackData Parser stack payload: `[numerator, denominator, divider]`.
+   * @param geometries Mesh geometry accumulator.
+   * @param lineGeometries Line geometry accumulator.
+   * @param meshCharBoxes Mesh char-box accumulator.
+   * @param lineCharBoxes Line char-box accumulator.
+   */
   private processStack(
     stackData: string[],
     geometries: THREE.BufferGeometry[],
@@ -1483,6 +1694,15 @@ export class MTextProcessor {
     }
   }
 
+  /**
+   * Records a zero-height char box for a stack fraction divider in logical char order.
+   *
+   * @param startX Horizontal start of the fraction bar in drawing space.
+   * @param currentVOffset Vertical baseline of the stack relative to the main line.
+   * @param width Horizontal extent of the fraction bar.
+   * @param meshCharBoxes Mesh char-box accumulator.
+   * @param lineCharBoxes Line char-box accumulator.
+   */
   private recordStackDivider(
     startX: number,
     currentVOffset: number,
@@ -1522,6 +1742,10 @@ export class MTextProcessor {
   /**
    * Convert a legacy top-anchored vOffset (used by stack/sub/sup logic) into
    * the current baseline-anchored coordinate system.
+   *
+   * @param legacyTopAlignedVOffset Vertical position in the legacy top-anchored system.
+   * @param fontSize Font size associated with the legacy offset.
+   * @returns Baseline-anchored vertical offset for the current layout model.
    */
   private convertTopAlignedVOffset(
     legacyTopAlignedVOffset: number,
@@ -1535,6 +1759,12 @@ export class MTextProcessor {
     )
   }
 
+  /**
+   * Advances the pen by one space width and optionally records a space char box.
+   *
+   * @param meshCharBoxes Mesh char-box accumulator.
+   * @param lineCharBoxes Line char-box accumulator.
+   */
   private processBlank(meshCharBoxes: CharBox[], lineCharBoxes: CharBox[]) {
     if (this._options.collectCharBoxes !== false) {
       const charX = this._hOffset
@@ -1570,6 +1800,12 @@ export class MTextProcessor {
     this._hOffset += this.currentBlankAdvance
   }
 
+  /**
+   * Records the character index where a visual line break occurs.
+   *
+   * @param meshCharBoxes Optional pending mesh char boxes included in the break index.
+   * @param lineCharBoxes Optional pending line char boxes included in the break index.
+   */
   private recordVisualLineBreak(
     meshCharBoxes?: CharBox[],
     lineCharBoxes?: CharBox[]
@@ -1584,6 +1820,9 @@ export class MTextProcessor {
     this._lineBreakIndices.push(breakIndex)
   }
 
+  /**
+   * Appends vertical layout metadata for the current visual line to {@link _lineLayouts}.
+   */
   private recordCurrentLineLayout() {
     const yBase =
       this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP
@@ -1596,6 +1835,15 @@ export class MTextProcessor {
     })
   }
 
+  /**
+   * Renders a percent-control-code symbol (`%%...`) or its literal fallback character.
+   *
+   * @param data Parser payload describing the percent symbol kind and lookup data.
+   * @param geometries Mesh geometry accumulator.
+   * @param lineGeometries Line geometry accumulator.
+   * @param meshCharBoxes Mesh char-box accumulator.
+   * @param lineCharBoxes Line char-box accumulator.
+   */
   private processPercentSymbol(
     data: PercentSymbolData,
     geometries: THREE.BufferGeometry[],
@@ -1619,6 +1867,19 @@ export class MTextProcessor {
     )
   }
 
+  /**
+   * Renders one character glyph, including decorations and line-break handling.
+   *
+   * Missing glyphs are treated as spaces. When the pen exceeds {@link maxLineWidth},
+   * a visual line break is recorded before placement.
+   *
+   * @param char Character to render.
+   * @param geometries Mesh geometry accumulator.
+   * @param lineGeometries Line geometry accumulator.
+   * @param meshCharBoxes Mesh char-box accumulator.
+   * @param lineCharBoxes Line char-box accumulator.
+   * @param shapeOverride Optional pre-resolved shape (used by percent symbols and stacks).
+   */
   private processChar(
     char: string,
     geometries: THREE.BufferGeometry[],
@@ -1627,7 +1888,10 @@ export class MTextProcessor {
     lineCharBoxes: CharBox[],
     shapeOverride?: BaseTextShape
   ): void {
-    const shape = shapeOverride ?? this.getCharShape(char)
+    const resolved = shapeOverride
+      ? { shape: shapeOverride, sourceFont: this.currentFont }
+      : this.resolveCharShape(char)
+    const shape = resolved?.shape
     if (!shape) {
       this.processBlank(meshCharBoxes, lineCharBoxes)
       return
@@ -1635,51 +1899,6 @@ export class MTextProcessor {
 
     if (!this._lineHasRenderableChar) {
       this.applyPendingEmptyLineYAdjust()
-    }
-
-    const geometry = shape.toGeometry()
-    geometry.scale(this.currentWidthFactor, 1, 1)
-    const charHeight = this.currentLayoutFontSize
-
-    // Apply oblique/skew transformation if needed (oblique or italic)
-    let obliqueAngle = this._currentContext.oblique
-    if (this._currentContext.italic) {
-      obliqueAngle += 15 // Simulate italic with a 15 degree skew
-    }
-    let obliqueExtraAdvance = 0
-    if (obliqueAngle) {
-      const angleRad = (obliqueAngle * Math.PI) / 180
-      const skewMatrix = new THREE.Matrix4()
-      skewMatrix.set(
-        1,
-        Math.tan(angleRad),
-        0,
-        0,
-        0,
-        1,
-        0,
-        0,
-        0,
-        0,
-        1,
-        0,
-        0,
-        0,
-        0,
-        1
-      )
-      geometry.applyMatrix4(skewMatrix)
-      // Skew shifts the top of the glyph forward; include that in line advance.
-      obliqueExtraAdvance = Math.tan(angleRad) * charHeight
-    }
-
-    // Simulate bold for mesh fonts by stroking the geometry
-    const fontType = this.fontManager.getFontType(this.currentFont)
-    if (this._currentContext.bold && fontType === 'mesh') {
-      // Expand geometry slightly to simulate bold
-      // This is a simple approach: scale up slightly from the center
-      const boldScale = 1.06 // 6% wider
-      geometry.scale(boldScale, boldScale, 1)
     }
 
     if (this.hOffset > (this.maxLineWidth || Infinity)) {
@@ -1692,9 +1911,24 @@ export class MTextProcessor {
       this.flowDirection == MTextFlowDirection.BOTTOM_TO_TOP
         ? this.vOffset
         : this.vOffset - this.currentLayoutFontSize
+    const charHeight = this.currentLayoutFontSize
     const charWidth = shape.width * this.currentWidthFactor
 
-    geometry.translate(charX, charY, 0)
+    const { matrix, obliqueExtraAdvance } = this.buildCharTransformMatrix(
+      charX,
+      charY,
+      charHeight
+    )
+    const canonical = shape.toGeometry()
+    this.appendCharGeometry(
+      shape,
+      char,
+      canonical,
+      matrix,
+      geometries,
+      meshCharBoxes,
+      lineCharBoxes
+    )
 
     const horizontalAdvance =
       shape.width * this.currentWidthFactor +
@@ -1708,112 +1942,66 @@ export class MTextProcessor {
         shape.width * this.currentWordSpace * this.currentWidthFactor +
         obliqueExtraAdvance * this.currentWidthFactor
     }
-    geometries.push(geometry)
     this._lineHasRenderableChar = true
 
-    if (this._options.collectCharBoxes !== false) {
-      geometry.userData.char = char
-      if (!geometry.boundingBox) {
-        geometry.computeBoundingBox()
-      }
-      const box = new THREE.Box3().copy(geometry.boundingBox!)
-      if (geometry instanceof THREE.ShapeGeometry) {
-        this._lastCharBoxTarget = 'mesh'
-        meshCharBoxes.push({
-          type: CharBoxType.CHAR,
-          box,
-          char,
-          children: []
-        })
-      } else {
-        this._lastCharBoxTarget = 'line'
-        lineCharBoxes.push({
-          type: CharBoxType.CHAR,
-          box,
-          char,
-          children: []
-        })
-      }
-    }
-
-    // Underline, overline, strikeThrough
     const lineOffset = charHeight * 0.05
     const lineZ = 0.001
     if (this._currentContext.underline) {
-      const underlineGeom = new THREE.BufferGeometry()
       const underlineY = charY - lineOffset
-      underlineGeom.setAttribute(
-        'position',
-        new THREE.BufferAttribute(
-          new Float32Array([
-            charX,
-            underlineY,
-            lineZ,
-            charX + charWidth,
-            underlineY,
-            lineZ
-          ]),
-          3
-        )
-      )
-      underlineGeom.setIndex([0, 1])
-      underlineGeom.userData = { isDecoration: true }
-      lineGeometries.push(underlineGeom)
+      this.pushDecorationLine(lineGeometries, [
+        charX,
+        underlineY,
+        lineZ,
+        charX + charWidth,
+        underlineY,
+        lineZ
+      ])
     }
 
     if (this._currentContext.overline) {
-      const overlineGeom = new THREE.BufferGeometry()
       const overlineY = charY + charHeight + lineOffset
-      overlineGeom.setAttribute(
-        'position',
-        new THREE.BufferAttribute(
-          new Float32Array([
-            charX,
-            overlineY,
-            lineZ,
-            charX + charWidth,
-            overlineY,
-            lineZ
-          ]),
-          3
-        )
-      )
-      overlineGeom.setIndex([0, 1])
-      overlineGeom.userData = { isDecoration: true }
-      lineGeometries.push(overlineGeom)
+      this.pushDecorationLine(lineGeometries, [
+        charX,
+        overlineY,
+        lineZ,
+        charX + charWidth,
+        overlineY,
+        lineZ
+      ])
     }
 
     if (this._currentContext.strikeThrough) {
-      const strikeGeom = new THREE.BufferGeometry()
       const strikeY = charY + charHeight / 2 - charHeight * 0.2
-      strikeGeom.setAttribute(
-        'position',
-        new THREE.BufferAttribute(
-          new Float32Array([
-            charX,
-            strikeY,
-            lineZ,
-            charX + charWidth,
-            strikeY,
-            lineZ
-          ]),
-          3
-        )
-      )
-      strikeGeom.setIndex([0, 1])
-      strikeGeom.userData = { isDecoration: true }
-      lineGeometries.push(strikeGeom)
+      this.pushDecorationLine(lineGeometries, [
+        charX,
+        strikeY,
+        lineZ,
+        charX + charWidth,
+        strikeY,
+        lineZ
+      ])
     }
   }
 
+  /**
+   * Applies horizontal alignment to the final visual line after all tokens are processed.
+   */
   private processLastLine() {
     this.processAlignment()
   }
 
+  /**
+   * Initializes line metric state from the current font and default text height.
+   */
   private initLineParams() {
     this.calcuateLineParams()
   }
 
+  /**
+   * Switches the active font family and recomputes derived line metrics.
+   *
+   * @param fontName Font family name from an inline `\f` command or text style.
+   */
   private changeFont(fontName: string) {
     let processedFontName = fontName
     if (this._options.removeFontExtension) {
@@ -1829,7 +2017,9 @@ export class MTextProcessor {
   }
 
   /**
-   * Calcuate font size, line space, line height and other parameters.
+   * Recalculates font scale factor and drawing-space font size from defaults and scale factors.
+   *
+   * @param newFontHeight Optional absolute font height override in drawing units.
    */
   private calcuateLineParams(newFontHeight?: number) {
     this._currentContext.fontScaleFactor = this.fontManager.getFontScaleFactor(
@@ -1845,23 +2035,31 @@ export class MTextProcessor {
   }
 
   /**
-   * Get text shape of the specified character
-   * @param char Input one character
-   * @returns Return the text shape of the specified character
+   * Returns whether a shape contributes visible stroke or mesh geometry for rendering.
+   *
+   * @param shape Candidate text shape.
+   * @param char Character being resolved (spaces may still be renderable when width > 0).
+   * @returns `true` when the shape should be drawn instead of replaced with the not-found glyph.
    */
   private shapeHasStrokeGeometry(shape: BaseTextShape, char: string): boolean {
-    if (typeof shape.toGeometry !== 'function') {
-      return shape.width > 0
-    }
-    const geometry = shape.toGeometry()
-    const vertexCount = geometry.getAttribute('position')?.count ?? 0
-    if (vertexCount > 0) {
+    const hasStroke =
+      typeof shape.hasStrokeGeometry === 'function'
+        ? shape.hasStrokeGeometry()
+        : shape.width > 0
+    if (hasStroke) {
       return true
     }
-    // SHX space glyphs often have advance width only (no stroke geometry).
     return char === ' ' && shape.width > 0
   }
 
+  /**
+   * Resolves the best available shape for a percent-control-code symbol.
+   *
+   * Tries symbol-font lookup codes first, then falls back to the primary font glyph.
+   *
+   * @param data Parser percent-symbol payload.
+   * @returns A renderable text shape for the symbol.
+   */
   private resolvePercentSymbolShape(
     data: PercentSymbolData
   ): BaseTextShape | undefined {
@@ -1880,26 +2078,60 @@ export class MTextProcessor {
     return this.getCharShape(data.char)
   }
 
-  private getCharShape(char: string) {
-    let shape = this.fontManager.getCharShape(
-      char,
-      this.currentFont,
-      this.currentFontSize
-    )
+  /**
+   * Resolves the text shape for one character using primary font, big font, defaults, and symbol fonts.
+   *
+   * Updates {@link _maxFontSize} when the active font size exceeds the current line maximum.
+   * Falls back to the not-found glyph when no renderable geometry is available.
+   *
+   * @param char Character to resolve.
+   * @returns Renderable text shape and the font that supplied it.
+   */
+  private resolveCharShape(
+    char: string
+  ): { shape: BaseTextShape; sourceFont: string } | undefined {
+    const primaryFont = this.currentFont
     const bigFont = this.textStyle.bigFont?.trim()
-    if (bigFont && !shape) {
+    let shape: BaseTextShape | undefined
+    let sourceFont = primaryFont
+
+    if (this.canProbeFontOwnership()) {
+      if (this.fontHasChar(primaryFont, char)) {
+        shape = this.fontManager.getCharShape(
+          char,
+          primaryFont,
+          this.currentFontSize
+        )
+      }
+    } else {
+      shape = this.fontManager.getCharShape(
+        char,
+        primaryFont,
+        this.currentFontSize
+      )
+    }
+
+    if (!shape && bigFont) {
       shape = this.fontManager.getCharShape(
         char,
         bigFont,
         this.currentFontSize
       )
+      if (shape) {
+        sourceFont = bigFont
+      }
     }
+
     if (!shape) {
       shape = this.fontManager.getCharShapeFromDefaults(
         char,
         this.currentFontSize
       )
+      if (shape) {
+        sourceFont = primaryFont
+      }
     }
+
     if (!shape) {
       const code = char.codePointAt(0)
       if (code != null) {
@@ -1907,19 +2139,57 @@ export class MTextProcessor {
           code,
           this.currentFontSize
         )
+        if (shape) {
+          sourceFont = primaryFont
+        }
       }
     }
+
     if (!shape || !this.shapeHasStrokeGeometry(shape, char)) {
       shape = this.fontManager.getNotFoundTextShape(this.currentFontSize)
+      if (!shape) {
+        return undefined
+      }
+      sourceFont = primaryFont
     }
 
-    // Store the maximum font size in current line
     if (this.currentFontSize > this._maxFontSize) {
       this._maxFontSize = this.currentFontSize
     }
-    return shape
+    return { shape, sourceFont }
   }
 
+  private canProbeFontOwnership(): boolean {
+    return typeof this.fontManager.getFontByName === 'function'
+  }
+
+  private fontHasChar(fontName: string, char: string): boolean {
+    const getFontByName = this.fontManager.getFontByName
+    if (typeof getFontByName !== 'function') {
+      return false
+    }
+    const font = getFontByName.call(this.fontManager, fontName, false)
+    return font?.hasChar(char) ?? false
+  }
+
+  /**
+   * Returns the renderable shape for one character, discarding font provenance metadata.
+   *
+   * @param char Character to resolve.
+   * @returns Renderable text shape, or `undefined` when resolution fails entirely.
+   */
+  private getCharShape(char: string) {
+    return this.resolveCharShape(char)?.shape
+  }
+
+  /**
+   * Finalizes the current visual line and starts the next one.
+   *
+   * Records layout metadata, resets horizontal pen state, updates vertical offset,
+   * and reapplies paragraph alignment to objects on the completed line.
+   *
+   * @param collectBreakIndex When `true`, records a char index for automatic wrapping.
+   */
   private advanceToNextLine(collectBreakIndex = true) {
     if (collectBreakIndex) {
       this.recordVisualLineBreak()
@@ -1950,12 +2220,25 @@ export class MTextProcessor {
     this._lineHasRenderableChar = false
   }
 
+  /**
+   * Updates {@link _maxLineAdvance} from the current line's horizontal pen position.
+   */
   private captureCurrentLineAdvance() {
     if (Number.isFinite(this._hOffset)) {
       this._maxLineAdvance = Math.max(this._maxLineAdvance, this._hOffset)
     }
   }
 
+  /**
+   * Counts logical characters represented by pending char boxes for break-index accounting.
+   *
+   * Stack char boxes collapse numerator, divider, and denominator into one logical token.
+   *
+   * @param meshCharBoxes Pending mesh char boxes.
+   * @param lineCharBoxes Pending line char boxes.
+   * @param charBoxType Classification of the geometry group being flushed.
+   * @returns Number of logical characters contributed by the pending boxes.
+   */
   private countFinalCharBoxes(
     meshCharBoxes: CharBox[],
     lineCharBoxes: CharBox[],
@@ -1988,6 +2271,10 @@ export class MTextProcessor {
     return prefixTokens.length + 1 + suffixTokens.length
   }
 
+  /**
+   * Corrects vertical offset when the first glyph on a line uses a different font size
+   * than the empty line that preceded it.
+   */
   private applyPendingEmptyLineYAdjust() {
     if (this._pendingEmptyLineFontSizeAdjust === undefined) return
     const fontDelta =
@@ -2002,6 +2289,13 @@ export class MTextProcessor {
     this._pendingEmptyLineFontSizeAdjust = undefined
   }
 
+  /**
+   * Chooses whether subsequent char boxes should attach to mesh or line geometry owners.
+   *
+   * @param meshCharBoxes Mesh char boxes already collected on the current line.
+   * @param lineCharBoxes Line char boxes already collected on the current line.
+   * @returns Target geometry family for the next char box.
+   */
   private resolveCharBoxTarget(
     meshCharBoxes: CharBox[],
     lineCharBoxes: CharBox[]
@@ -2015,7 +2309,9 @@ export class MTextProcessor {
   }
 
   /**
-   * Apply translation on the specified buffer geometries according to text alignment setting
+   * Applies translation on the specified buffer geometries according to text alignment setting.
+   *
+   * Translates both geometry vertices and attached char boxes on the current visual line.
    */
   private processAlignment() {
     const geometryEntries: Array<{
@@ -2153,6 +2449,10 @@ export class MTextProcessor {
    * AutoCAD uses each font's own space glyph metrics (SHX pen advance or TrueType
    * horizontal advance). A fixed fraction of text height (e.g. 50% for SHX) is only
    * a rough fallback when the font has no space definition.
+   *
+   * @param font Font family name.
+   * @param fontSize Font size in drawing units.
+   * @returns Horizontal advance width for one space character.
    */
   private calculateBlankWidthForFont(font: string, fontSize: number) {
     const spaceShape = this.fontManager.getCharShape(' ', font, fontSize)
@@ -2164,25 +2464,14 @@ export class MTextProcessor {
   }
 
   /**
-   * Merges line-based geometries for LineSegments. SHX glyphs use indexed
-   * BufferGeometry while fraction/divider decorations omit an index; normalize
-   * to non-indexed form so mergeGeometries accepts the batch.
-   */
-  private mergeLineGeometries(
-    geometries: THREE.BufferGeometry[]
-  ): THREE.BufferGeometry {
-    const normalized = geometries.map(geometry =>
-      geometry.index != null ? geometry.toNonIndexed() : geometry
-    )
-    return normalized.length > 1
-      ? (mergeGeometries(normalized) ?? normalized[0])
-      : normalized[0]
-  }
-
-  /**
-   * Convert the text shape geometries to three.js object
-   * @param geometries Input text shape geometries
-   * @returns Return three.js object created from the specified text shape geometries
+   * Converts pending mesh and line geometries into a styled THREE.js object.
+   *
+   * @param geometries Mesh (`ShapeGeometry`) primitives for the current style segment.
+   * @param lineGeometries Line primitives and decorations for the current style segment.
+   * @param meshCharBoxes Mesh char boxes to attach to the created object.
+   * @param lineCharBoxes Line char boxes to attach to the created object.
+   * @param charBoxType Char-box classification stored on the created object.
+   * @returns A mesh, line segments object, or small group containing both.
    */
   private toThreeObject(
     geometries: THREE.BufferGeometry[],
@@ -2219,13 +2508,20 @@ export class MTextProcessor {
       meshGroup.add(mesh)
     }
 
-    // All line-based geometries: SHX font + underline/overline/strikeThrough
-    const allLineGeoms = [
-      ...lineGeometries,
-      ...geometries.filter(g => !(g instanceof THREE.ShapeGeometry))
+    // All line-based geometries: SHX font batch + decorations + legacy line geoms
+    const lineEntries: TransformedLineGeometryEntry[] = [
+      ...this._lineBatchEntries,
+      ...lineGeometries.map(geometry => ({
+        geometry,
+        matrix: _identityMatrix
+      })),
+      ...geometries
+        .filter(g => !(g instanceof THREE.ShapeGeometry))
+        .map(geometry => ({ geometry, matrix: _identityMatrix }))
     ]
-    if (allLineGeoms.length > 0) {
-      const mergedLineGeom = this.mergeLineGeometries(allLineGeoms)
+
+    if (lineEntries.length > 0) {
+      const mergedLineGeom = TextGeometryBuilder.mergeLineGeometries(lineEntries)
       const lineMesh = new THREE.LineSegments(mergedLineGeom, lineMaterial)
       lineMesh.userData.bboxIntersectionCheck = true
       lineMesh.userData.charBoxType = charBoxType
@@ -2244,19 +2540,39 @@ export class MTextProcessor {
     }
   }
 
+  /**
+   * Multiplies the active font-size scale factor and recomputes line metrics.
+   *
+   * @param value Relative scale multiplier (for example `0.7` for superscript).
+   */
   private changeFontSizeScaleFactor(value: number) {
     this._currentContext.fontSizeScaleFactor *= value
     this.calcuateLineParams()
   }
 
+  /**
+   * Sets an absolute font height override and recomputes line metrics.
+   *
+   * @param value Font height in drawing units.
+   */
   private changeFontHeight(value: number) {
     this.calcuateLineParams(value)
   }
 
+  /**
+   * Resolves the initial text color from entity color settings.
+   *
+   * @returns Base color as `0xRRGGBB`.
+   */
   private resolveBaseColor(): number {
     return resolveMTextColor(this._colorSettings)
   }
 
+  /**
+   * Builds color settings for material creation from the current render context.
+   *
+   * @returns Color settings including the active inline color snapshot.
+   */
   private getMaterialColorSettings(): ColorSettings {
     return {
       byLayerColor: this._colorSettings.byLayerColor,
