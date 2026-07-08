@@ -1,3 +1,4 @@
+import { InkWidthAdvanceStrategy } from '@mlightcad/shx-parser'
 import { describe, expect, it } from 'vitest'
 
 import { FontData } from '../../src/font/font'
@@ -20,7 +21,7 @@ async function loadTssdeng(): Promise<ShxFont> {
 
 describe('tssdeng.shx digit spacing in renderer', () => {
   it(
-    'uses cell width advance for each digit in 1024 (AutoCAD model)',
+    'uses center-origin ink advance for each digit in 1024',
     async () => {
       const font = await loadTssdeng()
       const size = 30
@@ -35,7 +36,9 @@ describe('tssdeng.shx digit spacing in renderer', () => {
 
       for (const ch of '1024') {
         const glyph = font.getCharShape(ch, size)!
-        expect(glyph.width).toBeCloseTo(cellWidth)
+        expect(glyph.width).toBeCloseTo(
+          InkWidthAdvanceStrategy.computeAdvance(glyph.shape, cellWidth)
+        )
       }
     },
     120_000

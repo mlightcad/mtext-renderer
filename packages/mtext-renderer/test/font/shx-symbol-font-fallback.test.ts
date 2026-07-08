@@ -40,12 +40,15 @@ describe('symbolFonts config (integration)', () => {
     FontManager.instance.setDefaultFonts('modern')
 
     registerFont('hztxt', await loadFont('hztxt', 'hztxt.shx', 'shx', 'gbk'))
-    registerFont('amgdt', await loadFont('amgdt', 'amgdt.shx'))
+    const amgdt = await loadFont('amgdt', 'amgdt.shx')
+    registerFont('amgdt', amgdt)
 
-    const degree = FontManager.instance.getCodeShapeFromSymbolFonts(0xb0, 10)
-    const pm = FontManager.instance.getCodeShapeFromSymbolFonts(0xb1, 10)
+    const size = 10
+    const degree = FontManager.instance.getCodeShapeFromSymbolFonts(0xb0, size)
+    const pm = FontManager.instance.getCodeShapeFromSymbolFonts(0xb1, size)
 
-    expect(degree?.width).toBe(10)
-    expect(pm?.width).toBe(10)
+    expect(degree?.width).toBe(amgdt.getCodeShape(0xb0, size)!.width)
+    expect(pm?.width).toBe(amgdt.getCodeShape(0xb1, size)!.width)
+    expect(degree?.width).toBeGreaterThan(0)
   }, 120_000)
 })

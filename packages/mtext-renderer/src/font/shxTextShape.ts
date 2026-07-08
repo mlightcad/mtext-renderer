@@ -25,7 +25,6 @@ export class ShxTextShape extends BaseTextShape {
    */
   constructor(code: number, fontSize: number, shape: ShxShape, font: ShxFont) {
     super()
-
     this.fontSize = fontSize
     this.shape = shape
     this.font = font
@@ -39,7 +38,6 @@ export class ShxTextShape extends BaseTextShape {
    */
   protected calcWidth() {
     const box = this.shape.bbox
-
     return box.maxX - box.minX
   }
 
@@ -66,15 +64,12 @@ export class ShxTextShape extends BaseTextShape {
       let index = 0
 
       geometry = new THREE.BufferGeometry()
-
       for (let i = 0; i < polylines.length; i++) {
         const line = polylines[i]
 
         for (let j = 0; j < line.length; j++) {
           const coord = line[j]
-
           positions.push(coord.x, coord.y, 0)
-
           if (j === line.length - 1) {
             index++
           } else {
@@ -87,9 +82,7 @@ export class ShxTextShape extends BaseTextShape {
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
       geometry.setIndex(indices)
     }
-
     return geometry
   }
 }
-
 
