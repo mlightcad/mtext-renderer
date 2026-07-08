@@ -28,6 +28,10 @@ function expectedInkAdvance(shape: ShxTextShape, cellWidth: number): number {
   return InkWidthAdvanceStrategy.computeAdvance(shape.shape, cellWidth)
 }
 
+function expectedTrailingGap(cellWidth: number): number {
+  return cellWidth * 0.2
+}
+
 describe('aehalf punctuation spacing in renderer', () => {
   it(
     'uses center-origin ink advance for quote and tilde with moderate ink gaps',
@@ -118,7 +122,30 @@ describe('aehalf punctuation spacing in renderer', () => {
         .getCharShape('A', size)!
         .offset(new Point(semicolon.width, 0))
       const gap = placedA.shape.bbox.minX - semicolon.shape.bbox.maxX
-      expect(gap).toBeGreaterThan(0)
+      expect(gap).toBeCloseTo(expectedTrailingGap(metrics.cellWidth), 0)
+    },
+    120_000
+  )
+
+  it(
+    'keeps trailing padding after semicolon, colon, and digit one',
+    async () => {
+      const font = await loadAehalf()
+      const size = 30
+      const cellWidth = font.getFontMetrics(size).cellWidth
+      const expectedGap = expectedTrailingGap(cellWidth)
+
+      for (const [left, right] of [
+        [';', 'E'],
+        [':', 'D'],
+        ['1', '0'],
+      ] as const) {
+        const leftShape = font.getCharShape(left, size)!
+        const rightShape = font.getCharShape(right, size)!
+        const placedRight = rightShape.offset(new Point(leftShape.width, 0))
+        const gap = placedRight.shape.bbox.minX - leftShape.shape.bbox.maxX
+        expect(gap).toBeCloseTo(expectedGap, 0)
+      }
     },
     120_000
   )
