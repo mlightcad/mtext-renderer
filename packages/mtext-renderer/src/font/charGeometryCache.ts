@@ -1,13 +1,20 @@
 import * as THREE from 'three'
 
+import { LRUCache } from '../common/lruCache'
+
+const DEFAULT_MAX_CACHE_SIZE = 4096
+
 /**
  * Manages caching of font character geometries to improve text rendering performance.
+ * Uses an LRU policy so memory stays bounded when many (code, size) pairs are loaded.
  */
 export class CharGeometryCache {
-  private cache: Map<string, THREE.BufferGeometry>
+  private readonly cache: LRUCache<string, THREE.BufferGeometry>
 
-  constructor() {
-    this.cache = new Map()
+  constructor(maxSize = DEFAULT_MAX_CACHE_SIZE) {
+    this.cache = new LRUCache(maxSize, (_key, geometry) => {
+      geometry.dispose()
+    })
   }
 
   /**
@@ -33,10 +40,7 @@ export class CharGeometryCache {
    */
   getGeometry(code: number, size: number): THREE.BufferGeometry | undefined {
     const key = this.generateKey(code, size)
-    if (this.cache.has(key)) {
-      return this.cache.get(key)
-    }
-    return undefined
+    return this.cache.get(key)
   }
 
   /**
@@ -54,9 +58,6 @@ export class CharGeometryCache {
    * Dispose all cached geometries.
    */
   dispose(): void {
-    for (const geom of this.cache.values()) {
-      geom.dispose()
-    }
     this.cache.clear()
   }
 

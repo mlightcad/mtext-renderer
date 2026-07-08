@@ -15,6 +15,8 @@ export class ShxTextShape extends BaseTextShape {
   private readonly shape: ShxShape
   private readonly font: ShxFont
   private readonly fontSize: number
+  /** Lazily built geometry for this layout-ready shape instance. */
+  private geometry?: THREE.BufferGeometry
 
   /**
    * Creates a new SHX text shape wrapper.
@@ -55,34 +57,42 @@ export class ShxTextShape extends BaseTextShape {
    * @returns A BufferGeometry representing the text shape.
    */
   toGeometry() {
-    let geometry = this.font.cache.getGeometry(this.code, this.fontSize)
+    if (this.geometry != null) {
+      return this.geometry
+    }
 
-    if (geometry == null) {
-      const polylines = this.shape.polylines
-      const positions = []
-      const indices = []
-      let index = 0
+    const polylines = this.shape.polylines
+    const positions = []
+    const indices = []
+    let index = 0
 
-      geometry = new THREE.BufferGeometry()
-      for (let i = 0; i < polylines.length; i++) {
-        const line = polylines[i]
+    const geometry = new THREE.BufferGeometry()
+    for (let i = 0; i < polylines.length; i++) {
+      const line = polylines[i]
 
-        for (let j = 0; j < line.length; j++) {
-          const coord = line[j]
-          positions.push(coord.x, coord.y, 0)
-          if (j === line.length - 1) {
-            index++
-          } else {
-            indices.push(index, index + 1)
-            index++
-          }
+      for (let j = 0; j < line.length; j++) {
+        const coord = line[j]
+        positions.push(coord.x, coord.y, 0)
+        if (j === line.length - 1) {
+          index++
+        } else {
+          indices.push(index, index + 1)
+          index++
         }
       }
-
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-      geometry.setIndex(indices)
     }
+
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    geometry.setIndex(indices)
+    this.geometry = geometry
     return geometry
   }
-}
 
+  /** @inheritdoc */
+  hasStrokeGeometry(): boolean {
+    if (this.shape.polylines.some(line => line.length >= 2)) {
+      return true
+    }
+    return this.width > 0
+  }
+}
