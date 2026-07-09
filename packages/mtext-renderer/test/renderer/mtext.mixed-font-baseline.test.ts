@@ -135,8 +135,43 @@ describe('TSSD_Dimension mixed CJK and ASCII baseline', () => {
       const cjkBaseline = averageMinY(boxes, /[\u4e00-\u9fff]/)
       const digitBaseline = averageMinY(boxes, /[0-9.]/)
       const baselineGap = Math.abs(cjkBaseline - digitBaseline)
-      // tssdeng elevation digits sit slightly lower than hztxt CJK ink boxes at large heights.
-      expect(baselineGap).toBeLessThan(300 * 0.07)
+      expect(baselineGap).toBeLessThan(8)
+    },
+    120_000
+  )
+
+  it(
+    'keeps CJK and trailing elevation digits aligned for plain TEXT 四层楼面~55.350',
+    async () => {
+      FontManager.instance.release()
+      FontManager.instance.enableFontCache = false
+      await loadShx('tssdeng', 'tssdeng.shx')
+      await loadShx('hztxt', 'hztxt.shx', 'gbk')
+
+      const mtext = new MText(
+        {
+          text: '四层楼面~55.350',
+          height: 300,
+          width: 0,
+          widthFactor: 0.7,
+          position: { x: 0, y: 0, z: 0 },
+          attachmentPoint: MTextAttachmentPoint.TopLeft,
+          collectCharBoxes: true
+        },
+        style,
+        styleManager as any,
+        FontManager.instance as any,
+        createDefaultColorSettings()
+      )
+
+      mtext.syncDraw()
+
+      const boxes = collectCharBoxes(mtext)
+      expect(boxes.map(entry => entry.char).join('')).toBe('四层楼面~55.350')
+
+      const cjkBaseline = averageMinY(boxes, /[\u4e00-\u9fff]/)
+      const digitBaseline = averageMinY(boxes, /[0-9.]/)
+      expect(Math.abs(cjkBaseline - digitBaseline)).toBeLessThan(8)
     },
     120_000
   )

@@ -91,8 +91,8 @@ importers:
         specifier: ^1.5.0
         version: 1.5.0
       '@mlightcad/shx-parser':
-        specifier: ^1.4.4
-        version: 1.4.4
+        specifier: ^1.4.5
+        version: 1.4.5
       iconv-lite:
         specifier: ^0.7.0
         version: 0.7.0
@@ -998,8 +998,8 @@ packages:
   '@mlightcad/mtext-parser@1.5.0':
     resolution: {integrity: sha512-Yl/IQmSIGV1UUl/TyUptoOpNBunywcEE7yh4k9SFDXljHDTTI92VmqkVFxf4eYzhoWF4MNXIl4qgQV1P1Rbn6g==}
 
-  '@mlightcad/shx-parser@1.4.4':
-    resolution: {integrity: sha512-vsMZl3+Xp2Yh0HR+c8kMvZqvRYvp19ut+TnpZGe+IKjZ7lpWHqxyIpLjD01lU9pozt9XJihOMllLQHSwV5h+8Q==}
+  '@mlightcad/shx-parser@1.4.5':
+    resolution: {integrity: sha512-wFY0X7vnuq1IYdP6JRggb7LHcKho1P8zmcWGtXa6XYthwyKZCUoZCswTXr7J26pbzyhBB7KsiCcCL48iwIevdQ==}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -4470,7 +4470,7 @@ snapshots:
 
   '@mlightcad/mtext-parser@1.5.0': {}
 
-  '@mlightcad/shx-parser@1.4.4': {}
+  '@mlightcad/shx-parser@1.4.5': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
