@@ -36,8 +36,10 @@ jobs:
           registry-url: https://registry.npmjs.org
           scope: '@mlightcad'
 
+      # Trusted Publishing needs npm >= 11.5.1. Node 24 ships a compatible npm,
+      # but pin to npm 11 — npm 12 can break publish with "Cannot find module 'sigstore'".
       - name: Upgrade npm for Trusted Publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
