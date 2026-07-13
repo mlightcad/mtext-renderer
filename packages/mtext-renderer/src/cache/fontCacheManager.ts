@@ -2,6 +2,8 @@ import { type IDBPDatabase, openDB } from 'idb'
 
 import { getFileNameWithoutExtension } from '../common'
 import { FontData } from '../font'
+import { getSourceByteLength } from '../memory/estimateGeometryBytes'
+import type { IndexedDbFontCacheStats } from '../memory/types'
 import { DB_STORES, DbFontCacheSchema, dbSchema } from './schema'
 
 /**
@@ -91,6 +93,28 @@ export class FontCacheManager {
   public async getAll(): Promise<FontData[]> {
     const db = await this.getDatabase()
     return await db.getAll(DB_STORES.fonts)
+  }
+
+  /**
+   * Estimates IndexedDB font-blob storage size.
+   *
+   * @remarks
+   * This loads all cached font payloads into the JS heap temporarily via
+   * {@link getAll}, then measures each `data` ArrayBuffer.
+   */
+  public async getStorageStats(): Promise<IndexedDbFontCacheStats> {
+    const all = await this.getAll()
+    const fonts = all.map(font => ({
+      name: font.name,
+      type: font.type,
+      bytes: getSourceByteLength(font.data)
+    }))
+    const totalBytes = fonts.reduce((sum, font) => sum + font.bytes, 0)
+    return {
+      fontCount: fonts.length,
+      totalBytes,
+      fonts
+    }
   }
 
   /**

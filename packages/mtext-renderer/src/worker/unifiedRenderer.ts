@@ -1,4 +1,9 @@
+import { FontCacheManager } from '../cache'
 import { DefaultFontsPreset, FontLoadStatus, FontManager } from '../font'
+import {
+  collectIsolateMemoryStats,
+  type MemoryUsageReport,
+  readJsHeapStats} from '../memory'
 import { StyleManager } from '../renderer'
 import {
   ColorSettings,
@@ -219,6 +224,53 @@ export class UnifiedRenderer {
    */
   async getAvailableFonts(): Promise<{ fonts: Array<{ name: string[] }> }> {
     return this.renderer.getAvailableFonts()
+  }
+
+  /**
+   * Estimates memory used by mtext-renderer across the main thread and workers.
+   *
+   * @remarks
+   * `totalEstimatedBytes` covers **live** isolate memory only (fonts still loaded
+   * in memory, caches, materials). IndexedDB font blobs are reported separately
+   * under {@link MemoryUsageReport.indexedDbFontCache} and are **not** included
+   * in the total — they remain after {@link FontManager.release}. Disposed /
+   * released font caches are excluded. Application-held scene graphs are not
+   * included. Collecting IndexedDB stats temporarily loads cached blobs into
+   * the JS heap.
+   */
+  async estimateMemoryUsage(): Promise<MemoryUsageReport> {
+    const mainThread = collectIsolateMemoryStats(FontManager.instance, {
+      id: 'main',
+      styleManager: this.mainThreadRenderer.styleManager
+    })
+
+    const workers = this.webWorkerRenderer
+      ? await this.webWorkerRenderer.estimateMemoryUsage()
+      : []
+
+    let indexedDbFontCache: MemoryUsageReport['indexedDbFontCache'] = {
+      fontCount: 0,
+      totalBytes: 0,
+      fonts: []
+    }
+    try {
+      indexedDbFontCache = await FontCacheManager.instance.getStorageStats()
+    } catch {
+      // IndexedDB may be unavailable (Node tests, private mode, etc.)
+    }
+
+    const totalEstimatedBytes =
+      mainThread.totalEstimatedBytes +
+      workers.reduce((sum, worker) => sum + worker.totalEstimatedBytes, 0)
+
+    return {
+      collectedAt: Date.now(),
+      totalEstimatedBytes,
+      mainThread,
+      workers,
+      indexedDbFontCache,
+      jsHeap: readJsHeapStats()
+    }
   }
 
   /**

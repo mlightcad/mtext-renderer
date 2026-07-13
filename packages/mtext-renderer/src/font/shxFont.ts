@@ -9,6 +9,9 @@ import {
 import iconv from 'iconv-lite'
 
 import { LRUCache } from '../common/lruCache'
+import {
+  type FontMemoryStats,
+  SHX_PARSED_FONT_OVERHEAD} from '../memory/types'
 import { BaseFont } from './baseFont'
 import { FontData } from './font'
 import { ShxTextShape } from './shxTextShape'
@@ -199,6 +202,51 @@ export class ShxFont extends BaseFont {
   }
 
   /**
+   * Estimates memory used by this SHX font (parsed tables + layout/geometry caches).
+   */
+  estimateMemoryUsage(): FontMemoryStats {
+    const charGeometryCache = this.cache.getStats()
+    let layoutBytes = 0
+    for (const shape of this.layoutShapeCache.values()) {
+      layoutBytes += shape.estimateMemoryBytes()
+    }
+    const shxLayoutCache = {
+      entries: this.layoutShapeCache.size,
+      maxEntries: this.layoutShapeCache.capacity,
+      estimatedBytes: layoutBytes
+    }
+    const parsedFontEstimatedBytes = Math.round(
+      this.sourceByteLength * SHX_PARSED_FONT_OVERHEAD
+    )
+    const estimatedBytes =
+      parsedFontEstimatedBytes +
+      charGeometryCache.estimatedBytes +
+      shxLayoutCache.estimatedBytes
+
+    return {
+      names: Array.from(this.names),
+      type: 'shx',
+      sourceByteLength: this.sourceByteLength,
+      parsedFontEstimatedBytes,
+      charGeometryCache,
+      shxLayoutCache,
+      estimatedBytes
+    }
+  }
+
+  /**
+   * Clears layout/code caches and disposes retained shape geometries.
+   */
+  dispose(): void {
+    for (const shape of this.layoutShapeCache.values()) {
+      shape.dispose()
+    }
+    this.layoutShapeCache.clear()
+    this.codeCache.clear()
+    super.dispose()
+  }
+
+  /**
    * Resolves the internal SHX character code for a given Unicode character.
    * @param char - The input character.
    * @returns The internal SHX code used for lookup.
@@ -230,4 +278,3 @@ export class ShxFont extends BaseFont {
     return code
   }
 }
-

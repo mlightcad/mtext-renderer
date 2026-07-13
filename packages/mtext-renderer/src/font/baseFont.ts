@@ -1,3 +1,5 @@
+import { getSourceByteLength } from '../memory/estimateGeometryBytes'
+import type { FontMemoryStats } from '../memory/types'
 import { BaseTextShape } from './baseTextShape'
 import { CharGeometryCache } from './charGeometryCache'
 import { FontData, FontType } from './font'
@@ -25,6 +27,11 @@ export abstract class BaseFont {
    */
   public encoding?: string
   /**
+   * Byte length of the original font file payload when known (ArrayBuffer / TypedArray).
+   * Used as the basis for parsed-font memory heuristics.
+   */
+  public readonly sourceByteLength: number
+  /**
    * Caching of font character geometries to improve text rendering performance.
    */
   public cache: CharGeometryCache
@@ -32,7 +39,22 @@ export abstract class BaseFont {
   constructor(fontData: FontData) {
     this.encoding = fontData.encoding
     fontData.alias.forEach(name => this.names.add(name))
+    this.sourceByteLength = getSourceByteLength(fontData.data)
     this.cache = new CharGeometryCache()
+  }
+
+  /**
+   * Estimates memory used by this font instance (parsed data + caches).
+   * Only reports resources still retained by this font (not disposed/released caches).
+   */
+  abstract estimateMemoryUsage(): FontMemoryStats
+
+  /**
+   * Releases cache resources held by this font so they are eligible for GC
+   * and no longer appear in {@link estimateMemoryUsage}.
+   */
+  dispose(): void {
+    this.cache.dispose()
   }
 
   /**

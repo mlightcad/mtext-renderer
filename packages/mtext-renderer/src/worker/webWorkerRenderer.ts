@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
+import type { IsolateMemoryStats } from '../memory/types'
 import { buildCharBoxesFromObject } from '../renderer/charBoxUtils'
 import { buildWorkerMaterialColorSettings } from '../renderer/colorUtils'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
@@ -86,6 +87,8 @@ type SetFontUrlMessage = WorkerMessageBase<
 
 type GetAvailableFontsMessage = WorkerMessageBase<'getAvailableFonts'>
 
+type GetMemoryStatsMessage = WorkerMessageBase<'getMemoryStats'>
+
 type SetDefaultFontsMessage = WorkerMessageBase<
   'setDefaultFonts',
   {
@@ -100,6 +103,7 @@ type WorkerMessageTyped =
   | SetDefaultFontsMessage
   | SetFontUrlMessage
   | GetAvailableFontsMessage
+  | GetMemoryStatsMessage
 
 //
 // Specific response types
@@ -122,6 +126,11 @@ type GetAvailableFontsResponse = WorkerResponseBase<
   }
 >
 
+type GetMemoryStatsResponse = WorkerResponseBase<
+  'getMemoryStats',
+  IsolateMemoryStats
+>
+
 type SetDefaultFontsResponse = WorkerResponseBase<
   'setDefaultFonts',
   {
@@ -136,6 +145,7 @@ type WorkerResponseTyped =
   | SetDefaultFontsResponse
   | SetFontUrlResponse
   | GetAvailableFontsResponse
+  | GetMemoryStatsResponse
 
 // Serialized MText data from worker (JSON-based)
 interface SerializedMText {
@@ -529,6 +539,31 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
 
     // All workers return the same result; return the first
     return results[0] ?? { fonts: [] }
+  }
+
+  /**
+   * Collects memory estimates from each worker in the pool.
+   *
+   * Worker ids are rewritten to `worker-0`, `worker-1`, … and
+   * {@link inFlightPerWorker} counts are attached.
+   */
+  async estimateMemoryUsage(): Promise<IsolateMemoryStats[]> {
+    if (this.workers.length === 0) {
+      return []
+    }
+
+    const results = await this.sendMessageToAllWorkers<
+      GetMemoryStatsMessage,
+      GetMemoryStatsResponse
+    >({
+      type: 'getMemoryStats'
+    })
+
+    return results.map((stats, index) => ({
+      ...stats,
+      id: `worker-${index}`,
+      inFlightRequests: this.inFlightPerWorker[index] ?? 0
+    }))
   }
 
   /**

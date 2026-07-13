@@ -1,4 +1,6 @@
 import {
+  FontManager,
+  formatMemoryUsageReport,
   MTextColor,
   MTextData,
   MTextObject,
@@ -93,6 +95,12 @@ class MTextRendererExample {
   private readonly fontCacheInput: HTMLInputElement
   /** `#font-cache-btn` — submits {@link ExampleFontManager.cacheSelectedFontFile}. */
   private readonly fontCacheBtn: HTMLButtonElement
+  /** `#memory-stats-btn` — refreshes {@link UnifiedRenderer.estimateMemoryUsage}. */
+  private readonly memoryStatsBtn: HTMLButtonElement
+  /** `#release-fonts-btn` — calls {@link FontManager.release} then refreshes stats. */
+  private readonly releaseFontsBtn: HTMLButtonElement
+  /** `#memory-stats` — formatted memory report output. */
+  private readonly memoryStatsPre: HTMLPreElement
   /** `#font-select` — primary text-style font. */
   private readonly fontSelect: HTMLSelectElement
   /** `#default-fonts-preset` — CJK / symbol fallback chain preset. */
@@ -170,6 +178,15 @@ class MTextRendererExample {
     this.fontCacheBtn = document.getElementById(
       'font-cache-btn'
     ) as HTMLButtonElement
+    this.memoryStatsBtn = document.getElementById(
+      'memory-stats-btn'
+    ) as HTMLButtonElement
+    this.releaseFontsBtn = document.getElementById(
+      'release-fonts-btn'
+    ) as HTMLButtonElement
+    this.memoryStatsPre = document.getElementById(
+      'memory-stats'
+    ) as HTMLPreElement
 
     this.fontSelect = document.getElementById(
       'font-select'
@@ -337,6 +354,48 @@ class MTextRendererExample {
       this.fontManager.updateCacheButtonState()
     })
     this.fontManager.updateCacheButtonState()
+
+    this.memoryStatsBtn.addEventListener('click', () => {
+      void this.refreshMemoryStats()
+    })
+    this.releaseFontsBtn.addEventListener('click', () => {
+      void this.releaseLoadedFonts()
+    })
+  }
+
+  /**
+   * Collects and displays a live memory estimate from {@link UnifiedRenderer}.
+   */
+  private async refreshMemoryStats(): Promise<void> {
+    try {
+      this.memoryStatsBtn.disabled = true
+      const report = await this.unifiedRenderer.estimateMemoryUsage()
+      this.memoryStatsPre.textContent = formatMemoryUsageReport(report)
+      this.statusDiv.textContent = 'Memory stats refreshed'
+      this.statusDiv.style.color = '#0f0'
+    } catch (error) {
+      console.error('Failed to estimate memory usage:', error)
+      this.memoryStatsPre.textContent =
+        error instanceof Error ? error.message : String(error)
+      this.statusDiv.textContent = 'Failed to refresh memory stats'
+      this.statusDiv.style.color = '#f00'
+    } finally {
+      this.memoryStatsBtn.disabled = false
+    }
+  }
+
+  /**
+   * Releases main-thread loaded fonts, then refreshes the memory panel.
+   *
+   * @remarks
+   * Worker isolates keep their own FontManager until workers are terminated
+   * or fonts are reloaded through the worker renderer path.
+   */
+  private async releaseLoadedFonts(): Promise<void> {
+    FontManager.instance.release()
+    this.statusDiv.textContent = 'Released loaded fonts (main thread)'
+    this.statusDiv.style.color = '#0f0'
+    await this.refreshMemoryStats()
   }
 
   /** Toggles MText vs SHAPE panel visibility and related control enabled state. */

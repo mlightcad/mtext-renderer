@@ -1,6 +1,7 @@
 import { Point, resolveAdvanceWidth, ShxShape } from '@mlightcad/shx-parser'
 import * as THREE from 'three'
 
+import { estimateGeometryBytes } from '../memory/estimateGeometryBytes'
 import { BaseTextShape } from './baseTextShape'
 import { ShxFont } from './shxFont'
 
@@ -94,5 +95,22 @@ export class ShxTextShape extends BaseTextShape {
       return true
     }
     return this.width > 0
+  }
+
+  /**
+   * Estimated bytes of the lazily built BufferGeometry, or 0 if not built / disposed.
+   */
+  estimateMemoryBytes(): number {
+    return estimateGeometryBytes(this.geometry)
+  }
+
+  /**
+   * Disposes the lazily built BufferGeometry, if any.
+   */
+  dispose(): void {
+    if (this.geometry) {
+      this.geometry.dispose()
+      this.geometry = undefined
+    }
   }
 }

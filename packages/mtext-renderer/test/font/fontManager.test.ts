@@ -55,6 +55,15 @@ function createFakeFont(overrides: Record<string, unknown> = {}) {
     getCodeShape: vi.fn(),
     getScaleFactor: vi.fn().mockReturnValue(1),
     getNotFoundTextShape: vi.fn(),
+    dispose: vi.fn(),
+    estimateMemoryUsage: vi.fn().mockReturnValue({
+      names: [],
+      type: 'shx',
+      sourceByteLength: 0,
+      parsedFontEstimatedBytes: 0,
+      charGeometryCache: { entries: 0, maxEntries: 4096, estimatedBytes: 0 },
+      estimatedBytes: 0
+    }),
     ...overrides
   }
 }
@@ -328,13 +337,17 @@ describe('FontManager', () => {
 
   it('releases all fonts or a single requested font', () => {
     const manager = FontManager.instance as any
-    manager.loadedFontMap.set('arial', createFakeFont())
-    manager.loadedFontMap.set('romans', createFakeFont())
+    const arial = createFakeFont()
+    const romans = createFakeFont()
+    manager.loadedFontMap.set('arial', arial)
+    manager.loadedFontMap.set('romans', romans)
 
     expect(FontManager.instance.release('arial')).toBe(true)
+    expect(arial.dispose).toHaveBeenCalledOnce()
     expect(FontManager.instance.isFontLoaded('arial')).toBe(false)
     expect(FontManager.instance.release('missing')).toBe(false)
     expect(FontManager.instance.release()).toBe(true)
+    expect(romans.dispose).toHaveBeenCalledOnce()
     expect(manager.loadedFontMap.size).toBe(0)
   })
 
@@ -712,5 +725,29 @@ describe('FontManager', () => {
     expect(FontManager.instance.isFontLoaded('Romans')).toBe(true)
     expect(FontManager.instance.getFontByName('Romans')).toBe(font)
     expect(statuses[0].status).toBe('Success')
+  })
+
+  it('estimates memory once per font instance when aliases share the same object', () => {
+    const manager = FontManager.instance as any
+    const font = createFakeFont({
+      names: new Set(['simfang', '仿宋_gb2312']),
+      estimateMemoryUsage: vi.fn().mockReturnValue({
+        names: ['simfang', '仿宋_gb2312'],
+        type: 'mesh',
+        sourceByteLength: 1000,
+        parsedFontEstimatedBytes: 2500,
+        charGeometryCache: { entries: 0, maxEntries: 4096, estimatedBytes: 0 },
+        estimatedBytes: 2500
+      })
+    })
+    manager.loadedFontMap.set('simfang', font)
+    manager.loadedFontMap.set('仿宋_gb2312', font)
+
+    const stats = FontManager.instance.estimateMemoryUsage({ id: 'main' })
+
+    expect(font.estimateMemoryUsage).toHaveBeenCalledOnce()
+    expect(stats.fonts).toHaveLength(1)
+    expect(stats.totalEstimatedBytes).toBe(2500)
+    expect(stats.materials.estimatedBytes).toBe(0)
   })
 })

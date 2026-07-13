@@ -2,6 +2,8 @@ import { MTextColor } from '@mlightcad/mtext-parser'
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
+import { collectIsolateMemoryStats } from '../memory/collectIsolateMemoryStats'
+import type { IsolateMemoryStats } from '../memory/types'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { MText } from '../renderer/mtext'
 import {
@@ -20,6 +22,7 @@ interface WorkerMessage {
     | 'setDefaultFonts'
     | 'setFontUrl'
     | 'getAvailableFonts'
+    | 'getMemoryStats'
   id: string
   data?: {
     mtextContent?: unknown
@@ -37,6 +40,7 @@ interface WorkerResponse {
     | 'setDefaultFonts'
     | 'setFontUrl'
     | 'getAvailableFonts'
+    | 'getMemoryStats'
     | 'error'
   id: string
   success: boolean
@@ -149,6 +153,23 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
           id,
           success: true,
           data: { fonts }
+        } as WorkerResponse)
+        break
+      }
+
+      case 'getMemoryStats': {
+        const stats: IsolateMemoryStats = collectIsolateMemoryStats(
+          fontManager,
+          {
+            id: 'worker',
+            styleManager
+          }
+        )
+        self.postMessage({
+          type: 'getMemoryStats',
+          id,
+          success: true,
+          data: stats
         } as WorkerResponse)
         break
       }

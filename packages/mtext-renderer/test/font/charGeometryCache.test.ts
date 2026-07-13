@@ -48,4 +48,15 @@ describe('CharGeometryCache', () => {
     expect(disposeSpy).toHaveBeenCalledOnce()
     expect(cache.hasGeometry(65, 16)).toBe(false)
   })
+
+  it('reports entry counts and estimated buffer bytes via getStats()', () => {
+    const cache = new CharGeometryCache()
+    const geometry = makeLineGeometry()
+    cache.setGeometry(65, 16, geometry)
+
+    const stats = cache.getStats()
+    expect(stats.entries).toBe(1)
+    expect(stats.maxEntries).toBe(4096)
+    expect(stats.estimatedBytes).toBeGreaterThan(0)
+  })
 })
