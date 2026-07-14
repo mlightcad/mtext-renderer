@@ -169,11 +169,13 @@ describe('render remote font loading', () => {
     const manager = FontManager.instance as any
     const primary = {
       names: new Set(['primary']),
-      getCharShape: vi.fn().mockReturnValue(undefined)
+      getCharShape: vi.fn().mockReturnValue(undefined),
+      dispose: vi.fn()
     }
     const fallback = {
       names: new Set(['simkai']),
-      getCharShape: vi.fn().mockReturnValue(undefined)
+      getCharShape: vi.fn().mockReturnValue(undefined),
+      dispose: vi.fn()
     }
     manager.loadedFontMap.set('primary', primary)
     manager.loadedFontMap.set('simkai', fallback)

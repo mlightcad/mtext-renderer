@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 
 import { LRUCache } from '../common/lruCache'
+import { estimateGeometryBytes } from '../memory/estimateGeometryBytes'
+import type { CacheBucketStats } from '../memory/types'
 
 const DEFAULT_MAX_CACHE_SIZE = 4096
 
@@ -10,8 +12,10 @@ const DEFAULT_MAX_CACHE_SIZE = 4096
  */
 export class CharGeometryCache {
   private readonly cache: LRUCache<string, THREE.BufferGeometry>
+  private readonly maxSize: number
 
   constructor(maxSize = DEFAULT_MAX_CACHE_SIZE) {
+    this.maxSize = maxSize
     this.cache = new LRUCache(maxSize, (_key, geometry) => {
       geometry.dispose()
     })
@@ -52,6 +56,21 @@ export class CharGeometryCache {
   setGeometry(code: number, size: number, geometry: THREE.BufferGeometry) {
     const key = this.generateKey(code, size)
     this.cache.set(key, geometry)
+  }
+
+  /**
+   * Estimates memory used by cached BufferGeometry attribute/index buffers.
+   */
+  getStats(): CacheBucketStats {
+    let estimatedBytes = 0
+    for (const geometry of this.cache.values()) {
+      estimatedBytes += estimateGeometryBytes(geometry)
+    }
+    return {
+      entries: this.cache.size,
+      maxEntries: this.maxSize,
+      estimatedBytes
+    }
   }
 
   /**

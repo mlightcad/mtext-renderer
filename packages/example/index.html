@@ -192,6 +192,47 @@
         .action-row .checkbox-container {
             margin: 0;
         }
+        .memory-panel {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px dashed #666;
+            border-radius: 4px;
+            background: #2a2a2a;
+        }
+        .memory-panel-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+        .memory-panel-header h3 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: normal;
+            color: #ccc;
+        }
+        .memory-panel-header button {
+            margin: 0;
+        }
+        #memory-stats {
+            margin: 0;
+            padding: 8px;
+            max-height: 280px;
+            overflow: auto;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 11px;
+            line-height: 1.45;
+            color: #cfc;
+            background: #1a1a1a;
+            border-radius: 3px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        #memory-stats:empty::before {
+            content: 'Click "Refresh Memory Stats" to estimate live isolate memory (IndexedDB listed separately).';
+            color: #888;
+        }
     </style>
 </head>
 <body>
@@ -317,6 +358,15 @@
             <button class="example-btn" data-example="multiple">Multiple MText</button>
             <button class="example-btn" data-example="attachmentGrid">Attachment Points</button>
             <button class="example-btn" data-example="largeCoordinates" title="Large WCS coords; two MText blocks (\P\P); fonts via \Fname;">Large Coordinates</button>
+        </div>
+        <div class="memory-panel">
+            <div class="memory-panel-header">
+                <h3>Memory</h3>
+                <button type="button" id="memory-stats-btn">Refresh Memory Stats</button>
+                <button type="button" id="release-fonts-btn">Release Loaded Fonts</button>
+            </div>
+            <pre id="memory-stats" aria-live="polite"></pre>
+            <p class="hint">Live isolate total excludes IndexedDB. Release clears in-memory fonts (and their caches) on the main thread; switch to worker mode and refresh to inspect workers.</p>
         </div>
         <div id="status"></div>
     </div>

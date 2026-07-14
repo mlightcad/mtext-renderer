@@ -88,6 +88,27 @@ export class LRUCache<K, V> {
   }
 
   /**
+   * Number of entries currently stored in the cache.
+   */
+  get size(): number {
+    return this.map.size
+  }
+
+  /**
+   * Maximum number of entries this cache may retain.
+   */
+  get capacity(): number {
+    return this.maxSize
+  }
+
+  /**
+   * Iterates over cached values without updating recency order.
+   */
+  values(): IterableIterator<V> {
+    return this.map.values()
+  }
+
+  /**
    * Removes all entries from the cache.
    *
    * If an {@link onEvict} handler was provided, it is invoked once per entry

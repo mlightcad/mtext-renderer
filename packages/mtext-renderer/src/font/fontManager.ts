@@ -11,6 +11,11 @@ import {
   getFileName,
   getFileNameWithoutExtension
 } from '../common'
+import type {
+  IsolateMemoryStats,
+  MaterialMemoryStats
+} from '../memory/types'
+import { emptyMaterialStats } from '../memory/types'
 import { BaseFont } from './baseFont'
 import { BaseTextShape } from './baseTextShape'
 import { DefaultFontLoader } from './defaultFontLoader'
@@ -792,6 +797,9 @@ export class FontManager {
    * - If no argument is provided, all loaded fonts are released and the font map is cleared.
    * - If a font name is provided, only that specific font is released from the font map.
    *
+   * Disposes per-font caches before dropping references so released resources are
+   * not retained and are excluded from {@link estimateMemoryUsage}.
+   *
    * This is useful for freeing up memory, especially when working with large font files (e.g., Chinese mesh fonts).
    * Notes: Based on testing, one Chinese mesh font file may take 40M memory.
    *
@@ -800,6 +808,10 @@ export class FontManager {
    */
   release(fontToRelease?: string) {
     if (fontToRelease == null) {
+      const uniqueFonts = new Set(this.loadedFontMap.values())
+      for (const font of uniqueFonts) {
+        font.dispose?.()
+      }
       this.loadedFontMap.clear()
       return true
     }
@@ -807,11 +819,43 @@ export class FontManager {
     if (!font) {
       return false
     }
+    font.dispose?.()
     for (const [key, value] of this.loadedFontMap) {
       if (value === font) {
         this.loadedFontMap.delete(key)
       }
     }
     return true
+  }
+
+  /**
+   * Estimates memory used by loaded fonts in this isolate.
+   *
+   * Font aliases that point at the same instance are counted once.
+   * Does not include IndexedDB blobs or other isolates (workers).
+   *
+   * @param options - Optional isolate id, material stats, and in-flight request count.
+   */
+  estimateMemoryUsage(options?: {
+    id?: string
+    materials?: MaterialMemoryStats
+    inFlightRequests?: number
+  }): IsolateMemoryStats {
+    const uniqueFonts = new Set<BaseFont>()
+    for (const font of this.loadedFontMap.values()) {
+      uniqueFonts.add(font)
+    }
+
+    const fonts = Array.from(uniqueFonts).map(font => font.estimateMemoryUsage())
+    const materials = options?.materials ?? emptyMaterialStats()
+    const fontsBytes = fonts.reduce((sum, font) => sum + font.estimatedBytes, 0)
+
+    return {
+      id: options?.id ?? 'main',
+      inFlightRequests: options?.inFlightRequests,
+      fonts,
+      materials,
+      totalEstimatedBytes: fontsBytes + materials.estimatedBytes
+    }
   }
 }

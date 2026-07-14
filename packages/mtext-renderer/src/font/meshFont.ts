@@ -1,6 +1,11 @@
 import { Font as OpenTypeFont, parse } from 'opentype.js'
 import { FontData as ThreeFontData } from 'three/examples/jsm/loaders/FontLoader.js'
 
+import { LRUCache } from '../common/lruCache'
+import { estimateStringBytes } from '../memory/estimateGeometryBytes'
+import {
+  type FontMemoryStats,
+  MESH_PARSED_FONT_OVERHEAD} from '../memory/types'
 import { BaseFont } from './baseFont'
 import { FontData } from './font'
 import { MeshTextShape } from './meshTextShape'
@@ -54,51 +59,6 @@ export interface MeshFontData extends ThreeFontData {
   scaleFactor: number
   /** Original font information table */
   original_font_information: Record<string, string>
-}
-
-/**
- * Simple Least Recently Used (LRU) cache for glyphs.
- * Prevents unbounded memory growth when many glyphs are loaded lazily.
- */
-class LRUCache<K, V> {
-  private maxSize: number
-  private map: Map<K, V>
-
-  constructor(maxSize = 512) {
-    this.maxSize = maxSize
-    this.map = new Map()
-  }
-
-  get(key: K): V | undefined {
-    const value = this.map.get(key)
-    if (value) {
-      // Refresh the key’s position to mark it as recently used
-      this.map.delete(key)
-      this.map.set(key, value)
-    }
-    return value
-  }
-
-  set(key: K, value: V) {
-    if (this.map.has(key)) {
-      this.map.delete(key)
-    } else if (this.map.size >= this.maxSize) {
-      // Evict least recently used entry
-      const oldestKey = this.map.keys().next().value
-      if (oldestKey !== undefined) {
-        this.map.delete(oldestKey)
-      }
-    }
-    this.map.set(key, value)
-  }
-
-  has(key: K): boolean {
-    return this.map.has(key)
-  }
-
-  clear() {
-    this.map.clear()
-  }
 }
 
 /**
@@ -344,5 +304,46 @@ export class MeshFont extends BaseFont {
    */
   getNotFoundTextShape(size: number) {
     return new MeshTextShape('?', size, this)
+  }
+
+  /**
+   * Estimates memory used by this mesh font (parsed opentype + glyphs + geometry cache).
+   */
+  estimateMemoryUsage(): FontMemoryStats {
+    const charGeometryCache = this.cache.getStats()
+    let outlineStringBytes = 0
+    const glyphKeys = Object.keys(this.data.glyphs)
+    for (const key of glyphKeys) {
+      outlineStringBytes += estimateStringBytes(this.data.glyphs[key]?.o)
+    }
+    const parsedFontEstimatedBytes = Math.round(
+      this.sourceByteLength * MESH_PARSED_FONT_OVERHEAD
+    )
+    const estimatedBytes =
+      parsedFontEstimatedBytes +
+      outlineStringBytes +
+      charGeometryCache.estimatedBytes
+
+    return {
+      names: Array.from(this.names),
+      type: 'mesh',
+      sourceByteLength: this.sourceByteLength,
+      parsedFontEstimatedBytes,
+      charGeometryCache,
+      meshGlyphs: {
+        glyphCount: glyphKeys.length,
+        outlineStringBytes
+      },
+      estimatedBytes
+    }
+  }
+
+  /**
+   * Clears glyph and geometry caches. Does not unload the opentype parse until GC.
+   */
+  dispose(): void {
+    this.glyphCache.clear()
+    this.data.glyphs = {}
+    super.dispose()
   }
 }

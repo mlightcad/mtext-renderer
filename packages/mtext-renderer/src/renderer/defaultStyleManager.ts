@@ -1,5 +1,9 @@
 import * as THREE from 'three'
 
+import {
+  estimateMaterialBytes,
+  type MaterialMemoryStats
+} from '../memory/types'
 import { resolveMTextColor } from './colorUtils'
 import { StyleManager } from './styleManager'
 import { ColorSettings } from './types'
@@ -32,6 +36,19 @@ export class DefaultStyleManager implements StyleManager {
       })
     }
     return this.lineBasicMaterials[key]
+  }
+
+  /**
+   * Returns occupancy of the material caches (counts + heuristic bytes).
+   */
+  getMaterialStats(): MaterialMemoryStats {
+    const meshCount = Object.keys(this.meshBasicMaterials).length
+    const lineCount = Object.keys(this.lineBasicMaterials).length
+    return {
+      meshCount,
+      lineCount,
+      estimatedBytes: estimateMaterialBytes(meshCount, lineCount)
+    }
   }
 
   /**

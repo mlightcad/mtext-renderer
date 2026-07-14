@@ -1,4 +1,8 @@
 import { FontManager } from '../font'
+import {
+  collectIsolateMemoryStats,
+  type IsolateMemoryStats
+} from '../memory'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { MText } from '../renderer/mtext'
 import { Shape } from '../renderer/shape'
@@ -137,6 +141,16 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   async getAvailableFonts(): Promise<{ fonts: Array<{ name: string[] }> }> {
     const fonts = await this.fontManager.getAvailableFonts()
     return { fonts }
+  }
+
+  /**
+   * Estimates memory used by fonts and materials in the main-thread isolate.
+   */
+  estimateMemoryUsage(): IsolateMemoryStats {
+    return collectIsolateMemoryStats(this.fontManager, {
+      id: 'main',
+      styleManager: this.defaultStyleManager
+    })
   }
 
   destroy(): void {
