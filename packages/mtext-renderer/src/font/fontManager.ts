@@ -810,7 +810,7 @@ export class FontManager {
     if (fontToRelease == null) {
       const uniqueFonts = new Set(this.loadedFontMap.values())
       for (const font of uniqueFonts) {
-        font.dispose()
+        font.dispose?.()
       }
       this.loadedFontMap.clear()
       return true
@@ -819,7 +819,7 @@ export class FontManager {
     if (!font) {
       return false
     }
-    font.dispose()
+    font.dispose?.()
     for (const [key, value] of this.loadedFontMap) {
       if (value === font) {
         this.loadedFontMap.delete(key)
