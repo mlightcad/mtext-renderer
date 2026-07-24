@@ -127,7 +127,7 @@ function createProcessor(
   const options: MTextFormatOptions = {
     fontSize: 24,
     widthFactor: 1,
-    lineSpaceFactor: 0.3,
+    lineSpaceFactor: 1.0,
     horizontalAlignment: 1,
     maxWidth: 0,
     flowDirection: MTextFlowDirection.LEFT_TO_RIGHT,
@@ -500,7 +500,7 @@ describe('MTextProcessor format state', () => {
     const options: MTextFormatOptions = {
       fontSize,
       widthFactor: 1,
-      lineSpaceFactor: 0.3,
+      lineSpaceFactor: 1.0,
       horizontalAlignment: 1,
       maxWidth: 0,
       flowDirection: MTextFlowDirection.LEFT_TO_RIGHT,
@@ -581,9 +581,9 @@ describe('MTextProcessor format state', () => {
       { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null }
     ] as any)
 
-    expect(processor.vOffset).toBeCloseTo(-72, 3)
+    expect(processor.vOffset).toBeCloseTo(-80, 3)
     expect(getInternalLineCount(processor)).toBe(3)
-    expect(processor.totalHeight).toBeCloseTo(72, 3)
+    expect(processor.totalHeight).toBeCloseTo(80, 3)
   })
 
   it('does not add paragraph marker char boxes between words', () => {
@@ -624,7 +624,7 @@ describe('MTextProcessor format state', () => {
       { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null }
     ] as any)
 
-    expect(processor.totalHeight).toBeCloseTo(60, 3)
+    expect(processor.totalHeight).toBeCloseTo(64, 3)
     expect(getInternalLineCount(processor)).toBe(2)
   })
 
@@ -655,7 +655,7 @@ describe('MTextProcessor format state', () => {
     const chars = getAllCharBoxes(obj).map(entry => entry.char)
     expect(chars).toContain('U')
     expect(chars).not.toContain('\n')
-    expect(processor.totalHeight).toBeCloseTo(72, 3)
+    expect(processor.totalHeight).toBeCloseTo(80, 3)
   })
 
   it('applies lineSpaceFactor to trailing empty lines without marker chars', () => {
@@ -686,7 +686,7 @@ describe('MTextProcessor format state', () => {
 
     expect(lines).toHaveLength(1)
     expect(lines[0].height).toBeCloseTo(processor.currentLineHeight, 3)
-    expect(lines[0].y).toBeCloseTo(-6, 3)
+    expect(lines[0].y).toBeCloseTo(-4, 3)
   })
 
   it('keeps glyph placement height separate from scaled line advance', () => {
@@ -699,10 +699,11 @@ describe('MTextProcessor format state', () => {
 
     expect(processor.currentFontSize).toBeCloseTo(48, 3)
     expect(processor.currentLayoutFontSize).toBeCloseTo(24, 3)
-    expect(processor.currentLineHeight).toBeCloseTo(72, 3)
+    // Line advance uses layout font size (AutoCAD single spacing = 5/3 × height).
+    expect(processor.currentLineHeight).toBeCloseTo(40, 3)
     expect(processor.totalHeight).toBeCloseTo(48, 3)
-    expect(lines[0].height).toBeCloseTo(72, 3)
-    expect(lines[0].y).toBeCloseTo(12, 3)
+    expect(lines[0].height).toBeCloseTo(40, 3)
+    expect(lines[0].y).toBeCloseTo(-4, 3)
   })
 
   it('preserves scaled line advance for multiline text', () => {
@@ -716,9 +717,9 @@ describe('MTextProcessor format state', () => {
     const lines = getLineLayouts(obj)
 
     expect(lines).toHaveLength(2)
-    expect(lines[0].height).toBeCloseTo(72, 3)
-    expect(lines[1].height).toBeCloseTo(72, 3)
-    expect(lines[0].y - lines[1].y).toBeCloseTo(72, 3)
+    expect(lines[0].height).toBeCloseTo(40, 3)
+    expect(lines[1].height).toBeCloseTo(40, 3)
+    expect(lines[0].y - lines[1].y).toBeCloseTo(40, 3)
   })
 
   it('stores line layouts for explicit empty lines', () => {

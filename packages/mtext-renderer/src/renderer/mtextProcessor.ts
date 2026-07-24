@@ -61,7 +61,8 @@ export interface MTextFormatOptions {
    */
   widthFactor: number
   /**
-   * The line space factor.
+   * AutoCAD DXF group-44 line spacing factor: ratio of actual line spacing to
+   * single spacing (`5/3` of text height). Default is `1.0`.
    */
   lineSpaceFactor: number
   /**
@@ -399,7 +400,8 @@ export class MTextProcessor {
   }
 
   /**
-   * The default line space factor
+   * AutoCAD DXF group-44 line spacing factor (multiple of single spacing).
+   * Single spacing is {@link LINE_SPACING_SCALE_FACTOR} × text height.
    */
   get defaultLineSpaceFactor() {
     return this._options.lineSpaceFactor
@@ -441,19 +443,18 @@ export class MTextProcessor {
   }
 
   /**
-   * The height of current line of texts
+   * Baseline-to-baseline advance for the current line (AutoCAD MTEXT semantics).
+   *
+   * Single spacing is `5/3` of the drawing-space text height; `lineSpaceFactor`
+   * (DXF group 44) scales that distance. Font glyph scale factors must not
+   * affect this layout metric — use {@link currentLayoutFontSize}.
    */
   get currentLineHeight() {
-    const lineSpace =
-      this.defaultLineSpaceFactor *
-      this.currentFontSize *
+    return (
+      Math.max(this.defaultLineSpaceFactor, 0) *
+      this.currentLayoutFontSize *
       LINE_SPACING_SCALE_FACTOR
-    // Empty lines should still advance by current font size plus line spacing.
-    const contentHeight =
-      this.currentMaxFontSize > 0
-        ? this.currentMaxFontSize
-        : this.currentFontSize
-    return lineSpace + contentHeight
+    )
   }
 
   /**
