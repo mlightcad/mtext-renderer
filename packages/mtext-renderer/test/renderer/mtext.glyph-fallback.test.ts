@@ -106,7 +106,7 @@ function createGlyphFallbackProcessor(
   const options: MTextFormatOptions = {
     fontSize: 10,
     widthFactor: 1,
-    lineSpaceFactor: 0.3,
+    lineSpaceFactor: 1.0,
     horizontalAlignment: 1,
     maxWidth: 0,
     flowDirection: MTextFlowDirection.LEFT_TO_RIGHT,

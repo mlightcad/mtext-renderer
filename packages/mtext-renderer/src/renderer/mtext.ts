@@ -10,6 +10,7 @@ import * as THREE from 'three'
 
 import { FontManager } from '../font'
 import { buildCharBoxesFromObject } from './charBoxUtils'
+import { DEFAULT_LINE_SPACE_FACTOR } from './constants'
 import { resolveMTextWrapWidth } from './mtextDataUtils'
 import { MTextFormatOptions, MTextProcessor } from './mtextProcessor'
 import { expandPercentControlCodes } from './percentControlCodes'
@@ -476,7 +477,7 @@ export class MText extends THREE.Object3D {
     const textLineFormatOptions: MTextFormatOptions = {
       fontSize: defaultFontSize,
       widthFactor: defaultWidthFactor,
-      lineSpaceFactor: 0.3,
+      lineSpaceFactor: DEFAULT_LINE_SPACE_FACTOR,
       horizontalAlignment: MTextParagraphAlignment.LEFT,
       maxWidth: 0,
       flowDirection: MTextFlowDirection.BOTTOM_TO_TOP,
@@ -587,7 +588,8 @@ export class MText extends THREE.Object3D {
 
     const defaultFontSize = mtextData.height || style.fixedTextHeight || 0
     const defaultWidthFactor = mtextData.widthFactor || style.widthFactor || 1.0
-    const defaultLineSpaceFactor = mtextData.lineSpaceFactor || 0.3
+    const defaultLineSpaceFactor =
+      mtextData.lineSpaceFactor ?? DEFAULT_LINE_SPACE_FACTOR
     const flowDirection =
       mtextData.drawingDirection ?? MTextFlowDirection.LEFT_TO_RIGHT
     const textLineFormatOptions: MTextFormatOptions = {
