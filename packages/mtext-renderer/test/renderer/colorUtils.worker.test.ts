@@ -46,4 +46,50 @@ describe('buildWorkerMaterialColorSettings', () => {
     expect(rebuilt.color.rgbValue).toBe(0x336699)
     expect(resolveMTextColor(rebuilt)).toBe(0x336699)
   })
+
+  it('preserves entity ACI 7 when the glyph RGB still matches the base colour', () => {
+    const base = createBaseColorSettings({
+      color: new MTextColor(7)
+    })
+    const rebuilt = buildWorkerMaterialColorSettings(base, 0xffffff, false)
+
+    expect(rebuilt.color.aci).toBe(7)
+    expect(rebuilt.color.rgbValue).toBeNull()
+  })
+
+  it('preserves serialized ACI 255 even when RGB matches entity ACI 7', () => {
+    const base = createBaseColorSettings({
+      color: new MTextColor(7)
+    })
+    const rebuilt = buildWorkerMaterialColorSettings(base, 0xffffff, false, {
+      aci: 255
+    })
+
+    expect(rebuilt.color.aci).toBe(255)
+    expect(rebuilt.color.rgbValue).toBeNull()
+  })
+
+  it('uses serialized ACI 7 from the worker payload', () => {
+    const base = createBaseColorSettings({
+      color: new MTextColor(7)
+    })
+    const rebuilt = buildWorkerMaterialColorSettings(base, 0xffffff, false, {
+      aci: 7
+    })
+
+    expect(rebuilt.color.aci).toBe(7)
+  })
+
+  it('recovers entity ACI 7 when serialized colour was baked to matching RGB', () => {
+    const base = createBaseColorSettings({
+      color: new MTextColor(7)
+    })
+    // Old processor path: setColorFromHex(getColorByIndex(7)) → rgb white.
+    const rebuilt = buildWorkerMaterialColorSettings(base, 0xffffff, false, {
+      rgbValue: 0xffffff
+    })
+
+    expect(rebuilt.color.aci).toBe(7)
+    expect(rebuilt.color.isRgb).toBe(false)
+  })
 })

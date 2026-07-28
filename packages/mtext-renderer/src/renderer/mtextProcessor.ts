@@ -299,8 +299,10 @@ export class MTextProcessor {
         options.fontSize
       )
     })
-    // Set initial color
-    this._currentContext.setColorFromHex(this.resolveBaseColor())
+    // Keep the entity colour's ACI/RGB semantics (especially ACI 7 foreground).
+    // Baking via setColorFromHex collapses ACI 7 into literal white and prevents
+    // canvas-background inversion after worker reconstruct.
+    this._currentContext.color = this._colorSettings.color.copy()
     // Set initial font face
     this._currentContext.fontFace.family = this.textStyle.font.toLowerCase()
     // Set initial width factor
@@ -2490,6 +2492,9 @@ export class MTextProcessor {
     const lineMaterial = this.styleManager.getLineBasicMaterial(
       materialColorSettings
     )
+    // Keep the segment colour (ACI/RGB) on each leaf so worker serialization can
+    // preserve ACI 7 foreground vs literal white (ACI 255) across reconstruct.
+    const segmentColor = materialColorSettings.color.copy()
 
     const shouldCollectCharBoxes = this._options.collectCharBoxes !== false
 
@@ -2502,6 +2507,7 @@ export class MTextProcessor {
       const mesh = new THREE.Mesh(mergedMeshGeom, meshMaterial)
       mesh.userData.bboxIntersectionCheck = true
       mesh.userData.charBoxType = charBoxType
+      mesh.userData.mtextColor = segmentColor
       if (shouldCollectCharBoxes && meshCharBoxes.length > 0) {
         mesh.userData.layout = { chars: meshCharBoxes.slice() }
       }
@@ -2526,6 +2532,7 @@ export class MTextProcessor {
       const lineMesh = new THREE.LineSegments(mergedLineGeom, lineMaterial)
       lineMesh.userData.bboxIntersectionCheck = true
       lineMesh.userData.charBoxType = charBoxType
+      lineMesh.userData.mtextColor = segmentColor
       if (shouldCollectCharBoxes && lineCharBoxes.length > 0) {
         lineMesh.userData.layout = { chars: lineCharBoxes.slice() }
       }

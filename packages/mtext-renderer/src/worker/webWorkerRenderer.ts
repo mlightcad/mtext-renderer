@@ -199,6 +199,11 @@ interface SerializedChild {
     opacity: number
     side?: number
     linewidth?: number
+    /** Original segment colour when the worker preserved ACI/RGB semantics. */
+    mtextColor?: {
+      aci?: number | null
+      rgbValue?: number | null
+    }
   }
   charBoxType?: CharBox['type']
   lineLayouts?: Array<{ y: number; height: number; breakIndex?: number }>
@@ -637,13 +642,14 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       }
 
       // Create material using StyleManager for proper material reuse
+      const materialColorSettings = buildWorkerMaterialColorSettings(
+        colorSettings,
+        childData.material.color,
+        baseByLayer,
+        childData.material.mtextColor
+      )
       let material: THREE.Material
       if (childData.type === 'mesh') {
-        const materialColorSettings = buildWorkerMaterialColorSettings(
-          colorSettings,
-          childData.material.color,
-          baseByLayer
-        )
         material = this.defaultStyleManager.getMeshBasicMaterial({
           ...materialColorSettings
         })
@@ -658,11 +664,6 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
           material.side = childData.material.side as THREE.Side
         }
       } else {
-        const materialColorSettings = buildWorkerMaterialColorSettings(
-          colorSettings,
-          childData.material.color,
-          baseByLayer
-        )
         material = this.defaultStyleManager.getLineBasicMaterial({
           ...materialColorSettings
         })
@@ -730,6 +731,9 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
           chars: this.deserializeCharBoxes(childData.charBoxes)
         }
       }
+      // Keep segment colour on the reconstructed leaf so cad-viewer can
+      // rematerialize entity ACI 7 without wiping true inline `\C` overrides.
+      object.userData.mtextColor = materialColorSettings.color
 
       group.add(object)
     })
