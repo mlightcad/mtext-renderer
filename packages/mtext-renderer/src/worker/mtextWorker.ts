@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { FontManager } from '../font'
 import { collectIsolateMemoryStats } from '../memory/collectIsolateMemoryStats'
 import type { IsolateMemoryStats } from '../memory/types'
+import { serializeMTextColor } from '../renderer/colorUtils'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { MText } from '../renderer/mtext'
 import {
@@ -386,12 +387,37 @@ function serializeChildren(root: THREE.Object3D): {
           }
         }
 
-        // Serialize material properties
+        // Serialize material properties. Prefer the per-glyph MTextColor stashed
+        // on userData so ACI 7 (foreground) is not collapsed into literal white.
         const materialData: Record<string, unknown> = {
           type: material.type,
           color: material.color ? material.color.getHex() : 0xffffff,
           transparent: material.transparent,
           opacity: material.opacity
+        }
+        const segmentColor = child.userData?.mtextColor
+        if (segmentColor instanceof MTextColor) {
+          materialData.mtextColor = serializeMTextColor(segmentColor)
+        } else if (segmentColor && typeof segmentColor === 'object') {
+          // Structured-clone across worker boundaries may strip the class.
+          const partial = segmentColor as {
+            _aci?: number | null
+            _rgbValue?: number | null
+            aci?: number | null
+            rgbValue?: number | null
+          }
+          const revived = new MTextColor()
+          if (typeof partial.aci === 'number') {
+            revived.aci = partial.aci
+          } else if (typeof partial._aci === 'number') {
+            revived.aci = partial._aci
+          }
+          if (typeof partial.rgbValue === 'number') {
+            revived.rgbValue = partial.rgbValue
+          } else if (typeof partial._rgbValue === 'number') {
+            revived.rgbValue = partial._rgbValue
+          }
+          materialData.mtextColor = serializeMTextColor(revived)
         }
 
         // Add material-specific properties - only include serializable ones
