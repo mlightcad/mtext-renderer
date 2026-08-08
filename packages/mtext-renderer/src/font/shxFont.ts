@@ -57,6 +57,9 @@ export class ShxFont extends BaseFont {
    */
   hasChar(char: string): boolean {
     const code = this.getCode(char)
+    if (code === ShxFont.NOT_ENCODABLE) {
+      return false
+    }
     return this.font.hasChar(code)
   }
 
@@ -139,6 +142,9 @@ export class ShxFont extends BaseFont {
    */
   public getCharShape(char: string, size: number): ShxTextShape | undefined {
     const code = this.getCode(char)
+    if (code === ShxFont.NOT_ENCODABLE) {
+      return undefined
+    }
     return this.getCodeShape(code, size)
   }
 
@@ -247,9 +253,35 @@ export class ShxFont extends BaseFont {
   }
 
   /**
+   * Sentinel returned by {@link getCode} when `char` has no representation
+   * in this BIGFONT's legacy encoding. Never a real SHX/BIGFONT code point
+   * (those are non-negative), so callers can distinguish "cannot encode"
+   * from "encodes to some rarely-used code".
+   */
+  private static readonly NOT_ENCODABLE = -1
+
+  /**
    * Resolves the internal SHX character code for a given Unicode character.
+   *
+   * For BIGFONT fonts, `char` is converted through a legacy encoding (e.g.
+   * GBK) via `iconv-lite`. Characters outside that encoding's repertoire
+   * (math/symbol glyphs like the diameter sign, U+2205) are not rejected by
+   * `iconv.encode` — it silently substitutes a replacement byte (commonly
+   * ASCII `?`, 0x3F). Left unchecked, that byte resolves to the BIGFONT's
+   * own, perfectly valid `?` glyph, so `hasChar`/`getCharShape` report a
+   * false positive: the caller believes this font renders the character,
+   * when it actually renders an unrelated question mark. That masked the
+   * real GDT/symbol-font fallback for diameter dimension text stored as a
+   * literal U+2205 (mlightcad/cad-viewer#473) — the correct glyph exists in
+   * `amgdt.shx`, but the fallback chain in {@link FontManager} never got a
+   * chance because this font's bogus "yes" won first.
+   *
+   * A decode-of-the-encoded-bytes round trip catches this: encoding is lossy
+   * exactly when it can't recover the original character.
+   *
    * @param char - The input character.
-   * @returns The internal SHX code used for lookup.
+   * @returns The internal SHX code used for lookup, or {@link NOT_ENCODABLE}
+   * when `char` cannot be represented in this font's encoding.
    */
   private getCode(char: string): number {
     const cached = this.codeCache.get(char)
@@ -262,6 +294,10 @@ export class ShxFont extends BaseFont {
 
     if (fontType === ShxFontType.BIGFONT && this.encoding) {
       const buffer = iconv.encode(char[0], this.encoding)
+      if (iconv.decode(buffer, this.encoding) !== char[0]) {
+        this.codeCache.set(char, ShxFont.NOT_ENCODABLE)
+        return ShxFont.NOT_ENCODABLE
+      }
       code = buffer.length === 1 ? buffer[0] : (buffer[0] << 8) | buffer[1]
     } else {
       code = char.charCodeAt(0)
