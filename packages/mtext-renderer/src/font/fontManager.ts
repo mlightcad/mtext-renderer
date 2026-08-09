@@ -74,6 +74,12 @@ export class FontManager {
   /** Flag to enable/disable font caching */
   public enableFontCache = true
   /**
+   * When true (default), missing fonts are fetched/parsed in the background
+   * via {@link requestFont} instead of requiring an open-time preload.
+   * Drawing continues with temporary fallbacks until {@link events.fontLoaded}.
+   */
+  public lazyFontLoading = true
+  /**
    * Default fonts to use when a requested font is not found or lacks a glyph.
    * Insertion order is preserved; earlier entries are tried first.
    */
@@ -92,6 +98,19 @@ export class FontManager {
     /** Event triggered when a font is successfully loaded */
     fontLoaded: new EventManager<FontManagerEventArgs>()
   }
+
+  /** In-flight {@link requestFont} promises keyed by normalized font name. */
+  private fontRequestInFlight = new Map<string, Promise<FontLoadStatus[]>>()
+  /**
+   * Fonts whose latest {@link requestFont} finished without registering the
+   * face. Prevents per-glyph retry storms until {@link release} clears state.
+   */
+  private fontRequestFailed = new Set<string>()
+  /**
+   * Bumped by full {@link release} so in-flight loads that complete after a
+   * release do not re-register fonts into a cleared manager.
+   */
+  private loadEpoch = 0
 
   private constructor() {
     this.loader = new THREE.FileLoader()
@@ -274,6 +293,97 @@ export class FontManager {
   }
 
   /**
+   * Schedules a non-blocking load for a font that is not yet in memory.
+   *
+   * Concurrent callers for the same name share one in-flight promise.
+   * Already-loaded fonts resolve immediately. Safe to call from sync draw
+   * paths — do not await from the hot glyph loop.
+   */
+  requestFont(fontName: string): Promise<FontLoadStatus[]> {
+    const key = this.normalizeFontName(fontName)
+    if (!key) {
+      return Promise.resolve([])
+    }
+    if (this.isFontLoaded(key)) {
+      this.fontRequestFailed.delete(key)
+      return Promise.resolve([])
+    }
+    if (this.fontRequestFailed.has(key)) {
+      return Promise.resolve([
+        {
+          fontName: key,
+          url: '',
+          status: 'FailedToLoad'
+        }
+      ])
+    }
+    const existing = this.fontRequestInFlight.get(key)
+    if (existing) {
+      return existing
+    }
+    // Capture epoch so a mid-flight release() does not poison retry state.
+    const epoch = this.loadEpoch
+    const pending = this.loadFontsByNames(key)
+      .then(statuses => {
+        if (epoch !== this.loadEpoch) {
+          return statuses
+        }
+        if (this.isFontLoaded(key)) {
+          this.fontRequestFailed.delete(key)
+        } else {
+          // Do not auto-retry on every subsequent glyph miss in the same draw.
+          this.fontRequestFailed.add(key)
+        }
+        return statuses
+      })
+      .catch(() => {
+        // CDN/metadata failures must not become unhandled rejections from
+        // fire-and-forget `void requestFont(...)` call sites.
+        if (epoch === this.loadEpoch) {
+          this.fontRequestFailed.add(key)
+        }
+        return [
+          {
+            fontName: key,
+            url: '',
+            status: 'FailedToLoad' as const
+          }
+        ]
+      })
+      .finally(() => {
+        if (this.fontRequestInFlight.get(key) === pending) {
+          this.fontRequestInFlight.delete(key)
+        }
+      })
+    this.fontRequestInFlight.set(key, pending)
+    return pending
+  }
+
+  /**
+   * Fire-and-forget {@link requestFont} for each name (deduped per name).
+   */
+  requestFonts(fontNames: readonly string[]): void {
+    for (const name of fontNames) {
+      void this.requestFont(name)
+    }
+  }
+
+  private normalizeFontName(fontName: string): string {
+    if (fontName == null) {
+      return ''
+    }
+    let name = String(fontName)
+    const dotIndex = name.lastIndexOf('.')
+    if (
+      (dotIndex > 0 && dotIndex == name.length - 4) ||
+      dotIndex == name.length - 5
+    ) {
+      name = name.substring(0, dotIndex)
+    }
+    return name.toLowerCase()
+  }
+
+  /**
    * Parses a user-uploaded font file, registers it for rendering, and stores
    * it in IndexedDB when {@link enableFontCache} is true.
    *
@@ -417,9 +527,13 @@ export class FontManager {
     const status: FontLoadStatus[] = []
     await Promise.allSettled(promises).then(results => {
       results.forEach((result, index) => {
-        const isSuccess = result.status === 'fulfilled'
         const url = fonts[index].url
-        const fontName = getFileNameWithoutExtension(url.toLowerCase())
+        const fontName = getFileNameWithoutExtension(
+          fonts[index].file || url
+        ).toLowerCase()
+        // loadFont may fulfill after a release/epoch abort without registering.
+        const isSuccess =
+          result.status === 'fulfilled' && this.isFontLoaded(fontName)
         status.push({
           fontName: fontName,
           url: url,
@@ -439,23 +553,35 @@ export class FontManager {
    * @returns The original font name if found, or the replacement font name if not found
    */
   findAndReplaceFont(fontName: string) {
-    let font = this.loadedFontMap.get(fontName.toLowerCase())
+    const requested = fontName == null ? '' : String(fontName)
+    let font = this.loadedFontMap.get(requested.toLowerCase())
     if (font == null) {
-      const mappedFontName = this.fontMapping[fontName]
+      const mappedFontName = this.fontMapping[requested]
       if (mappedFontName) {
         font = this.loadedFontMap.get(mappedFontName.toLowerCase())
+        if (!font && this.lazyFontLoading) {
+          void this.requestFont(mappedFontName)
+        }
+        // Prefer the mapped face even while it is still loading (legacy behavior).
         return mappedFontName
       }
     }
     if (font) {
-      return fontName
+      return requested
+    }
+    if (this.lazyFontLoading && requested) {
+      void this.requestFont(requested)
     }
     for (const defaultFontName of this.defaultFonts) {
       if (this.loadedFontMap.has(defaultFontName.toLowerCase())) {
         return defaultFontName
       }
     }
-    return [...this.defaultFonts][0] ?? ''
+    const firstDefault = [...this.defaultFonts][0] ?? ''
+    if (firstDefault && this.lazyFontLoading) {
+      void this.requestFont(firstDefault)
+    }
+    return firstDefault
   }
 
   /**
@@ -469,9 +595,6 @@ export class FontManager {
     fontName: string,
     recordMissedFonts: boolean = true
   ): BaseFont | undefined {
-    if (this.loadedFontMap.size === 0) {
-      return
-    }
     if (fontName == null) {
       fontName = '' // take null/undefined as empty
     }
@@ -583,7 +706,13 @@ export class FontManager {
   ): BaseTextShape | undefined {
     for (const fontName of this.symbolFonts) {
       const font = this.loadedFontMap.get(fontName.toLowerCase())
-      const shape = font?.getCodeShape(code, size)
+      if (!font) {
+        if (this.lazyFontLoading) {
+          void this.requestFont(fontName)
+        }
+        continue
+      }
+      const shape = font.getCodeShape(code, size)
       if (shape) {
         return shape
       }
@@ -653,10 +782,16 @@ export class FontManager {
         this.missedFonts[fontName] = 0
       }
       this.missedFonts[fontName]++
-      this.events.fontNotFound.dispatch({
-        fontName: fontName,
-        count: this.missedFonts[fontName]
-      })
+      // Dispatch / schedule once per miss cycle so glyph loops do not spam.
+      if (this.missedFonts[fontName] === 1) {
+        this.events.fontNotFound.dispatch({
+          fontName: fontName,
+          count: this.missedFonts[fontName]
+        })
+        if (this.lazyFontLoading) {
+          void this.requestFont(fontName)
+        }
+      }
     }
   }
 
@@ -676,13 +811,31 @@ export class FontManager {
       return
     }
 
+    const epoch = this.loadEpoch
     const data = await FontCacheManager.instance.get(fontName)
+    if (epoch !== this.loadEpoch) {
+      return
+    }
     if (data) {
+      // Yield so open-time entity convert can keep draining between parses.
+      await new Promise<void>(resolve => setTimeout(resolve, 0))
+      if (epoch !== this.loadEpoch || this.isFontLoaded(fontName)) {
+        return
+      }
       const font = FontFactory.instance.createFont(data)
-      this.registerFontInMap(fontName, font)
+      if (font) {
+        this.registerFontInMap(fontName, font)
+      }
     } else {
       const buffer = (await this.loader.loadAsync(fontInfo.url)) as ArrayBuffer
+      if (epoch !== this.loadEpoch) {
+        return
+      }
       fontData.data = buffer
+      await new Promise<void>(resolve => setTimeout(resolve, 0))
+      if (epoch !== this.loadEpoch || this.isFontLoaded(fontName)) {
+        return
+      }
       const font = FontFactory.instance.createFont(fontData)
       if (font) {
         fontInfo.name.forEach(name => font.names.add(name))
@@ -693,6 +846,11 @@ export class FontManager {
       }
     }
 
+    if (epoch !== this.loadEpoch || !this.isFontLoaded(fontName)) {
+      return
+    }
+    delete this.missedFonts[fontName]
+    this.fontRequestFailed.delete(fontName.toLowerCase())
     this.events.fontLoaded.dispatch({
       fontName: fontName
     })
@@ -813,6 +971,10 @@ export class FontManager {
         font.dispose?.()
       }
       this.loadedFontMap.clear()
+      this.fontRequestInFlight.clear()
+      this.fontRequestFailed.clear()
+      this.missedFonts = {}
+      this.loadEpoch++
       return true
     }
     const font = this.loadedFontMap.get(fontToRelease.toLowerCase())

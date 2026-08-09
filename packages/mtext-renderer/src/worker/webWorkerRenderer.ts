@@ -97,10 +97,18 @@ type SetDefaultFontsMessage = WorkerMessageBase<
   }
 >
 
+type SetLazyFontLoadingMessage = WorkerMessageBase<
+  'setLazyFontLoading',
+  {
+    enabled: boolean
+  }
+>
+
 type WorkerMessageTyped =
   | RenderMessage
   | LoadFontsMessage
   | SetDefaultFontsMessage
+  | SetLazyFontLoadingMessage
   | SetFontUrlMessage
   | GetAvailableFontsMessage
   | GetMemoryStatsMessage
@@ -139,13 +147,30 @@ type SetDefaultFontsResponse = WorkerResponseBase<
   }
 >
 
+type SetLazyFontLoadingResponse = WorkerResponseBase<
+  'setLazyFontLoading',
+  {
+    enabled: boolean
+  }
+>
+
+/** Push notification from a worker when a font finishes lazy-loading. */
+type FontLoadedNotification = WorkerResponseBase<
+  'fontLoaded',
+  {
+    fontName: string
+  }
+>
+
 type WorkerResponseTyped =
   | RenderResponse
   | LoadFontsResponse
   | SetDefaultFontsResponse
+  | SetLazyFontLoadingResponse
   | SetFontUrlResponse
   | GetAvailableFontsResponse
   | GetMemoryStatsResponse
+  | FontLoadedNotification
 
 // Serialized MText data from worker (JSON-based)
 interface SerializedMText {
@@ -234,6 +259,15 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   private readyPromise: Promise<void> | null = null
   private isInitialized: boolean
   private defaultStyleManager: StyleManager
+  /**
+   * Fonts known to be present in every worker after an explicit loadFonts or
+   * after a lazy fontLoaded was fan-out to the full pool.
+   */
+  private poolSyncedFonts = new Set<string>()
+  /** In-flight pool-wide font syncs keyed by normalized font name. */
+  private poolFontSyncInFlight = new Map<string, Promise<void>>()
+  /** Fonts already forwarded as main-thread fontLoaded for this pool lifetime. */
+  private poolFontLoadedDispatched = new Set<string>()
 
   constructor(config: WebWorkerRendererConfig = {}) {
     // Apply default values
@@ -273,8 +307,11 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
 
   private async ensureInitialized() {
     if (!this.isInitialized) {
-      // Guarantee the default font is loaded
-      await this.loadFonts(FontManager.instance.getFontsToLoad())
+      // Non-lazy mode still needs default/symbol fonts before the first draw.
+      // Lazy mode schedules them on demand inside each worker.
+      if (!FontManager.instance.lazyFontLoading) {
+        await this.loadFonts(FontManager.instance.getFontsToLoad())
+      }
       this.isInitialized = true
     }
   }
@@ -286,6 +323,28 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     response: WorkerResponseTyped,
     workerIndex: number
   ) {
+    // Lazy font loads complete after the render request has already resolved.
+    // Sync the face into the full pool before notifying main-thread listeners,
+    // so a redraw routed to another worker already has the font.
+    if (response.type === 'fontLoaded') {
+      const fontName = response.data?.fontName
+      if (fontName) {
+        void this.syncFontToWorkerPool(fontName)
+          .then(shouldDispatch => {
+            if (shouldDispatch) {
+              FontManager.instance.events.fontLoaded.dispatch({ fontName })
+            }
+          })
+          .catch(error => {
+            console.warn(
+              `Failed to sync lazy-loaded font "${fontName}" across worker pool:`,
+              error
+            )
+          })
+      }
+      return
+    }
+
     const { id, success, data, error } = response
     const pendingRequest = this.pendingRequests.get(id)
 
@@ -304,6 +363,58 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     } else {
       console.warn(`No pending request found for worker response id=${id}`)
     }
+  }
+
+  /**
+   * Ensures every worker has `fontName`, then returns whether the main thread
+   * should emit {@link FontManager.events.fontLoaded} for this name.
+   */
+  private syncFontToWorkerPool(fontName: string): Promise<boolean> {
+    const key = fontName.toLowerCase()
+    if (!key || this.workers.length === 0) {
+      return Promise.resolve(false)
+    }
+    if (this.poolFontLoadedDispatched.has(key)) {
+      return Promise.resolve(false)
+    }
+
+    const existing = this.poolFontSyncInFlight.get(key)
+    const sync =
+      existing ??
+      (async () => {
+        if (!this.poolSyncedFonts.has(key)) {
+          const results = await this.sendMessageToAllWorkers<
+            LoadFontsMessage,
+            LoadFontsResponse
+          >({
+            type: 'loadFonts',
+            data: { fonts: [fontName] }
+          })
+          const loadedInAll = results.every(r =>
+            r?.loaded?.some(name => name.toLowerCase() === key)
+          )
+          if (loadedInAll) {
+            this.poolSyncedFonts.add(key)
+          }
+        }
+      })().finally(() => {
+        this.poolFontSyncInFlight.delete(key)
+      })
+
+    if (!existing) {
+      this.poolFontSyncInFlight.set(key, sync)
+    }
+
+    return sync.then(() => {
+      if (!this.poolSyncedFonts.has(key)) {
+        return false
+      }
+      if (this.poolFontLoadedDispatched.has(key)) {
+        return false
+      }
+      this.poolFontLoadedDispatched.add(key)
+      return true
+    })
   }
 
   /**
@@ -463,6 +574,20 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   }
 
   /**
+   * Mirrors {@link FontManager.lazyFontLoading} into every worker isolate.
+   */
+  async setLazyFontLoading(enabled: boolean): Promise<void> {
+    FontManager.instance.lazyFontLoading = enabled
+    await this.sendMessageToAllWorkers<
+      SetLazyFontLoadingMessage,
+      SetLazyFontLoadingResponse
+    >({
+      type: 'setLazyFontLoading',
+      data: { enabled }
+    })
+  }
+
+  /**
    * Render MText in one worker and return serialized data asynchronously.
    */
   async asyncRenderMText(
@@ -530,6 +655,20 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
 
     const aggregated = new Set<string>()
     results.forEach(r => r?.loaded?.forEach(f => aggregated.add(f)))
+
+    for (const name of fonts) {
+      const key = name.toLowerCase()
+      if (!key) {
+        continue
+      }
+      const loadedInAll = results.every(r =>
+        r?.loaded?.some(loadedName => loadedName.toLowerCase() === key)
+      )
+      if (loadedInAll) {
+        this.poolSyncedFonts.add(key)
+        this.poolFontLoadedDispatched.add(key)
+      }
+    }
 
     return { loaded: Array.from(aggregated) }
   }
@@ -856,6 +995,9 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     this.workers = []
     this.inFlightPerWorker = []
     this.readyPromise = null
+    this.poolSyncedFonts.clear()
+    this.poolFontSyncInFlight.clear()
+    this.poolFontLoadedDispatched.clear()
     // Reject any remaining pending requests
     this.pendingRequests.forEach(({ reject }) => {
       reject(new Error('Renderer terminated'))

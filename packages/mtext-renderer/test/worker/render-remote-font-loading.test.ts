@@ -43,6 +43,31 @@ class MockWorker {
         } as MessageEvent)
         return
       }
+      if (type === 'setLazyFontLoading') {
+        this.onmessage?.({
+          data: {
+            id,
+            type,
+            success: true,
+            data: { enabled: (data as { enabled: boolean }).enabled }
+          }
+        } as MessageEvent)
+        return
+      }
+      if (type === 'setDefaultFonts') {
+        this.onmessage?.({
+          data: {
+            id,
+            type,
+            success: true,
+            data: {
+              fonts: (data as { fonts: string[] }).fonts,
+              symbolFonts: (data as { symbolFonts: string[] }).symbolFonts
+            }
+          }
+        } as MessageEvent)
+        return
+      }
       if (type === 'render') {
         this.onmessage?.({
           data: {
@@ -101,6 +126,7 @@ describe('render remote font loading', () => {
 
   beforeEach(() => {
     FontManager.instance.release()
+    FontManager.instance.lazyFontLoading = true
     FontManager.instance.defaultFonts = new Set(['simkai'])
     FontManager.instance.symbolFonts = new Set(['amgdt'])
     loadFontsByNames = vi
@@ -111,31 +137,14 @@ describe('render remote font loading', () => {
 
   afterEach(() => {
     loadFontsByNames.mockRestore()
+    FontManager.instance.lazyFontLoading = true
     vi.unstubAllGlobals()
     vi.stubGlobal('Worker', MockWorker)
   })
 
-  it('MainThreadRenderer loads default and symbol fonts before the first render', async () => {
+  it('MainThreadRenderer schedules style fonts lazily on first render', async () => {
     const renderer = new MainThreadRenderer()
-
-    await renderer.asyncRenderMText(
-      minimalMTextData,
-      minimalTextStyle,
-      createDefaultColorSettings()
-    )
-
-    expect(loadFontsByNames).toHaveBeenCalledWith(['simkai', 'amgdt'])
-  })
-
-  it('MainThreadRenderer does not reload default fonts on subsequent renders', async () => {
-    const renderer = new MainThreadRenderer()
-
-    await renderer.asyncRenderMText(
-      minimalMTextData,
-      minimalTextStyle,
-      createDefaultColorSettings()
-    )
-    loadFontsByNames.mockClear()
+    const requestFonts = vi.spyOn(FontManager.instance, 'requestFonts')
 
     await renderer.asyncRenderMText(
       minimalMTextData,
@@ -144,10 +153,15 @@ describe('render remote font loading', () => {
     )
 
     expect(loadFontsByNames).not.toHaveBeenCalledWith(['simkai', 'amgdt'])
+    expect(requestFonts).toHaveBeenCalledWith(
+      expect.arrayContaining(['arial', 'txt', 'hztxt'])
+    )
+    requestFonts.mockRestore()
   })
 
-  it('MText.asyncDraw collects inline/style fonts and requests loadFontsByNames before parse', async () => {
+  it('MText.asyncDraw schedules inline/style fonts without awaiting preload', async () => {
     const styleManager = new DefaultStyleManager()
+    const requestFonts = vi.spyOn(FontManager.instance, 'requestFonts')
     const mtext = new MText(
       minimalMTextData,
       minimalTextStyle,
@@ -158,11 +172,31 @@ describe('render remote font loading', () => {
 
     await mtext.asyncDraw()
 
-    // arial/txt/hztxt are not defaultFonts; loadFontsByNames still receives them so
-    // DefaultFontLoader can download any match from the remote font repository.
+    expect(requestFonts).toHaveBeenCalledWith(
+      expect.arrayContaining(['arial', 'txt', 'hztxt'])
+    )
+    requestFonts.mockRestore()
+  })
+
+  it('MText.asyncDraw awaits loadFontsByNames when lazyFontLoading is false', async () => {
+    FontManager.instance.lazyFontLoading = false
+    const styleManager = new DefaultStyleManager()
+    const requestFonts = vi.spyOn(FontManager.instance, 'requestFonts')
+    const mtext = new MText(
+      minimalMTextData,
+      minimalTextStyle,
+      styleManager,
+      FontManager.instance,
+      createDefaultColorSettings()
+    )
+
+    await mtext.asyncDraw()
+
+    expect(requestFonts).not.toHaveBeenCalled()
     expect(loadFontsByNames).toHaveBeenCalledWith(
       expect.arrayContaining(['arial', 'txt', 'hztxt'])
     )
+    requestFonts.mockRestore()
   })
 
   it('glyph fallback does not trigger remote font loading', () => {
@@ -186,7 +220,38 @@ describe('render remote font loading', () => {
     expect(loadFontsByNames).not.toHaveBeenCalled()
   })
 
-  it('WebWorkerRenderer asks workers to load default fonts on first render', async () => {
+  it('WebWorkerRenderer does not preload default fonts on first render', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 1, timeOut: 5000 })
+
+    await renderer.asyncRenderMText(
+      minimalMTextData,
+      minimalTextStyle,
+      createDefaultColorSettings()
+    )
+
+    const loadFontsMessages = workerInstances[0].postMessage.mock.calls.filter(
+      ([message]) => (message as { type?: string }).type === 'loadFonts'
+    )
+    expect(loadFontsMessages).toHaveLength(0)
+
+    renderer.destroy()
+  })
+
+  it('MainThreadRenderer preloads default fonts when lazyFontLoading is false', async () => {
+    FontManager.instance.lazyFontLoading = false
+    const renderer = new MainThreadRenderer()
+
+    await renderer.asyncRenderMText(
+      minimalMTextData,
+      minimalTextStyle,
+      createDefaultColorSettings()
+    )
+
+    expect(loadFontsByNames).toHaveBeenCalledWith(['simkai', 'amgdt'])
+  })
+
+  it('WebWorkerRenderer preloads default fonts when lazyFontLoading is false', async () => {
+    FontManager.instance.lazyFontLoading = false
     const renderer = new WebWorkerRenderer({ poolSize: 1, timeOut: 5000 })
 
     await renderer.asyncRenderMText(
@@ -199,11 +264,129 @@ describe('render remote font loading', () => {
       ([message]) => (message as { type?: string }).type === 'loadFonts'
     )
     expect(loadFontsMessages.length).toBeGreaterThan(0)
-    expect(loadFontsMessages[0]?.[0]).toMatchObject({
-      type: 'loadFonts',
-      data: { fonts: ['simkai', 'amgdt'] }
+    expect(loadFontsMessages[0][0]).toEqual(
+      expect.objectContaining({
+        type: 'loadFonts',
+        data: { fonts: ['simkai', 'amgdt'] }
+      })
+    )
+
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer does not dispatch fontLoaded when pool sync reports empty loaded', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 1, timeOut: 5000 })
+    const listener = vi.fn()
+    FontManager.instance.events.fontLoaded.addEventListener(listener)
+
+    // Override MockWorker so loadFonts returns no successfully loaded faces.
+    workerInstances[0].postMessage = vi.fn((message: Record<string, unknown>) => {
+      queueMicrotask(() => {
+        const { type, id } = message
+        if (type === 'loadFonts') {
+          workerInstances[0].onmessage?.({
+            data: {
+              id,
+              type,
+              success: true,
+              data: { loaded: [] }
+            }
+          } as MessageEvent)
+          return
+        }
+      })
     })
 
+    workerInstances[0].onmessage?.({
+      data: {
+        id: '',
+        type: 'fontLoaded',
+        success: true,
+        data: { fontName: 'missing-face' }
+      }
+    } as MessageEvent)
+
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(listener).not.toHaveBeenCalled()
+
+    FontManager.instance.events.fontLoaded.removeEventListener(listener)
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer forwards worker fontLoaded to main FontManager', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 1, timeOut: 5000 })
+    const listener = vi.fn()
+    FontManager.instance.events.fontLoaded.addEventListener(listener)
+
+    await renderer.asyncRenderMText(
+      minimalMTextData,
+      minimalTextStyle,
+      createDefaultColorSettings()
+    )
+
+    workerInstances[0].onmessage?.({
+      data: {
+        id: '',
+        type: 'fontLoaded',
+        success: true,
+        data: { fontName: 'hztxt' }
+      }
+    } as MessageEvent)
+
+    await vi.waitFor(() => {
+      expect(listener).toHaveBeenCalledWith({ fontName: 'hztxt' })
+    })
+    FontManager.instance.events.fontLoaded.removeEventListener(listener)
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer syncs lazy fontLoaded into every worker before dispatch', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 2, timeOut: 5000 })
+    const listener = vi.fn()
+    FontManager.instance.events.fontLoaded.addEventListener(listener)
+
+    workerInstances[0].onmessage?.({
+      data: {
+        id: '',
+        type: 'fontLoaded',
+        success: true,
+        data: { fontName: 'simkai' }
+      }
+    } as MessageEvent)
+
+    await vi.waitFor(() => {
+      expect(listener).toHaveBeenCalledWith({ fontName: 'simkai' })
+    })
+
+    for (const worker of workerInstances) {
+      expect(worker.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'loadFonts',
+          data: { fonts: ['simkai'] }
+        })
+      )
+    }
+
+    FontManager.instance.events.fontLoaded.removeEventListener(listener)
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer setLazyFontLoading mirrors flag to all workers', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 2, timeOut: 5000 })
+
+    await renderer.setLazyFontLoading(false)
+
+    expect(FontManager.instance.lazyFontLoading).toBe(false)
+    for (const worker of workerInstances) {
+      expect(worker.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'setLazyFontLoading',
+          data: { enabled: false }
+        })
+      )
+    }
+
+    await renderer.setLazyFontLoading(true)
     renderer.destroy()
   })
 

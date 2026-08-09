@@ -1,6 +1,7 @@
 import {
   FontManager,
   formatMemoryUsageReport,
+  MText,
   MTextColor,
   MTextData,
   MTextObject,
@@ -54,6 +55,16 @@ class MTextRendererExample {
    * even if the user clicks Render without re-selecting the example button.
    */
   private largeCoordinatesExampleKey: string | null = null
+  /** Debounce timer for redrawing after lazy {@link FontManager.events.fontLoaded}. */
+  private lazyRedrawTimer: ReturnType<typeof setTimeout> | null = null
+  /** Guards against overlapping auto-redraws while fonts keep arriving. */
+  private isLazyRedrawing = false
+  /** Set when a font loads during an in-flight lazy redraw so we reschedule. */
+  private lazyRedrawPending = false
+  /** Fonts reported by `fontLoaded` since the last user-initiated render. */
+  private lazyFontsLoadedSinceRender: string[] = []
+  /** When true, the next {@link renderCurrentContent} was triggered by lazy redraw. */
+  private isAutoLazyRedraw = false
 
   /** `#mtext-input` — editable MText format string for manual renders. */
   private readonly mtextInput: HTMLTextAreaElement
@@ -105,6 +116,8 @@ class MTextRendererExample {
   private readonly fontSelect: HTMLSelectElement
   /** `#default-fonts-preset` — CJK / symbol fallback chain preset. */
   private readonly defaultFontsPresetSelect: HTMLSelectElement
+  /** `#lazy-font-loading` — toggles {@link FontManager.lazyFontLoading}. */
+  private readonly lazyFontLoadingCheckbox: HTMLInputElement
   /** DXF layer name passed in {@link getColorSettings} for ByLayer color resolution. */
   private readonly defaultLayerName = '0'
 
@@ -194,6 +207,9 @@ class MTextRendererExample {
     this.defaultFontsPresetSelect = document.getElementById(
       'default-fonts-preset'
     ) as HTMLSelectElement
+    this.lazyFontLoadingCheckbox = document.getElementById(
+      'lazy-font-loading'
+    ) as HTMLInputElement
     this.fontManager = new ExampleFontManager(
       this.unifiedRenderer,
       this.statusDiv,
@@ -203,6 +219,13 @@ class MTextRendererExample {
       this.fontCacheInput,
       this.fontCacheBtn
     )
+
+    void this.fontManager.setLazyFontLoading(
+      this.lazyFontLoadingCheckbox.checked
+    )
+    FontManager.instance.events.fontLoaded.addEventListener(payload => {
+      this.onLazyFontLoaded(payload.fontName)
+    })
 
     const wcsCoordsDiv = document.getElementById('wcs-coords') as HTMLDivElement
     this.wcsDisplay = new WcsCoordinateDisplay(
@@ -232,18 +255,125 @@ class MTextRendererExample {
     this.unifiedRenderer.destroy()
   }
 
+  private readonly controlsPanelMinWidth = 360
+  private readonly controlsPanelMaxWidthRatio = 0.72
+  private readonly controlsPanelStorageKey = 'mtext-example-controls-width'
+
+  /** Wires the vertical splitter so the left controls panel can be resized. */
+  private setupControlsPanelResize(): void {
+    const controls = document.getElementById('controls') as HTMLElement | null
+    const splitter = document.getElementById(
+      'panel-splitter'
+    ) as HTMLElement | null
+    if (!controls || !splitter) {
+      return
+    }
+
+    const stored = Number(localStorage.getItem(this.controlsPanelStorageKey))
+    if (Number.isFinite(stored) && stored > 0) {
+      this.setControlsPanelWidth(stored)
+    } else {
+      this.clampControlsPanelWidth()
+    }
+
+    let dragging = false
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!dragging) {
+        return
+      }
+      this.setControlsPanelWidth(event.clientX)
+      this.viewport.resize()
+    }
+
+    const stopDragging = (event: PointerEvent) => {
+      if (!dragging) {
+        return
+      }
+      dragging = false
+      splitter.classList.remove('is-dragging')
+      document.body.classList.remove('is-resizing-panel')
+      try {
+        splitter.releasePointerCapture(event.pointerId)
+      } catch {
+        // ignore if capture was already released
+      }
+      localStorage.setItem(
+        this.controlsPanelStorageKey,
+        String(Math.round(controls.getBoundingClientRect().width))
+      )
+      this.viewport.resize(() => this.fitView())
+    }
+
+    splitter.addEventListener('pointerdown', event => {
+      if (event.button !== 0) {
+        return
+      }
+      dragging = true
+      splitter.classList.add('is-dragging')
+      document.body.classList.add('is-resizing-panel')
+      splitter.setPointerCapture(event.pointerId)
+    })
+    splitter.addEventListener('pointermove', onPointerMove)
+    splitter.addEventListener('pointerup', stopDragging)
+    splitter.addEventListener('pointercancel', stopDragging)
+
+    splitter.addEventListener('keydown', event => {
+      const step = event.shiftKey ? 40 : 16
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        this.setControlsPanelWidth(controls.getBoundingClientRect().width - step)
+        this.viewport.resize(() => this.fitView())
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        this.setControlsPanelWidth(controls.getBoundingClientRect().width + step)
+        this.viewport.resize(() => this.fitView())
+      }
+    })
+  }
+
+  /** Clamps the controls panel width into the allowed range for the current viewport. */
+  private clampControlsPanelWidth(): void {
+    const controls = document.getElementById('controls') as HTMLElement | null
+    if (!controls) {
+      return
+    }
+    this.setControlsPanelWidth(controls.getBoundingClientRect().width)
+  }
+
+  /** Applies a pixel width to `#controls`, clamped between min and max bounds. */
+  private setControlsPanelWidth(width: number): void {
+    const controls = document.getElementById('controls') as HTMLElement | null
+    if (!controls) {
+      return
+    }
+    const maxWidth = Math.max(
+      this.controlsPanelMinWidth,
+      Math.floor(window.innerWidth * this.controlsPanelMaxWidthRatio)
+    )
+    const next = Math.min(
+      maxWidth,
+      Math.max(this.controlsPanelMinWidth, Math.round(width))
+    )
+    controls.style.setProperty('--controls-width', `${next}px`)
+  }
+
   /** Registers all UI event handlers for controls, examples, and window resize. */
   private setupEventListeners(): void {
     window.addEventListener('resize', () => {
+      this.clampControlsPanelWidth()
       this.viewport.resize(() => this.fitView())
     })
+    this.setupControlsPanelResize()
 
     this.renderBtn.addEventListener('click', async () => {
+      this.beginUserRender()
       await this.renderCurrentContent()
     })
 
     this.contentTypeSelect.addEventListener('change', () => {
       this.updateContentPanels()
+      this.beginUserRender()
       void this.renderCurrentContent()
     })
     this.updateContentPanels()
@@ -258,6 +388,7 @@ class MTextRendererExample {
     ].forEach(element => {
       element.addEventListener('change', () => {
         if (this.contentTypeSelect.value === 'shape') {
+          this.beginUserRender()
           void this.renderCurrentContent()
         }
       })
@@ -265,12 +396,18 @@ class MTextRendererExample {
 
     this.fontSelect.addEventListener('change', async () => {
       await this.fontManager.applyDefaultFontsPreset()
+      this.beginUserRender()
       await this.renderCurrentContent()
     })
 
     this.defaultFontsPresetSelect.addEventListener('change', async () => {
       await this.fontManager.applyDefaultFontsPreset()
+      this.beginUserRender()
       await this.renderCurrentContent()
+    })
+
+    this.lazyFontLoadingCheckbox.addEventListener('change', async () => {
+      await this.applyLazyFontLoadingMode(this.lazyFontLoadingCheckbox.checked)
     })
 
     document.querySelectorAll('.example-btn').forEach(button => {
@@ -282,6 +419,7 @@ class MTextRendererExample {
         }
 
         const content = EXAMPLE_TEXTS[exampleType]
+        this.beginUserRender()
 
         if (content === 'shapes') {
           this.contentTypeSelect.value = 'shape'
@@ -335,20 +473,24 @@ class MTextRendererExample {
       this.statusDiv.textContent = `Switched to ${mode} thread rendering`
       this.statusDiv.style.color = '#0f0'
       await this.fontManager.initialize(false)
+      this.beginUserRender()
       await this.renderCurrentContent()
     })
 
     this.byLayerColorInput.addEventListener('change', async () => {
+      this.beginUserRender()
       await this.renderCurrentContent()
     })
     this.byBlockColorInput.addEventListener('change', async () => {
+      this.beginUserRender()
       await this.renderCurrentContent()
     })
 
     this.fontCacheBtn.addEventListener('click', async () => {
-      await this.fontManager.cacheSelectedFontFile(() =>
-        this.renderCurrentContent()
-      )
+      await this.fontManager.cacheSelectedFontFile(() => {
+        this.beginUserRender()
+        return this.renderCurrentContent()
+      })
     })
     this.fontCacheInput.addEventListener('change', () => {
       this.fontManager.updateCacheButtonState()
@@ -361,6 +503,120 @@ class MTextRendererExample {
     this.releaseFontsBtn.addEventListener('click', () => {
       void this.releaseLoadedFonts()
     })
+  }
+
+  /** Marks the next render as user-initiated (resets lazy font-load tracking). */
+  private beginUserRender(): void {
+    this.isAutoLazyRedraw = false
+    this.lazyRedrawPending = false
+    this.lazyFontsLoadedSinceRender = []
+    if (this.lazyRedrawTimer != null) {
+      clearTimeout(this.lazyRedrawTimer)
+      this.lazyRedrawTimer = null
+    }
+  }
+
+  /**
+   * Applies the Lazy Font Loading checkbox: updates {@link FontManager},
+   * clears in-memory fonts when enabling lazy mode, and preloads when disabling.
+   */
+  private async applyLazyFontLoadingMode(enabled: boolean): Promise<void> {
+    await this.fontManager.setLazyFontLoading(enabled)
+    if (enabled) {
+      FontManager.instance.release()
+      this.unifiedRenderer.terminateWorkers()
+      await this.fontManager.applyDefaultFontsPreset()
+      this.statusDiv.textContent =
+        'Lazy font loading ON — fonts released; next render loads on demand'
+      this.statusDiv.style.color = '#0f0'
+    } else {
+      await this.fontManager.applyDefaultFontsPreset()
+      this.statusDiv.textContent =
+        'Lazy font loading OFF — fonts preloaded before render'
+      this.statusDiv.style.color = '#0f0'
+    }
+    this.beginUserRender()
+    await this.renderCurrentContent()
+  }
+
+  /**
+   * Handles {@link FontManager.events.fontLoaded} by scheduling a debounced redraw
+   * so glyph fallbacks are replaced once background loads finish.
+   */
+  private onLazyFontLoaded(fontName: string): void {
+    if (!this.fontManager.isLazyFontLoading()) {
+      return
+    }
+    if (!this.lazyFontsLoadedSinceRender.includes(fontName)) {
+      this.lazyFontsLoadedSinceRender.push(fontName)
+    }
+    this.statusDiv.textContent = `Lazy: loaded ${fontName} (${this.lazyFontsLoadedSinceRender.join(', ')}) — redrawing...`
+    this.statusDiv.style.color = '#ffa500'
+    this.scheduleLazyRedraw()
+  }
+
+  /** Debounces {@link redrawAfterLazyFontLoad} so bursty fontLoaded events coalesce. */
+  private scheduleLazyRedraw(): void {
+    if (this.lazyRedrawTimer != null) {
+      clearTimeout(this.lazyRedrawTimer)
+    }
+    this.lazyRedrawTimer = setTimeout(() => {
+      this.lazyRedrawTimer = null
+      void this.redrawAfterLazyFontLoad()
+    }, 120)
+  }
+
+  /** Re-renders current content after one or more lazy fonts finished loading. */
+  private async redrawAfterLazyFontLoad(): Promise<void> {
+    if (!this.fontManager.isLazyFontLoading()) {
+      return
+    }
+    if (this.isLazyRedrawing) {
+      // Font(s) arrived mid-redraw — run again after the current pass finishes.
+      this.lazyRedrawPending = true
+      return
+    }
+    this.isLazyRedrawing = true
+    this.isAutoLazyRedraw = true
+    this.lazyRedrawPending = false
+    try {
+      await this.renderCurrentContent()
+      const fonts = this.lazyFontsLoadedSinceRender.join(', ')
+      this.statusDiv.textContent = `Lazy: re-rendered after [${fonts}] (${this.renderModeSelect.value})`
+      this.statusDiv.style.color = '#0f0'
+    } catch (error) {
+      console.error('Lazy redraw failed:', error)
+    } finally {
+      this.isLazyRedrawing = false
+      this.isAutoLazyRedraw = false
+      if (this.lazyRedrawPending) {
+        this.lazyRedrawPending = false
+        this.scheduleLazyRedraw()
+      }
+    }
+  }
+
+  /**
+   * Preloads default, style, and inline fonts when lazy loading is disabled.
+   */
+  private async ensureFontsLoadedForMText(
+    texts: string[],
+    textFont: string
+  ): Promise<void> {
+    if (this.fontManager.isLazyFontLoading()) {
+      return
+    }
+    const fonts = new Set<string>([
+      ...FontManager.instance.getFontsToLoad(),
+      textFont,
+      ...this.fontManager.getFontsToPreload()
+    ])
+    for (const text of texts) {
+      for (const font of MText.getFonts(text || '', true)) {
+        fonts.add(font)
+      }
+    }
+    await this.unifiedRenderer.loadFonts([...fonts].filter(Boolean))
   }
 
   /**
@@ -385,15 +641,15 @@ class MTextRendererExample {
   }
 
   /**
-   * Releases main-thread loaded fonts, then refreshes the memory panel.
-   *
-   * @remarks
-   * Worker isolates keep their own FontManager until workers are terminated
-   * or fonts are reloaded through the worker renderer path.
+   * Releases main-thread loaded fonts (and recreates workers so their isolates
+   * are empty too), then refreshes the memory panel.
    */
   private async releaseLoadedFonts(): Promise<void> {
     FontManager.instance.release()
-    this.statusDiv.textContent = 'Released loaded fonts (main thread)'
+    this.unifiedRenderer.terminateWorkers()
+    this.beginUserRender()
+    this.statusDiv.textContent =
+      'Released loaded fonts (main + workers). Render again to observe lazy/non-lazy loading.'
     this.statusDiv.style.color = '#0f0'
     await this.refreshMemoryStats()
   }
@@ -482,7 +738,12 @@ class MTextRendererExample {
       this.clearSceneContent()
       const colorSettings = this.getColorSettings()
       const shapeFont = this.fontManager.getSelectedShapeFont() || 'complex'
-      await this.unifiedRenderer.loadFonts([shapeFont])
+      if (!this.fontManager.isLazyFontLoading()) {
+        await this.unifiedRenderer.loadFonts([
+          ...FontManager.instance.getFontsToLoad(),
+          shapeFont
+        ])
+      }
 
       const isGrid = content === 'shapes'
 
@@ -577,7 +838,8 @@ class MTextRendererExample {
       const label = isGrid
         ? `${shapeObjects.length} SHX shapes (128–132)`
         : `SHAPE #${items[0].shapeData.shapeNumber ?? items[0].shapeData.name ?? '?'}`
-      this.statusDiv.textContent = `Rendered ${label} in ${renderTime.toFixed(2)}ms (main thread; SHAPE uses sync path)`
+      const modeLabel = this.fontManager.isLazyFontLoading() ? 'lazy' : 'non-lazy'
+      this.statusDiv.textContent = `Rendered ${label} in ${renderTime.toFixed(2)}ms (${modeLabel}; SHAPE uses main-thread sync path)`
       this.statusDiv.style.color = '#0f0'
       this.boundsHelper.rebaseSceneOrigin(this.currentMText)
       this.fitView()
@@ -608,7 +870,10 @@ class MTextRendererExample {
   private async renderMText(content: string): Promise<void> {
     try {
       const startTime = performance.now()
-      this.statusDiv.textContent = 'Rendering MText...'
+      const lazy = this.fontManager.isLazyFontLoading()
+      this.statusDiv.textContent = lazy
+        ? 'Rendering MText (lazy)...'
+        : 'Rendering MText (non-lazy preload)...'
       this.statusDiv.style.color = '#ffa500'
       this.clearSceneContent()
 
@@ -627,20 +892,18 @@ class MTextRendererExample {
               : null
 
       if (multiData) {
-        if (LargeCoordinatesExample.isExample(content)) {
-          const texts = LargeCoordinatesExample.parseTexts(this.mtextInput.value)
-          if (texts.length < 2) {
-            this.statusDiv.textContent =
-              'Large Coordinates expects two MText blocks separated by \\P\\P in the text area'
-            this.statusDiv.style.color = '#f00'
-            return
-          }
-          await LargeCoordinatesExample.loadFonts(
-            this.unifiedRenderer,
-            texts,
-            textFont
-          )
+        const texts = LargeCoordinatesExample.isExample(content)
+          ? LargeCoordinatesExample.parseTexts(this.mtextInput.value)
+          : multiData.map(item => item.mtextData.text || '')
+
+        if (LargeCoordinatesExample.isExample(content) && texts.length < 2) {
+          this.statusDiv.textContent =
+            'Large Coordinates expects two MText blocks separated by \\P\\P in the text area'
+          this.statusDiv.style.color = '#f00'
+          return
         }
+
+        await this.ensureFontsLoadedForMText(texts, textFont)
 
         const mtextObjects = await Promise.all(
           multiData.map(({ mtextData, textStyle }) =>
@@ -705,12 +968,13 @@ class MTextRendererExample {
             : content === 'largeCoordinates'
               ? 'large-coordinates MText (fonts via \\F)'
               : 'MText batch'
-        this.statusDiv.textContent = `Rendered ${mtextObjects.length}/${multiData.length} (${label}) in ${renderTime.toFixed(2)}ms (${this.renderModeSelect.value} thread)${
-          LargeCoordinatesExample.isExample(content)
-            ? ' · DXF WCS insertion (38425645.89, 4069531.44); example width 100 (DXF group 41 was 128307003)'
-            : ''
-        }`
+        this.statusDiv.textContent = this.formatRenderStatus(
+          `Rendered ${mtextObjects.length}/${multiData.length} (${label}) in ${renderTime.toFixed(2)}ms`,
+          lazy
+        )
       } else {
+        await this.ensureFontsLoadedForMText([content], textFont)
+
         const mtextContent: MTextData = {
           text: content,
           height: 24,
@@ -760,7 +1024,10 @@ class MTextRendererExample {
         }
 
         const renderTime = performance.now() - startTime
-        this.statusDiv.textContent = `MText rendered in ${renderTime.toFixed(2)}ms (${this.renderModeSelect.value} thread)`
+        this.statusDiv.textContent = this.formatRenderStatus(
+          `MText rendered in ${renderTime.toFixed(2)}ms`,
+          lazy
+        )
       }
 
       this.statusDiv.style.color = '#0f0'
@@ -770,6 +1037,19 @@ class MTextRendererExample {
       this.statusDiv.textContent = 'Error rendering MText'
       this.statusDiv.style.color = '#f00'
     }
+  }
+
+  /** Appends lazy/non-lazy and thread mode details to a render status line. */
+  private formatRenderStatus(base: string, lazy: boolean): string {
+    const mode = lazy ? 'lazy' : 'non-lazy'
+    const thread = this.renderModeSelect.value
+    if (lazy && this.lazyFontsLoadedSinceRender.length > 0) {
+      return `${base} (${mode}, ${thread}) · loaded [${this.lazyFontsLoadedSinceRender.join(', ')}]`
+    }
+    if (lazy && !this.isAutoLazyRedraw) {
+      return `${base} (${mode}, ${thread}) · waiting for fontLoaded if fonts are missing`
+    }
+    return `${base} (${mode}, ${thread})`
   }
 }
 
