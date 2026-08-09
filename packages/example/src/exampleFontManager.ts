@@ -222,7 +222,7 @@ export class ExampleFontManager {
    * Rebuilds `#font-select` and `#shape-font-select` from available fonts.
    *
    * @param fonts - Complete font list from the renderer.
-   * @param selectedTextFont - Preferred text font; falls back to `simkai` when unmatched.
+   * @param selectedTextFont - Preferred text font; falls back to `simsun` when unmatched.
    * @param selectedShapeFont - Preferred SHAPE font; falls back to `complex` when unmatched.
    */
   private populateFontSelects(
@@ -254,7 +254,7 @@ export class ExampleFontManager {
       if (matchesSelection(font, previousTextFont)) {
         option.selected = true
         textFontMatched = true
-      } else if (!textFontMatched && font.name[0] === 'simkai') {
+      } else if (!textFontMatched && font.name[0] === 'simsun') {
         option.selected = true
         textFontMatched = true
       }
