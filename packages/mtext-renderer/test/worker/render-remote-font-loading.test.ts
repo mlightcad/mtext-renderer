@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FontManager } from '../../src/font/fontManager'
 import { DefaultStyleManager } from '../../src/renderer/defaultStyleManager'
 import { MText } from '../../src/renderer/mtext'
+import { Shape } from '../../src/renderer/shape'
 import {
   createDefaultColorSettings,
   MTextAttachmentPoint,
@@ -195,6 +196,74 @@ describe('render remote font loading', () => {
     expect(requestFonts).not.toHaveBeenCalled()
     expect(loadFontsByNames).toHaveBeenCalledWith(
       expect.arrayContaining(['arial', 'txt', 'hztxt'])
+    )
+    requestFonts.mockRestore()
+  })
+
+  it('MText.asyncDraw still requests style fonts after an empty first draw', async () => {
+    const styleManager = new DefaultStyleManager()
+    const requestFonts = vi.spyOn(FontManager.instance, 'requestFonts')
+    const style: TextStyle = {
+      ...minimalTextStyle,
+      font: '',
+      bigFont: '',
+      extendedFont: ''
+    }
+    const mtext = new MText(
+      {
+        ...minimalMTextData,
+        text: ''
+      },
+      style,
+      styleManager,
+      FontManager.instance,
+      createDefaultColorSettings()
+    )
+
+    await mtext.asyncDraw()
+    expect(requestFonts).not.toHaveBeenCalled()
+
+    style.font = 'txt.shx'
+    style.bigFont = 'hztxt.shx'
+    await mtext.asyncDraw()
+
+    expect(requestFonts).toHaveBeenCalledWith(
+      expect.arrayContaining(['txt', 'hztxt'])
+    )
+    requestFonts.mockRestore()
+  })
+
+  it('Shape.asyncDraw still requests style fonts after an empty first draw', async () => {
+    const styleManager = new DefaultStyleManager()
+    const requestFonts = vi.spyOn(FontManager.instance, 'requestFonts')
+    const style: TextStyle = {
+      ...minimalTextStyle,
+      font: '',
+      bigFont: '',
+      extendedFont: ''
+    }
+    const shape = new Shape(
+      {
+        shapeNumber: 128,
+        size: 24,
+        widthFactor: 1,
+        rotation: 0,
+        position: { x: 0, y: 0, z: 0 }
+      },
+      style,
+      styleManager,
+      FontManager.instance,
+      createDefaultColorSettings()
+    )
+
+    await shape.asyncDraw()
+    expect(requestFonts).not.toHaveBeenCalled()
+
+    style.font = 'complex.shx'
+    await shape.asyncDraw()
+
+    expect(requestFonts).toHaveBeenCalledWith(
+      expect.arrayContaining(['complex'])
     )
     requestFonts.mockRestore()
   })

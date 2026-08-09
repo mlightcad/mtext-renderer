@@ -213,8 +213,11 @@ export class MText extends THREE.Object3D {
       } else {
         await this._fontManager.loadFontsByNames(fonts)
       }
+      // Only mark style fonts as handled after a non-empty request so later
+      // asyncDraw calls can still pick up style fonts if none were present yet
+      // (or if a non-lazy preload threw before completing).
+      this._fontsInStyleLoaded = true
     }
-    this._fontsInStyleLoaded = true
 
     this.syncDraw()
   }
