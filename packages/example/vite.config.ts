@@ -6,7 +6,8 @@ export default defineConfig({
   base: './',
   resolve: {
     alias: {
-      // Use package source in dev so worker lazy-loading changes apply without rebuilding dist.
+      // Use package source in dev so renderer changes apply without rebuilding dist.
+      // Worker entry is loaded via `?worker&url` in main.ts (same source tree).
       '@mlightcad/mtext-renderer': resolve(
         __dirname,
         '../mtext-renderer/src/index.ts'

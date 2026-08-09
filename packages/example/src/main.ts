@@ -10,6 +10,10 @@ import {
 } from '@mlightcad/mtext-renderer'
 import * as THREE from 'three'
 
+// Vite must see `?worker&url` so the TypeScript entry is bundled to JS.
+// A bare `new URL('…/mtextWorker.ts', import.meta.url)` is served as .ts
+// (MIME video/mp2t) and fails module-worker MIME checks.
+import mtextWorkerUrl from '../../mtext-renderer/src/worker/mtextWorker.ts?worker&url'
 import { DebugOverlayManager } from './debugOverlayManager'
 import { ExampleFontManager } from './exampleFontManager'
 import {
@@ -133,10 +137,7 @@ class MTextRendererExample {
     this.debugOverlays = new DebugOverlayManager(this.boundsHelper)
 
     this.unifiedRenderer = new UnifiedRenderer('main', {
-      workerUrl: new URL(
-        '../../mtext-renderer/src/worker/mtextWorker.ts',
-        import.meta.url
-      )
+      workerUrl: mtextWorkerUrl
     })
 
     this.mtextInput = document.getElementById(
