@@ -300,10 +300,15 @@ export class MeshFont extends BaseFont {
    * Gets the shape to display when a character is not found in the font.
    * Uses "?" as a replacement character.
    * @param size - The desired size of the not found shape
-   * @returns The shape data for the not found indicator
+   * @returns The shape data for the not found indicator, or undefined if "?"
+   * cannot be loaded from this font
    */
   getNotFoundTextShape(size: number) {
-    return new MeshTextShape('?', size, this)
+    // Must go through getCharShape so '?' is loaded into data.glyphs before
+    // MeshTextShape reads advance width. Constructing MeshTextShape('?')
+    // directly left width at 0 (glyph not cached yet) while toGeometry() still
+    // drew '?' — the next character then overlapped the placeholder.
+    return this.getCharShape('?', size)
   }
 
   /**

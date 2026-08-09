@@ -40,7 +40,8 @@ const AxisX = /*@__PURE__*/ new THREE.Vector3(1, 0, 0)
  */
 export interface MTextDrawOptions {
   /**
-   * Wait for fonts referenced by the content/style to finish loading before
+   * Wait for fonts referenced by the content/style — and, when awaiting, the
+   * configured default/symbol fallback chains — to finish loading before
    * building geometry.
    *
    * Defaults to `true` when {@link FontManager.lazyFontLoading} is false, or
@@ -224,25 +225,36 @@ export class MText extends THREE.Object3D {
         if (fontName) fonts.push(fontName)
       }
     }
-    if (fonts.length > 0) {
-      const awaitFonts =
-        options?.awaitFonts ??
-        (!this._fontManager.lazyFontLoading ||
-          this._fontManager.awaitFontsBeforeDraw)
 
+    const awaitFonts =
+      options?.awaitFonts ??
+      (!this._fontManager.lazyFontLoading ||
+        this._fontManager.awaitFontsBeforeDraw)
+
+    // Single-pass await must also cover default/symbol fallback chains. Content
+    // and style faces alone are not enough for glyphs resolved only via
+    // symbolFonts (e.g. literal U+2205 diameter → amgdt) — otherwise the first
+    // draw uses '?' and consumers that skip fontLoaded redraws never recover.
+    const fontsToRequest = awaitFonts
+      ? [...new Set([...fonts, ...this._fontManager.getFontsToLoad()])]
+      : fonts
+
+    if (fontsToRequest.length > 0) {
       if (this._fontManager.lazyFontLoading) {
         if (awaitFonts) {
-          await this._fontManager.requestFonts(fonts)
+          await this._fontManager.requestFonts(fontsToRequest)
         } else {
-          void this._fontManager.requestFonts(fonts)
+          void this._fontManager.requestFonts(fontsToRequest)
         }
       } else {
-        await this._fontManager.loadFontsByNames(fonts)
+        await this._fontManager.loadFontsByNames(fontsToRequest)
       }
-      // Only mark style fonts as handled after a non-empty request so later
-      // asyncDraw calls can still pick up style fonts if none were present yet
-      // (or if a non-lazy preload threw before completing).
-      this._fontsInStyleLoaded = true
+      // Only mark style fonts as handled when content/style contributed names so
+      // later asyncDraw calls can still pick up style fonts if none were present
+      // yet (or if a non-lazy preload threw before completing).
+      if (fonts.length > 0) {
+        this._fontsInStyleLoaded = true
+      }
     }
 
     this.syncDraw()
