@@ -11,10 +11,11 @@
         body {
             margin: 0;
             padding: 0;
-            font-family: Arial, sans-serif;
+            font-family: system-ui, -apple-system, Segoe UI, sans-serif;
             height: 100vh;
             overflow: hidden;
             background: #e8e8e8;
+            color: #e8e8e8;
         }
         #app-layout {
             display: flex;
@@ -22,18 +23,44 @@
             width: 100vw;
         }
         #controls {
-            flex: 0 0 50%;
-            width: 50%;
+            --controls-width: 560px;
+            flex: 0 0 var(--controls-width);
+            width: var(--controls-width);
             min-width: 360px;
-            background: #333;
-            color: white;
-            padding: 20px;
+            background: #2b2b2b;
+            color: #eee;
+            padding: 16px;
             overflow-y: auto;
-            border-right: 1px solid #222;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        #panel-splitter {
+            flex: 0 0 6px;
+            width: 6px;
+            margin: 0;
+            padding: 0;
+            border: none;
+            border-left: 1px solid #1a1a1a;
+            border-right: 1px solid #1a1a1a;
+            background: #3a3a3a;
+            cursor: col-resize;
+            touch-action: none;
+        }
+        #panel-splitter:hover,
+        #panel-splitter.is-dragging {
+            background: #5a8f6a;
+        }
+        body.is-resizing-panel {
+            cursor: col-resize;
+            user-select: none;
+        }
+        body.is-resizing-panel #render-area {
+            pointer-events: none;
         }
         #render-area {
             flex: 1;
-            min-width: 0;
+            min-width: 240px;
             height: 100%;
             position: relative;
             overflow: hidden;
@@ -56,325 +83,452 @@
             white-space: nowrap;
             visibility: hidden;
         }
-        canvas { 
+        canvas {
             display: block;
             width: 100%;
             height: 100%;
         }
-        #mtext-input {
-            width: 100%;
-            height: 140px;
-            margin: 10px 0;
-            padding: 8px;
-            resize: vertical;
-            min-height: 80px;
-            max-height: 360px;
+
+        .page-header {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #3d3d3d;
         }
-        select {
-            width: 100%;
-            padding: 5px;
-            margin: 5px 0;
-            box-sizing: border-box;
+        .page-header h2 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
         }
+        #status {
+            margin: 0;
+            min-height: 1.35em;
+            padding: 6px 8px;
+            border-radius: 4px;
+            background: #1f1f1f;
+            color: #ffd666;
+            font-size: 12px;
+            line-height: 1.35;
+            word-break: break-word;
+        }
+
+        .panel {
+            margin: 0;
+            padding: 12px;
+            border: 1px solid #3d3d3d;
+            border-radius: 6px;
+            background: #333;
+        }
+        .panel-title {
+            margin: 0 0 10px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #9ad;
+        }
+        .panel-body {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
         .row {
             display: flex;
-            align-items: center;
+            align-items: flex-end;
             gap: 10px;
         }
         .row .field {
             flex: 1;
             min-width: 0;
         }
-        .row .field label {
+        .field label,
+        .panel label {
             display: block;
+            margin-bottom: 4px;
+            font-size: 12px;
+            color: #bbb;
+        }
+        .checkbox-container label {
+            margin-bottom: 0;
+            font-size: 13px;
+            color: #ddd;
+        }
+
+        select,
+        input[type="text"],
+        input[type="number"],
+        textarea {
+            width: 100%;
+            margin: 0;
+            padding: 7px 8px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #1f1f1f;
+            color: #eee;
+            font: inherit;
+            font-size: 13px;
+        }
+        select:focus,
+        input:focus,
+        textarea:focus {
+            outline: 1px solid #6a9;
+            border-color: #6a9;
         }
         input[type="color"] {
             width: 100%;
-            height: 32px;
-            padding: 0;
-            margin: 5px 0;
-            box-sizing: border-box;
-            border: none;
+            height: 34px;
+            margin: 0;
+            padding: 2px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #1f1f1f;
         }
+        #mtext-input {
+            height: 120px;
+            min-height: 80px;
+            max-height: 280px;
+            resize: vertical;
+            line-height: 1.4;
+        }
+
         button {
-            padding: 5px 10px;
-            margin: 5px;
+            margin: 0;
+            padding: 7px 12px;
+            border: 1px solid #666;
+            border-radius: 4px;
+            background: #4a4a4a;
+            color: #fff;
+            font: inherit;
+            font-size: 13px;
             cursor: pointer;
         }
-        #status {
-            margin-top: 10px;
-            color: #ff0;
+        button:hover:not(:disabled) {
+            background: #5a5a5a;
         }
-        h2 {
-            margin-top: 0;
-            color: #fff;
+        button:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
         }
-        .checkbox-container {
-            margin: 10px 0;
+        #render-btn {
+            background: #3d6e4a;
+            border-color: #4d8a5c;
+            font-weight: 600;
+        }
+        #render-btn:hover {
+            background: #478457;
+        }
+
+        .checkbox-row {
             display: flex;
+            flex-wrap: wrap;
+            gap: 10px 14px;
             align-items: center;
         }
+        .checkbox-container {
+            margin: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #ddd;
+            white-space: nowrap;
+        }
         .checkbox-container input[type="checkbox"] {
-            margin-right: 8px;
+            margin: 0;
         }
-        .examples {
-            margin: 10px 0;
+
+        .hint {
+            margin: 0;
+            font-size: 11px;
+            line-height: 1.4;
+            color: #999;
         }
-        .examples h3 {
-            margin: 0 0 8px;
-            font-size: 14px;
-            font-weight: normal;
+        .hint code {
+            color: #bbb;
+        }
+
+        .font-cache-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .font-cache-actions input[type="file"] {
+            flex: 1;
+            min-width: 0;
             color: #ccc;
+            font-size: 12px;
+        }
+
+        .action-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .examples-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 6px;
         }
         .example-btn {
+            width: 100%;
+            margin: 0;
+            padding: 7px 8px;
             background: #444;
-            color: white;
-            border: none;
-            padding: 5px 10px;
-            margin: 2px;
-            cursor: pointer;
-            border-radius: 3px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #fff;
             font-size: 12px;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .example-btn:hover {
             background: #555;
         }
+
         .content-panel {
-            margin: 10px 0;
+            margin: 0;
         }
         .content-panel.hidden {
             display: none;
         }
-        .content-panel input[type="number"],
-        .content-panel input[type="text"] {
-            width: 100%;
-            padding: 5px;
-            margin: 5px 0;
-            box-sizing: border-box;
-        }
-        .hint {
-            font-size: 12px;
-            color: #bbb;
-            margin: 4px 0 8px;
-        }
-        .font-cache-panel {
-            margin: 10px 0;
-            padding: 10px;
-            border: 1px dashed #666;
-            border-radius: 4px;
-            background: #2a2a2a;
-        }
-        .font-cache-panel label {
-            display: block;
-            margin-bottom: 6px;
-        }
-        .font-cache-actions {
-            display: flex;
-            align-items: center;
+        .content-panel .panel-body {
             gap: 10px;
-            flex-wrap: wrap;
         }
-        .font-cache-actions input[type="file"] {
-            flex: 1;
-            min-width: 220px;
-            color: #ddd;
-        }
-        .font-cache-actions button {
-            margin: 0;
-        }
-        .action-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin: 8px 0;
-        }
-        .action-row .checkbox-container {
-            margin: 0;
-        }
-        .memory-panel {
-            margin: 10px 0;
-            padding: 10px;
-            border: 1px dashed #666;
-            border-radius: 4px;
-            background: #2a2a2a;
-        }
+
         .memory-panel-header {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
             flex-wrap: wrap;
-            margin-bottom: 8px;
         }
-        .memory-panel-header h3 {
+        .memory-panel-header .panel-title {
             margin: 0;
-            font-size: 14px;
-            font-weight: normal;
-            color: #ccc;
-        }
-        .memory-panel-header button {
-            margin: 0;
+            margin-right: auto;
         }
         #memory-stats {
             margin: 0;
             padding: 8px;
-            max-height: 280px;
+            max-height: 200px;
             overflow: auto;
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             font-size: 11px;
             line-height: 1.45;
             color: #cfc;
             background: #1a1a1a;
-            border-radius: 3px;
+            border: 1px solid #444;
+            border-radius: 4px;
             white-space: pre-wrap;
             word-break: break-word;
         }
         #memory-stats:empty::before {
-            content: 'Click "Refresh Memory Stats" to estimate live isolate memory (IndexedDB listed separately).';
-            color: #888;
+            content: 'Click Refresh to estimate live isolate memory.';
+            color: #777;
         }
     </style>
 </head>
 <body>
     <div id="app-layout">
     <div id="controls">
-        <h2>MText Renderer Example</h2>
-        <div class="row">
-            <div class="field">
-                <label for="content-type">Content Type:</label>
-                <select id="content-type">
-                    <option value="mtext" selected>MText</option>
-                    <option value="shape">SHAPE (SHX shape entity)</option>
-                </select>
-            </div>
-            <div class="field">
-                <label for="render-mode">Render Mode:</label>
-                <select id="render-mode">
-                    <option value="main">Main Thread</option>
-                    <option value="worker">Web Worker</option>
-                </select>
-            </div>
-        </div>
-        <div class="row">
-            <div class="field">
-                <label for="font-select">Text Style Font:</label>
-                <select id="font-select">
-                    <option value="simkai">simkai</option>
-                </select>
-            </div>
-            <div class="field">
-                <label for="default-fonts-preset">Default Fonts Preset:</label>
-                <select id="default-fonts-preset">
-                    <option value="minimal" selected>minimal (txt → amgdt → gdt → simkai)</option>
-                    <option value="r12r14">r12r14 (txt → gdt)</option>
-                    <option value="modern">modern (hztxt → gdt)</option>
-                    <option value="international">international (txt → gdt)</option>
-                    <option value="cjk">cjk (gbcbig → gdt)</option>
-                </select>
-            </div>
-        </div>
-        <div class="font-cache-panel">
-            <label for="font-cache-input">Cache Local Font (.shx, .ttf, .otf, .woff):</label>
-            <div class="font-cache-actions">
-                <input type="file" id="font-cache-input" accept=".shx,.ttf,.otf,.woff,application/font-sfnt,font/woff" />
-                <button type="button" id="font-cache-btn">Cache Font</button>
-            </div>
-            <p class="hint">Cached fonts appear in the font lists with a <code>[cached]</code> label and can be used for MText / SHAPE rendering.</p>
-        </div>
-        <div class="row">
-            <div class="field">
-                <label for="by-layer-color">ByLayer Color:</label>
-                <input type="color" id="by-layer-color" value="#ffffff">
-            </div>
-            <div class="field">
-                <label for="by-block-color">ByBlock Color:</label>
-                <input type="color" id="by-block-color" value="#ffffff">
-            </div>
-        </div>
-        <div id="mtext-panel" class="content-panel">
-            <label for="mtext-input">MText:</label>
-            <textarea id="mtext-input" placeholder="Enter MText content here... (Special characters: %%c=Ø, %%d=°, %%p=±)">{\C1;Hello World}\P{\C2;This is a test}\P{\C3;MText Renderer}</textarea>
-        </div>
-        <div id="shape-panel" class="content-panel hidden">
-            <div class="row">
-                <div class="field">
-                    <label for="shape-font-select">Shape Font (SHX):</label>
-                    <select id="shape-font-select">
-                        <option value="complex" selected>complex</option>
-                    </select>
+        <header class="page-header">
+            <h2>MText Renderer Example</h2>
+            <div id="status" aria-live="polite"></div>
+        </header>
+
+        <section class="panel">
+            <h3 class="panel-title">Rendering</h3>
+            <div class="panel-body">
+                <div class="row">
+                    <div class="field">
+                        <label for="content-type">Content Type</label>
+                        <select id="content-type">
+                            <option value="mtext" selected>MText</option>
+                            <option value="shape">SHAPE (SHX)</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="render-mode">Render Mode</label>
+                        <select id="render-mode">
+                            <option value="main">Main Thread</option>
+                            <option value="worker">Web Worker</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="field">
-                    <label for="shape-name">Shape Name (optional):</label>
-                    <input type="text" id="shape-name" placeholder="e.g. GRS when defined in font">
+                <div class="checkbox-row">
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="lazy-font-loading" checked>
+                        <label for="lazy-font-loading">Lazy Font Loading</label>
+                    </div>
+                </div>
+                <p class="hint">Lazy skips preload and redraws on <code>fontLoaded</code>. Off preloads before render. Use Release Fonts, then Render to compare.</p>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h3 class="panel-title">Fonts</h3>
+            <div class="panel-body">
+                <div class="row">
+                    <div class="field">
+                        <label for="font-select">Text Style Font</label>
+                        <select id="font-select">
+                            <option value="simkai">simkai</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="default-fonts-preset">Default Fonts Preset</label>
+                        <select id="default-fonts-preset">
+                            <option value="minimal" selected>minimal (txt → amgdt → gdt → simkai)</option>
+                            <option value="r12r14">r12r14 (txt → gdt)</option>
+                            <option value="modern">modern (hztxt → gdt)</option>
+                            <option value="international">international (txt → gdt)</option>
+                            <option value="cjk">cjk (gbcbig → gdt)</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label for="font-cache-input">Cache Local Font</label>
+                    <div class="font-cache-actions">
+                        <input type="file" id="font-cache-input" accept=".shx,.ttf,.otf,.woff,application/font-sfnt,font/woff" />
+                        <button type="button" id="font-cache-btn">Cache</button>
+                    </div>
+                    <p class="hint" style="margin-top: 6px;">Accepts .shx / .ttf / .otf / .woff. Cached entries show <code>[cached]</code> in the lists.</p>
                 </div>
             </div>
-            <div class="row">
-                <div class="field">
-                    <label for="shape-number">Shape Number:</label>
-                    <input type="number" id="shape-number" value="128" min="1" max="65535">
-                </div>
-                <div class="field">
-                    <label for="shape-size">Height:</label>
-                    <input type="number" id="shape-size" value="24" min="1" step="1">
-                </div>
-                <div class="field">
-                    <label for="shape-width-factor">Width Factor:</label>
-                    <input type="number" id="shape-width-factor" value="1" min="0.1" step="0.1">
-                </div>
-                <div class="field">
-                    <label for="shape-rotation">Rotation (deg):</label>
-                    <input type="number" id="shape-rotation" value="0" step="1">
+        </section>
+
+        <section class="panel">
+            <h3 class="panel-title">Colors</h3>
+            <div class="panel-body">
+                <div class="row">
+                    <div class="field">
+                        <label for="by-layer-color">ByLayer</label>
+                        <input type="color" id="by-layer-color" value="#ffffff">
+                    </div>
+                    <div class="field">
+                        <label for="by-block-color">ByBlock</label>
+                        <input type="color" id="by-block-color" value="#ffffff">
+                    </div>
                 </div>
             </div>
-            <p class="hint">Uses <code>complex.shx</code> by default. Shape number 128–132 render distinct glyphs; name lookup is tried first when provided.</p>
-        </div>
-        <div class="action-row">
-            <button id="render-btn">Render</button>
-            <div class="checkbox-container">
-                <input type="checkbox" id="show-bounding-box" checked>
-                <label for="show-bounding-box">Show Bounding Box</label>
+        </section>
+
+        <section id="mtext-panel" class="panel content-panel">
+            <h3 class="panel-title">MText</h3>
+            <div class="panel-body">
+                <div>
+                    <label for="mtext-input">Content</label>
+                    <textarea id="mtext-input" placeholder="Enter MText… (%%c=Ø, %%d=°, %%p=±)">{\C1;Hello World}\P{\C2;This is a test}\P{\C3;MText Renderer}</textarea>
+                </div>
             </div>
-            <div class="checkbox-container">
-                <input type="checkbox" id="show-char-boxes">
-                <label for="show-char-boxes">Show Char Boxes</label>
+        </section>
+
+        <section id="shape-panel" class="panel content-panel hidden">
+            <h3 class="panel-title">SHAPE</h3>
+            <div class="panel-body">
+                <div class="row">
+                    <div class="field">
+                        <label for="shape-font-select">Shape Font (SHX)</label>
+                        <select id="shape-font-select">
+                            <option value="complex" selected>complex</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="shape-name">Shape Name</label>
+                        <input type="text" id="shape-name" placeholder="optional, e.g. GRS">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="field">
+                        <label for="shape-number">Number</label>
+                        <input type="number" id="shape-number" value="128" min="1" max="65535">
+                    </div>
+                    <div class="field">
+                        <label for="shape-size">Height</label>
+                        <input type="number" id="shape-size" value="24" min="1" step="1">
+                    </div>
+                    <div class="field">
+                        <label for="shape-width-factor">Width</label>
+                        <input type="number" id="shape-width-factor" value="1" min="0.1" step="0.1">
+                    </div>
+                    <div class="field">
+                        <label for="shape-rotation">Rotation°</label>
+                        <input type="number" id="shape-rotation" value="0" step="1">
+                    </div>
+                </div>
+                <p class="hint">Default font <code>complex.shx</code>. Numbers 128–132 show distinct glyphs; name is tried first when set.</p>
             </div>
-            <div class="checkbox-container">
-                <input type="checkbox" id="show-line-boxes">
-                <label for="show-line-boxes">Show Line Boxes</label>
+        </section>
+
+        <section class="panel">
+            <h3 class="panel-title">Actions</h3>
+            <div class="panel-body">
+                <div class="action-row">
+                    <button id="render-btn">Render</button>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="show-bounding-box" checked>
+                        <label for="show-bounding-box">Bounds</label>
+                    </div>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="show-char-boxes">
+                        <label for="show-char-boxes">Chars</label>
+                    </div>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="show-line-boxes">
+                        <label for="show-line-boxes">Lines</label>
+                    </div>
+                </div>
+                <div>
+                    <div class="field" style="margin-bottom: 6px;">
+                        <label>Examples</label>
+                    </div>
+                    <div class="examples-grid">
+                        <button class="example-btn" data-example="basic">Basic</button>
+                        <button class="example-btn" data-example="complex">Complex</button>
+                        <button class="example-btn" data-example="controlCode">Control Code</button>
+                        <button class="example-btn" data-example="color">Color</button>
+                        <button class="example-btn" data-example="font">Font</button>
+                        <button class="example-btn" data-example="defaultFonts">Default Fonts</button>
+                        <button class="example-btn" data-example="shapes">SHX Shapes</button>
+                        <button class="example-btn" data-example="alignment">Alignment</button>
+                        <button class="example-btn" data-example="paragraph">Paragraph</button>
+                        <button class="example-btn" data-example="stacking">Stacking</button>
+                        <button class="example-btn" data-example="multiple">Multiple</button>
+                        <button class="example-btn" data-example="attachmentGrid">Attachments</button>
+                        <button class="example-btn" data-example="largeCoordinates" title="Large WCS coords; two MText blocks (\P\P); fonts via \Fname;">Large Coords</button>
+                    </div>
+                </div>
             </div>
-        </div>
-        <div class="examples">
-            <h3>Example Texts:</h3>
-            <button class="example-btn" data-example="basic">Basic</button>
-            <button class="example-btn" data-example="complex">Complex</button>
-            <button class="example-btn" data-example="controlCode">Control Code</button>
-            <button class="example-btn" data-example="color">Color</button>
-            <button class="example-btn" data-example="font">Font</button>
-            <button class="example-btn" data-example="defaultFonts">Default Fonts</button>
-            <button class="example-btn" data-example="shapes">SHX Shapes</button>
-            <button class="example-btn" data-example="alignment">Alignment</button>
-            <button class="example-btn" data-example="paragraph">Paragraph</button>
-            <button class="example-btn" data-example="stacking">Stacking</button>
-            <button class="example-btn" data-example="multiple">Multiple MText</button>
-            <button class="example-btn" data-example="attachmentGrid">Attachment Points</button>
-            <button class="example-btn" data-example="largeCoordinates" title="Large WCS coords; two MText blocks (\P\P); fonts via \Fname;">Large Coordinates</button>
-        </div>
-        <div class="memory-panel">
+        </section>
+
+        <section class="panel">
             <div class="memory-panel-header">
-                <h3>Memory</h3>
-                <button type="button" id="memory-stats-btn">Refresh Memory Stats</button>
-                <button type="button" id="release-fonts-btn">Release Loaded Fonts</button>
+                <h3 class="panel-title">Memory</h3>
+                <button type="button" id="memory-stats-btn">Refresh</button>
+                <button type="button" id="release-fonts-btn">Release Fonts</button>
             </div>
-            <pre id="memory-stats" aria-live="polite"></pre>
-            <p class="hint">Live isolate total excludes IndexedDB. Release clears in-memory fonts (and their caches) on the main thread; switch to worker mode and refresh to inspect workers.</p>
-        </div>
-        <div id="status"></div>
+            <div class="panel-body" style="margin-top: 10px;">
+                <pre id="memory-stats" aria-live="polite"></pre>
+                <p class="hint">Totals exclude IndexedDB. Release clears main-thread fonts and recreates workers.</p>
+            </div>
+        </section>
     </div>
+    <div
+        id="panel-splitter"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize controls panel"
+        tabindex="0"
+    ></div>
     <div id="render-area">
         <div id="wcs-coords" aria-live="polite"></div>
     </div>
     </div>
-    <!-- Load bundled example -->
     <script type="module" src="./src/main.ts"></script>
 </body>
-</html> 
+</html>

@@ -28,6 +28,8 @@ export class UnifiedRenderer {
   private defaultMode: RenderMode
   private workerConfig: WebWorkerRendererConfig
   private webWorkerConfigured = false
+  /** Last lazyFontLoading value pushed to the worker pool, if any. */
+  private workerLazyFontLoading: boolean | null = null
   /**
    * Constructor
    *
@@ -65,6 +67,11 @@ export class UnifiedRenderer {
         [...FontManager.instance.symbolFonts]
       )
       this.webWorkerConfigured = true
+    }
+    const lazy = FontManager.instance.lazyFontLoading
+    if (this.workerLazyFontLoading !== lazy) {
+      await renderer.setLazyFontLoading(lazy)
+      this.workerLazyFontLoading = lazy
     }
     return renderer
   }
@@ -199,6 +206,18 @@ export class UnifiedRenderer {
   }
 
   /**
+   * Mirrors {@link FontManager.lazyFontLoading} onto the main thread and any
+   * existing worker pool.
+   */
+  async setLazyFontLoading(enabled: boolean): Promise<void> {
+    FontManager.instance.lazyFontLoading = enabled
+    if (this.webWorkerRenderer) {
+      await this.webWorkerRenderer.setLazyFontLoading(enabled)
+      this.workerLazyFontLoading = enabled
+    }
+  }
+
+  /**
    * Returns font names for a predefined default-font preset.
    */
   getDefaultFontsPreset(preset: DefaultFontsPreset): readonly string[] {
@@ -298,6 +317,7 @@ export class UnifiedRenderer {
     this.webWorkerRenderer?.terminate()
     this.webWorkerRenderer = null
     this.webWorkerConfigured = false
+    this.workerLazyFontLoading = null
     this.renderer = this.mainThreadRenderer
   }
 

@@ -182,13 +182,17 @@ export class MText extends THREE.Object3D {
   }
 
   /**
-   * Draw the MText object. This method loads required fonts on demand and builds the object graph.
+   * Draw the MText object. Schedules required fonts for background load and
+   * builds the object graph immediately with current fallbacks.
+   *
+   * Does not await downloads — callers that need glyphs from newly loaded fonts
+   * should redraw after {@link FontManager.events.fontLoaded}.
    */
   async asyncDraw() {
     // Determine fonts used in the mtext string (without extensions)
     const fonts = Array.from(MText.getFonts(this._mtextData.text || '', true))
 
-    // Determine fonts used in font style
+    // Determine fonts used in font style (retry on later draws if preload throws)
     if (!this._fontsInStyleLoaded) {
       if (this._style.font) {
         const fontName = this.getFontName(this._style.font)
@@ -204,7 +208,14 @@ export class MText extends THREE.Object3D {
       }
     }
     if (fonts.length > 0) {
-      await this._fontManager.loadFontsByNames(fonts)
+      if (this._fontManager.lazyFontLoading) {
+        this._fontManager.requestFonts(fonts)
+      } else {
+        await this._fontManager.loadFontsByNames(fonts)
+      }
+      // Only mark style fonts as handled after a non-empty request so later
+      // asyncDraw calls can still pick up style fonts if none were present yet
+      // (or if a non-lazy preload threw before completing).
       this._fontsInStyleLoaded = true
     }
 

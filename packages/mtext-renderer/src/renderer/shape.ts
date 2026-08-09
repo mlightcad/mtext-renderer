@@ -71,7 +71,13 @@ export class Shape extends THREE.Object3D {
       }
     }
     if (fonts.length > 0) {
-      await this._fontManager.loadFontsByNames(fonts)
+      if (this._fontManager.lazyFontLoading) {
+        this._fontManager.requestFonts(fonts)
+      } else {
+        await this._fontManager.loadFontsByNames(fonts)
+      }
+      // Only mark after a non-empty request so reused objects can still request
+      // style fonts on a later draw if none were available yet.
       this._fontsInStyleLoaded = true
     }
     this.syncDraw()

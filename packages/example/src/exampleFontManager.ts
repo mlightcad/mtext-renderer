@@ -1,6 +1,7 @@
 import {
   DefaultFontsPreset,
   FontInfo,
+  FontManager,
   UnifiedRenderer
 } from '@mlightcad/mtext-renderer'
 
@@ -56,6 +57,38 @@ export class ExampleFontManager {
     return this.defaultFontsPresetSelect.value as DefaultFontsPreset
   }
 
+  /** @returns Whether {@link FontManager.lazyFontLoading} is currently enabled. */
+  isLazyFontLoading(): boolean {
+    return FontManager.instance.lazyFontLoading
+  }
+
+  /**
+   * Mirrors the UI checkbox onto {@link FontManager.lazyFontLoading} and any
+   * existing worker pool.
+   *
+   * @param enabled - When true, fonts load in the background during draw.
+   */
+  async setLazyFontLoading(enabled: boolean): Promise<void> {
+    await this.unifiedRenderer.setLazyFontLoading(enabled)
+  }
+
+  /**
+   * Fonts that non-lazy mode should preload for the active preset and selects.
+   */
+  getFontsToPreload(): string[] {
+    const preset = this.getSelectedDefaultFontsPreset()
+    const textChain = this.unifiedRenderer.getDefaultFontsPreset(preset)
+    const symbolChain = this.unifiedRenderer.getSymbolFontsPreset(preset)
+    return [
+      ...new Set([
+        ...textChain,
+        ...symbolChain,
+        this.fontSelect.value,
+        this.shapeFontSelect.value
+      ])
+    ].filter(Boolean)
+  }
+
   /**
    * Bootstraps font lists and applies the current preset.
    *
@@ -70,24 +103,23 @@ export class ExampleFontManager {
   }
 
   /**
-   * Applies the selected preset, loads all fonts in the text and symbol chains, and
-   * updates the status line with the resolved fallback order.
+   * Applies the selected preset. In non-lazy mode, also preloads the text/symbol
+   * chains and the currently selected fonts. In lazy mode, only configures the
+   * fallback chains so the next render can fetch fonts on demand.
    */
   async applyDefaultFontsPreset(): Promise<void> {
     const preset = this.getSelectedDefaultFontsPreset()
     await this.unifiedRenderer.setDefaultFonts(preset)
     const textChain = this.unifiedRenderer.getDefaultFontsPreset(preset)
     const symbolChain = this.unifiedRenderer.getSymbolFontsPreset(preset)
-    const fontsToLoad = [
-      ...new Set([
-        ...textChain,
-        ...symbolChain,
-        this.fontSelect.value,
-        this.shapeFontSelect.value
-      ])
-    ]
-    await this.unifiedRenderer.loadFonts(fontsToLoad)
-    this.statusDiv.textContent = `Preset "${preset}": text ${textChain.join(' → ')} | symbol ${symbolChain.join(' → ')}`
+    const fontsToLoad = this.getFontsToPreload()
+
+    if (!this.isLazyFontLoading()) {
+      await this.unifiedRenderer.loadFonts(fontsToLoad)
+      this.statusDiv.textContent = `Preset "${preset}" (non-lazy): preloaded ${fontsToLoad.join(', ')}`
+    } else {
+      this.statusDiv.textContent = `Preset "${preset}" (lazy): text ${textChain.join(' → ')} | symbol ${symbolChain.join(' → ')} — fonts load on render`
+    }
     this.statusDiv.style.color = '#0f0'
   }
 

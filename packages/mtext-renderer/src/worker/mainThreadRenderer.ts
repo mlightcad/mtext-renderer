@@ -50,8 +50,9 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   }
 
   /**
-   * Render MText directly in the main thread asynchronously. It will ensure that default font
-   * is loaded. And fonts needed in mtext are loaded on demand.
+   * Render MText directly in the main thread asynchronously. Fonts referenced by
+   * the text/style are scheduled via {@link FontManager.requestFonts} when
+   * {@link FontManager.lazyFontLoading} is enabled; otherwise they are awaited.
    */
   async asyncRenderMText(
     mtextContent: MTextData,
@@ -132,7 +133,9 @@ export class MainThreadRenderer implements MTextBaseRenderer {
    */
   async loadFonts(fonts: readonly string[]): Promise<{ loaded: string[] }> {
     await this.fontManager.loadFontsByNames(fonts)
-    return { loaded: [...fonts] }
+    return {
+      loaded: fonts.filter(name => this.fontManager.isFontLoaded(name))
+    }
   }
 
   /**
@@ -159,8 +162,11 @@ export class MainThreadRenderer implements MTextBaseRenderer {
 
   private async ensureInitialized() {
     if (!this.isInitialized) {
-      // Guarantee the default font is loaded
-      await this.loadFonts(FontManager.instance.getFontsToLoad())
+      // Non-lazy mode still needs default/symbol fonts before the first draw.
+      // Lazy mode schedules them on demand via requestFont / glyph fallbacks.
+      if (!this.fontManager.lazyFontLoading) {
+        await this.loadFonts(this.fontManager.getFontsToLoad())
+      }
       this.isInitialized = true
     }
   }

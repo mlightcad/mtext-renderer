@@ -21,6 +21,7 @@ interface WorkerMessage {
     | 'render'
     | 'loadFonts'
     | 'setDefaultFonts'
+    | 'setLazyFontLoading'
     | 'setFontUrl'
     | 'getAvailableFonts'
     | 'getMemoryStats'
@@ -30,7 +31,9 @@ interface WorkerMessage {
     textStyle?: unknown
     colorSettings?: unknown
     fonts?: string[]
+    symbolFonts?: string[]
     url?: string
+    enabled?: boolean
   }
 }
 
@@ -39,9 +42,11 @@ interface WorkerResponse {
     | 'render'
     | 'loadFonts'
     | 'setDefaultFonts'
+    | 'setLazyFontLoading'
     | 'setFontUrl'
     | 'getAvailableFonts'
     | 'getMemoryStats'
+    | 'fontLoaded'
     | 'error'
   id: string
   success: boolean
@@ -52,6 +57,16 @@ interface WorkerResponse {
 // Initialize managers in the worker
 const fontManager = FontManager.instance
 const styleManager = new DefaultStyleManager()
+
+// Forward worker-local font loads so the main thread can redraw after lazy loads.
+fontManager.events.fontLoaded.addEventListener(payload => {
+  self.postMessage({
+    type: 'fontLoaded',
+    id: '',
+    success: true,
+    data: { fontName: payload?.fontName }
+  } as WorkerResponse)
+})
 
 // Handle messages from main thread
 self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
@@ -104,11 +119,12 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
         if (!data) throw new Error('Missing data for loadFonts message')
         const { fonts } = data as { fonts: string[] }
         await fontManager.loadFontsByNames(fonts)
+        const loaded = fonts.filter(name => fontManager.isFontLoaded(name))
         self.postMessage({
           type: 'loadFonts',
           id,
           success: true,
-          data: { loaded: fonts }
+          data: { loaded }
         } as WorkerResponse)
         break
       }
@@ -129,6 +145,19 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
             fonts: [...fontManager.defaultFonts],
             symbolFonts: [...fontManager.symbolFonts]
           }
+        } as WorkerResponse)
+        break
+      }
+
+      case 'setLazyFontLoading': {
+        if (!data) throw new Error('Missing data for setLazyFontLoading message')
+        const { enabled } = data as { enabled: boolean }
+        fontManager.lazyFontLoading = enabled
+        self.postMessage({
+          type: 'setLazyFontLoading',
+          id,
+          success: true,
+          data: { enabled: fontManager.lazyFontLoading }
         } as WorkerResponse)
         break
       }
