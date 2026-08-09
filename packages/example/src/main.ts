@@ -122,6 +122,11 @@ class MTextRendererExample {
   private readonly defaultFontsPresetSelect: HTMLSelectElement
   /** `#lazy-font-loading` — toggles {@link FontManager.lazyFontLoading}. */
   private readonly lazyFontLoadingCheckbox: HTMLInputElement
+  /**
+   * `#await-fonts-before-draw` — toggles {@link FontManager.awaitFontsBeforeDraw}
+   * (only meaningful when lazy font loading is on).
+   */
+  private readonly awaitFontsBeforeDrawCheckbox: HTMLInputElement
   /** DXF layer name passed in {@link getColorSettings} for ByLayer color resolution. */
   private readonly defaultLayerName = '0'
 
@@ -211,6 +216,9 @@ class MTextRendererExample {
     this.lazyFontLoadingCheckbox = document.getElementById(
       'lazy-font-loading'
     ) as HTMLInputElement
+    this.awaitFontsBeforeDrawCheckbox = document.getElementById(
+      'await-fonts-before-draw'
+    ) as HTMLInputElement
     this.fontManager = new ExampleFontManager(
       this.unifiedRenderer,
       this.statusDiv,
@@ -223,6 +231,11 @@ class MTextRendererExample {
 
     void this.fontManager.setLazyFontLoading(
       this.lazyFontLoadingCheckbox.checked
+    )
+    this.syncAwaitFontsBeforeDrawCheckbox()
+    void this.fontManager.setAwaitFontsBeforeDraw(
+      this.lazyFontLoadingCheckbox.checked &&
+        this.awaitFontsBeforeDrawCheckbox.checked
     )
     FontManager.instance.events.fontLoaded.addEventListener(payload => {
       this.onLazyFontLoaded(payload.fontName)
@@ -411,6 +424,12 @@ class MTextRendererExample {
       await this.applyLazyFontLoadingMode(this.lazyFontLoadingCheckbox.checked)
     })
 
+    this.awaitFontsBeforeDrawCheckbox.addEventListener('change', async () => {
+      await this.applyAwaitFontsBeforeDrawMode(
+        this.awaitFontsBeforeDrawCheckbox.checked
+      )
+    })
+
     document.querySelectorAll('.example-btn').forEach(button => {
       button.addEventListener('click', async () => {
         const exampleType = (button as HTMLElement).dataset
@@ -523,12 +542,18 @@ class MTextRendererExample {
    */
   private async applyLazyFontLoadingMode(enabled: boolean): Promise<void> {
     await this.fontManager.setLazyFontLoading(enabled)
+    this.syncAwaitFontsBeforeDrawCheckbox()
+    await this.fontManager.setAwaitFontsBeforeDraw(
+      enabled && this.awaitFontsBeforeDrawCheckbox.checked
+    )
     if (enabled) {
       FontManager.instance.release()
       this.unifiedRenderer.terminateWorkers()
       await this.fontManager.applyDefaultFontsPreset()
-      this.statusDiv.textContent =
-        'Lazy font loading ON — fonts released; next render loads on demand'
+      const awaitFonts = this.awaitFontsBeforeDrawCheckbox.checked
+      this.statusDiv.textContent = awaitFonts
+        ? 'Lazy font loading ON + await — next render waits for fonts, then draws once'
+        : 'Lazy font loading ON — fonts released; next render loads on demand'
       this.statusDiv.style.color = '#0f0'
     } else {
       await this.fontManager.applyDefaultFontsPreset()
@@ -541,11 +566,41 @@ class MTextRendererExample {
   }
 
   /**
+   * Enables/disables the Await Fonts checkbox to match Lazy Font Loading, and
+   * keeps {@link FontManager.awaitFontsBeforeDraw} in sync.
+   */
+  private syncAwaitFontsBeforeDrawCheckbox(): void {
+    const lazy = this.lazyFontLoadingCheckbox.checked
+    this.awaitFontsBeforeDrawCheckbox.disabled = !lazy
+  }
+
+  /**
+   * Applies the Await Fonts Before Draw checkbox when lazy loading is enabled.
+   */
+  private async applyAwaitFontsBeforeDrawMode(enabled: boolean): Promise<void> {
+    if (!this.lazyFontLoadingCheckbox.checked) {
+      this.syncAwaitFontsBeforeDrawCheckbox()
+      return
+    }
+    await this.fontManager.setAwaitFontsBeforeDraw(enabled)
+    this.statusDiv.textContent = enabled
+      ? 'Await fonts ON — render waits for download/load, then draws once'
+      : 'Await fonts OFF — render draws with fallbacks, then redraws on fontLoaded'
+    this.statusDiv.style.color = '#0f0'
+    this.beginUserRender()
+    await this.renderCurrentContent()
+  }
+
+  /**
    * Handles {@link FontManager.events.fontLoaded} by scheduling a debounced redraw
    * so glyph fallbacks are replaced once background loads finish.
    */
   private onLazyFontLoaded(fontName: string): void {
     if (!this.fontManager.isLazyFontLoading()) {
+      return
+    }
+    // Draw already waited for referenced fonts — no progressive redraw needed.
+    if (this.fontManager.isAwaitFontsBeforeDraw()) {
       return
     }
     if (!this.lazyFontsLoadedSinceRender.includes(fontName)) {
@@ -1042,8 +1097,12 @@ class MTextRendererExample {
 
   /** Appends lazy/non-lazy and thread mode details to a render status line. */
   private formatRenderStatus(base: string, lazy: boolean): string {
-    const mode = lazy ? 'lazy' : 'non-lazy'
+    const awaitFonts = this.fontManager.isAwaitFontsBeforeDraw()
+    const mode = lazy ? (awaitFonts ? 'lazy+await' : 'lazy') : 'non-lazy'
     const thread = this.renderModeSelect.value
+    if (lazy && awaitFonts) {
+      return `${base} (${mode}, ${thread}) · waited for fonts before draw`
+    }
     if (lazy && this.lazyFontsLoadedSinceRender.length > 0) {
       return `${base} (${mode}, ${thread}) · loaded [${this.lazyFontsLoadedSinceRender.join(', ')}]`
     }

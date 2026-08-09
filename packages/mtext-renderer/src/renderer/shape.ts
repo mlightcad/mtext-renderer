@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
-import { MText } from './mtext'
+import { MText, MTextDrawOptions } from './mtext'
 import { StyleManager } from './styleManager'
 import {
   ColorSettings,
@@ -62,7 +62,7 @@ export class Shape extends THREE.Object3D {
     return { lines: [], chars: [] }
   }
 
-  async asyncDraw() {
+  async asyncDraw(options?: MTextDrawOptions) {
     const fonts: string[] = []
     if (!this._fontsInStyleLoaded) {
       for (const key of ['font', 'bigFont', 'extendedFont'] as const) {
@@ -71,8 +71,17 @@ export class Shape extends THREE.Object3D {
       }
     }
     if (fonts.length > 0) {
+      const awaitFonts =
+        options?.awaitFonts ??
+        (!this._fontManager.lazyFontLoading ||
+          this._fontManager.awaitFontsBeforeDraw)
+
       if (this._fontManager.lazyFontLoading) {
-        this._fontManager.requestFonts(fonts)
+        if (awaitFonts) {
+          await this._fontManager.requestFonts(fonts)
+        } else {
+          void this._fontManager.requestFonts(fonts)
+        }
       } else {
         await this._fontManager.loadFontsByNames(fonts)
       }

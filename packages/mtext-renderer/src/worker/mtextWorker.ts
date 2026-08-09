@@ -22,6 +22,7 @@ interface WorkerMessage {
     | 'loadFonts'
     | 'setDefaultFonts'
     | 'setLazyFontLoading'
+    | 'setAwaitFontsBeforeDraw'
     | 'setFontUrl'
     | 'getAvailableFonts'
     | 'getMemoryStats'
@@ -43,6 +44,7 @@ interface WorkerResponse {
     | 'loadFonts'
     | 'setDefaultFonts'
     | 'setLazyFontLoading'
+    | 'setAwaitFontsBeforeDraw'
     | 'setFontUrl'
     | 'getAvailableFonts'
     | 'getMemoryStats'
@@ -158,6 +160,21 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
           id,
           success: true,
           data: { enabled: fontManager.lazyFontLoading }
+        } as WorkerResponse)
+        break
+      }
+
+      case 'setAwaitFontsBeforeDraw': {
+        if (!data) {
+          throw new Error('Missing data for setAwaitFontsBeforeDraw message')
+        }
+        const { enabled } = data as { enabled: boolean }
+        fontManager.awaitFontsBeforeDraw = enabled
+        self.postMessage({
+          type: 'setAwaitFontsBeforeDraw',
+          id,
+          success: true,
+          data: { enabled: fontManager.awaitFontsBeforeDraw }
         } as WorkerResponse)
         break
       }

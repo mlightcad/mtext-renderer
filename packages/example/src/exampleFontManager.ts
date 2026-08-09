@@ -63,6 +63,14 @@ export class ExampleFontManager {
   }
 
   /**
+   * @returns Whether {@link FontManager.awaitFontsBeforeDraw} is currently
+   * enabled.
+   */
+  isAwaitFontsBeforeDraw(): boolean {
+    return FontManager.instance.awaitFontsBeforeDraw
+  }
+
+  /**
    * Mirrors the UI checkbox onto {@link FontManager.lazyFontLoading} and any
    * existing worker pool.
    *
@@ -70,6 +78,16 @@ export class ExampleFontManager {
    */
   async setLazyFontLoading(enabled: boolean): Promise<void> {
     await this.unifiedRenderer.setLazyFontLoading(enabled)
+  }
+
+  /**
+   * Mirrors the UI checkbox onto {@link FontManager.awaitFontsBeforeDraw} and
+   * any existing worker pool.
+   *
+   * @param enabled - When true with lazy loading, draw waits for referenced fonts.
+   */
+  async setAwaitFontsBeforeDraw(enabled: boolean): Promise<void> {
+    await this.unifiedRenderer.setAwaitFontsBeforeDraw(enabled)
   }
 
   /**

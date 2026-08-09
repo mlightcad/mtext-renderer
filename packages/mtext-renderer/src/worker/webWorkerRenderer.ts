@@ -104,11 +104,19 @@ type SetLazyFontLoadingMessage = WorkerMessageBase<
   }
 >
 
+type SetAwaitFontsBeforeDrawMessage = WorkerMessageBase<
+  'setAwaitFontsBeforeDraw',
+  {
+    enabled: boolean
+  }
+>
+
 type WorkerMessageTyped =
   | RenderMessage
   | LoadFontsMessage
   | SetDefaultFontsMessage
   | SetLazyFontLoadingMessage
+  | SetAwaitFontsBeforeDrawMessage
   | SetFontUrlMessage
   | GetAvailableFontsMessage
   | GetMemoryStatsMessage
@@ -154,6 +162,13 @@ type SetLazyFontLoadingResponse = WorkerResponseBase<
   }
 >
 
+type SetAwaitFontsBeforeDrawResponse = WorkerResponseBase<
+  'setAwaitFontsBeforeDraw',
+  {
+    enabled: boolean
+  }
+>
+
 /** Push notification from a worker when a font finishes lazy-loading. */
 type FontLoadedNotification = WorkerResponseBase<
   'fontLoaded',
@@ -167,6 +182,7 @@ type WorkerResponseTyped =
   | LoadFontsResponse
   | SetDefaultFontsResponse
   | SetLazyFontLoadingResponse
+  | SetAwaitFontsBeforeDrawResponse
   | SetFontUrlResponse
   | GetAvailableFontsResponse
   | GetMemoryStatsResponse
@@ -583,6 +599,20 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       SetLazyFontLoadingResponse
     >({
       type: 'setLazyFontLoading',
+      data: { enabled }
+    })
+  }
+
+  /**
+   * Mirrors {@link FontManager.awaitFontsBeforeDraw} into every worker isolate.
+   */
+  async setAwaitFontsBeforeDraw(enabled: boolean): Promise<void> {
+    FontManager.instance.awaitFontsBeforeDraw = enabled
+    await this.sendMessageToAllWorkers<
+      SetAwaitFontsBeforeDrawMessage,
+      SetAwaitFontsBeforeDrawResponse
+    >({
+      type: 'setAwaitFontsBeforeDraw',
       data: { enabled }
     })
   }

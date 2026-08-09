@@ -52,7 +52,9 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   /**
    * Render MText directly in the main thread asynchronously. Fonts referenced by
    * the text/style are scheduled via {@link FontManager.requestFonts} when
-   * {@link FontManager.lazyFontLoading} is enabled; otherwise they are awaited.
+   * {@link FontManager.lazyFontLoading} is enabled (unless
+   * {@link FontManager.awaitFontsBeforeDraw} waits for them first); otherwise
+   * they are awaited.
    */
   async asyncRenderMText(
     mtextContent: MTextData,

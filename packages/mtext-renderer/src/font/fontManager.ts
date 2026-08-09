@@ -76,9 +76,19 @@ export class FontManager {
   /**
    * When true (default), missing fonts are fetched/parsed in the background
    * via {@link requestFont} instead of requiring an open-time preload.
-   * Drawing continues with temporary fallbacks until {@link events.fontLoaded}.
+   * Drawing continues with temporary fallbacks until {@link events.fontLoaded}
+   * unless {@link awaitFontsBeforeDraw} (or a per-draw override) waits first.
    */
   public lazyFontLoading = true
+  /**
+   * When true, {@link MText.asyncDraw} / {@link Shape.asyncDraw} wait for fonts
+   * referenced by the content and style to finish loading before building
+   * geometry. Useful with {@link lazyFontLoading} when callers prefer a single
+   * draw pass instead of redrawing on {@link events.fontLoaded}.
+   *
+   * Has no effect when {@link lazyFontLoading} is false (draw already awaits).
+   */
+  public awaitFontsBeforeDraw = false
   /**
    * Default fonts to use when a requested font is not found or lacks a glyph.
    * Insertion order is preserved; earlier entries are tried first.
@@ -360,12 +370,14 @@ export class FontManager {
   }
 
   /**
-   * Fire-and-forget {@link requestFont} for each name (deduped per name).
+   * Requests each font name via {@link requestFont} (deduped per name).
+   * Callers may ignore the returned promise for fire-and-forget loads, or
+   * await it when they need fonts before drawing.
    */
-  requestFonts(fontNames: readonly string[]): void {
-    for (const name of fontNames) {
-      void this.requestFont(name)
-    }
+  requestFonts(fontNames: readonly string[]): Promise<FontLoadStatus[]> {
+    return Promise.all(fontNames.map(name => this.requestFont(name))).then(
+      results => results.flat()
+    )
   }
 
   private normalizeFontName(fontName: string): string {

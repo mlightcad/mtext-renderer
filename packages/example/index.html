@@ -442,6 +442,10 @@
                         <input type="checkbox" id="lazy-font-loading" checked>
                         <label for="lazy-font-loading">Lazy Font Loading</label>
                     </div>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="await-fonts-before-draw">
+                        <label for="await-fonts-before-draw">Await Fonts Before Draw</label>
+                    </div>
                 </div>
             </div>
         </section>
@@ -564,7 +568,7 @@
                         </div>
                         <p class="hint" style="margin-top: 6px;">Accepts .shx / .ttf / .otf / .woff. Cached entries show <code>[cached]</code> in the lists.</p>
                     </div>
-                    <p class="hint">Lazy Font Loading skips preload and redraws on <code>fontLoaded</code>. Use Release Fonts, then Render to compare.</p>
+                    <p class="hint">Lazy Font Loading skips preload. Unchecked Await Fonts redraws on <code>fontLoaded</code>; checked waits for fonts before the first draw. Use Release Fonts, then Render to compare.</p>
                 </div>
             </details>
 
