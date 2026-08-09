@@ -30,6 +30,8 @@ export class UnifiedRenderer {
   private webWorkerConfigured = false
   /** Last lazyFontLoading value pushed to the worker pool, if any. */
   private workerLazyFontLoading: boolean | null = null
+  /** Last awaitFontsBeforeDraw value pushed to the worker pool, if any. */
+  private workerAwaitFontsBeforeDraw: boolean | null = null
   /**
    * Constructor
    *
@@ -72,6 +74,11 @@ export class UnifiedRenderer {
     if (this.workerLazyFontLoading !== lazy) {
       await renderer.setLazyFontLoading(lazy)
       this.workerLazyFontLoading = lazy
+    }
+    const awaitFonts = FontManager.instance.awaitFontsBeforeDraw
+    if (this.workerAwaitFontsBeforeDraw !== awaitFonts) {
+      await renderer.setAwaitFontsBeforeDraw(awaitFonts)
+      this.workerAwaitFontsBeforeDraw = awaitFonts
     }
     return renderer
   }
@@ -214,6 +221,18 @@ export class UnifiedRenderer {
     if (this.webWorkerRenderer) {
       await this.webWorkerRenderer.setLazyFontLoading(enabled)
       this.workerLazyFontLoading = enabled
+    }
+  }
+
+  /**
+   * Mirrors {@link FontManager.awaitFontsBeforeDraw} onto the main thread and
+   * any existing worker pool.
+   */
+  async setAwaitFontsBeforeDraw(enabled: boolean): Promise<void> {
+    FontManager.instance.awaitFontsBeforeDraw = enabled
+    if (this.webWorkerRenderer) {
+      await this.webWorkerRenderer.setAwaitFontsBeforeDraw(enabled)
+      this.workerAwaitFontsBeforeDraw = enabled
     }
   }
 

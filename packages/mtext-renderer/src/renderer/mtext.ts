@@ -36,6 +36,21 @@ const tempPoint3 = /*@__PURE__*/ new THREE.Vector3()
 const AxisX = /*@__PURE__*/ new THREE.Vector3(1, 0, 0)
 
 /**
+ * Options for {@link MText.asyncDraw} / {@link Shape.asyncDraw}.
+ */
+export interface MTextDrawOptions {
+  /**
+   * Wait for fonts referenced by the content/style to finish loading before
+   * building geometry.
+   *
+   * Defaults to `true` when {@link FontManager.lazyFontLoading} is false, or
+   * when {@link FontManager.awaitFontsBeforeDraw} is true. Otherwise fonts are
+   * scheduled in the background and the first draw may use fallbacks.
+   */
+  awaitFonts?: boolean
+}
+
+/**
  * Axis-aligned rectangle (plus baseline) describing the **logical MText frame**
  * used to compute attachment-point offsets in {@link MText.loadMText}.
  *
@@ -182,13 +197,15 @@ export class MText extends THREE.Object3D {
   }
 
   /**
-   * Draw the MText object. Schedules required fonts for background load and
-   * builds the object graph immediately with current fallbacks.
+   * Draw the MText object.
    *
-   * Does not await downloads — callers that need glyphs from newly loaded fonts
-   * should redraw after {@link FontManager.events.fontLoaded}.
+   * With {@link FontManager.lazyFontLoading} and without awaiting fonts, this
+   * schedules downloads in the background and builds geometry immediately with
+   * current fallbacks — redraw after {@link FontManager.events.fontLoaded} if
+   * you need the final faces. Pass `{ awaitFonts: true }` or set
+   * {@link FontManager.awaitFontsBeforeDraw} to wait for referenced fonts first.
    */
-  async asyncDraw() {
+  async asyncDraw(options?: MTextDrawOptions) {
     // Determine fonts used in the mtext string (without extensions)
     const fonts = Array.from(MText.getFonts(this._mtextData.text || '', true))
 
@@ -208,8 +225,17 @@ export class MText extends THREE.Object3D {
       }
     }
     if (fonts.length > 0) {
+      const awaitFonts =
+        options?.awaitFonts ??
+        (!this._fontManager.lazyFontLoading ||
+          this._fontManager.awaitFontsBeforeDraw)
+
       if (this._fontManager.lazyFontLoading) {
-        this._fontManager.requestFonts(fonts)
+        if (awaitFonts) {
+          await this._fontManager.requestFonts(fonts)
+        } else {
+          void this._fontManager.requestFonts(fonts)
+        }
       } else {
         await this._fontManager.loadFontsByNames(fonts)
       }

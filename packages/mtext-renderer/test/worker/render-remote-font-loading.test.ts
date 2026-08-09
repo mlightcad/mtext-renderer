@@ -44,7 +44,10 @@ class MockWorker {
         } as MessageEvent)
         return
       }
-      if (type === 'setLazyFontLoading') {
+      if (
+        type === 'setLazyFontLoading' ||
+        type === 'setAwaitFontsBeforeDraw'
+      ) {
         this.onmessage?.({
           data: {
             id,
@@ -128,6 +131,7 @@ describe('render remote font loading', () => {
   beforeEach(() => {
     FontManager.instance.release()
     FontManager.instance.lazyFontLoading = true
+    FontManager.instance.awaitFontsBeforeDraw = false
     FontManager.instance.defaultFonts = new Set(['simkai'])
     FontManager.instance.symbolFonts = new Set(['amgdt'])
     loadFontsByNames = vi
@@ -139,6 +143,7 @@ describe('render remote font loading', () => {
   afterEach(() => {
     loadFontsByNames.mockRestore()
     FontManager.instance.lazyFontLoading = true
+    FontManager.instance.awaitFontsBeforeDraw = false
     vi.unstubAllGlobals()
     vi.stubGlobal('Worker', MockWorker)
   })
@@ -197,6 +202,78 @@ describe('render remote font loading', () => {
     expect(loadFontsByNames).toHaveBeenCalledWith(
       expect.arrayContaining(['arial', 'txt', 'hztxt'])
     )
+    requestFonts.mockRestore()
+  })
+
+  it('MText.asyncDraw awaits requestFonts when awaitFontsBeforeDraw is true', async () => {
+    FontManager.instance.awaitFontsBeforeDraw = true
+    const styleManager = new DefaultStyleManager()
+    let releaseFonts!: () => void
+    const fontsReady = new Promise<void>(resolve => {
+      releaseFonts = resolve
+    })
+    const requestFonts = vi
+      .spyOn(FontManager.instance, 'requestFonts')
+      .mockImplementation(async () => {
+        await fontsReady
+        return []
+      })
+    const mtext = new MText(
+      minimalMTextData,
+      minimalTextStyle,
+      styleManager,
+      FontManager.instance,
+      createDefaultColorSettings()
+    )
+
+    let drawSettled = false
+    const drawPromise = mtext.asyncDraw().then(() => {
+      drawSettled = true
+    })
+
+    await Promise.resolve()
+    expect(drawSettled).toBe(false)
+    expect(requestFonts).toHaveBeenCalledWith(
+      expect.arrayContaining(['arial', 'txt', 'hztxt'])
+    )
+
+    releaseFonts()
+    await drawPromise
+    expect(drawSettled).toBe(true)
+    requestFonts.mockRestore()
+  })
+
+  it('MText.asyncDraw awaits fonts when options.awaitFonts is true', async () => {
+    const styleManager = new DefaultStyleManager()
+    let releaseFonts!: () => void
+    const fontsReady = new Promise<void>(resolve => {
+      releaseFonts = resolve
+    })
+    const requestFonts = vi
+      .spyOn(FontManager.instance, 'requestFonts')
+      .mockImplementation(async () => {
+        await fontsReady
+        return []
+      })
+    const mtext = new MText(
+      minimalMTextData,
+      minimalTextStyle,
+      styleManager,
+      FontManager.instance,
+      createDefaultColorSettings()
+    )
+
+    let drawSettled = false
+    const drawPromise = mtext.asyncDraw({ awaitFonts: true }).then(() => {
+      drawSettled = true
+    })
+
+    await Promise.resolve()
+    expect(drawSettled).toBe(false)
+
+    releaseFonts()
+    await drawPromise
+    expect(drawSettled).toBe(true)
     requestFonts.mockRestore()
   })
 
@@ -456,6 +533,25 @@ describe('render remote font loading', () => {
     }
 
     await renderer.setLazyFontLoading(true)
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer setAwaitFontsBeforeDraw mirrors flag to all workers', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 2, timeOut: 5000 })
+
+    await renderer.setAwaitFontsBeforeDraw(true)
+
+    expect(FontManager.instance.awaitFontsBeforeDraw).toBe(true)
+    for (const worker of workerInstances) {
+      expect(worker.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'setAwaitFontsBeforeDraw',
+          data: { enabled: true }
+        })
+      )
+    }
+
+    await renderer.setAwaitFontsBeforeDraw(false)
     renderer.destroy()
   })
 
