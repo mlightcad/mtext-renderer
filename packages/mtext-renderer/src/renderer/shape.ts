@@ -70,24 +70,33 @@ export class Shape extends THREE.Object3D {
         if (fontName) fonts.push(fontName)
       }
     }
-    if (fonts.length > 0) {
-      const awaitFonts =
-        options?.awaitFonts ??
-        (!this._fontManager.lazyFontLoading ||
-          this._fontManager.awaitFontsBeforeDraw)
 
+    const awaitFonts =
+      options?.awaitFonts ??
+      (!this._fontManager.lazyFontLoading ||
+        this._fontManager.awaitFontsBeforeDraw)
+
+    // Match MText.asyncDraw: when waiting for a single pass, also load
+    // default/symbol fallback fonts used for missing glyphs.
+    const fontsToRequest = awaitFonts
+      ? [...new Set([...fonts, ...this._fontManager.getFontsToLoad()])]
+      : fonts
+
+    if (fontsToRequest.length > 0) {
       if (this._fontManager.lazyFontLoading) {
         if (awaitFonts) {
-          await this._fontManager.requestFonts(fonts)
+          await this._fontManager.requestFonts(fontsToRequest)
         } else {
-          void this._fontManager.requestFonts(fonts)
+          void this._fontManager.requestFonts(fontsToRequest)
         }
       } else {
-        await this._fontManager.loadFontsByNames(fonts)
+        await this._fontManager.loadFontsByNames(fontsToRequest)
       }
-      // Only mark after a non-empty request so reused objects can still request
-      // style fonts on a later draw if none were available yet.
-      this._fontsInStyleLoaded = true
+      // Only mark after content/style contributed names so reused objects can
+      // still request style fonts on a later draw if none were available yet.
+      if (fonts.length > 0) {
+        this._fontsInStyleLoaded = true
+      }
     }
     this.syncDraw()
   }

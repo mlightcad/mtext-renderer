@@ -234,7 +234,7 @@ describe('render remote font loading', () => {
     await Promise.resolve()
     expect(drawSettled).toBe(false)
     expect(requestFonts).toHaveBeenCalledWith(
-      expect.arrayContaining(['arial', 'txt', 'hztxt'])
+      expect.arrayContaining(['arial', 'txt', 'hztxt', 'simkai', 'amgdt'])
     )
 
     releaseFonts()
@@ -270,6 +270,11 @@ describe('render remote font loading', () => {
 
     await Promise.resolve()
     expect(drawSettled).toBe(false)
+    // Must include symbol/default fallbacks so single-pass draw can resolve
+    // diameter (U+2205) via amgdt without relying on a later fontLoaded redraw.
+    expect(requestFonts).toHaveBeenCalledWith(
+      expect.arrayContaining(['arial', 'txt', 'hztxt', 'simkai', 'amgdt'])
+    )
 
     releaseFonts()
     await drawPromise
