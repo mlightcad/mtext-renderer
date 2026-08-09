@@ -25,11 +25,11 @@ export const DEFAULT_FONTS_PRESETS: Record<
   DefaultFontsPreset,
   readonly string[]
 > = {
-  minimal: ['txt', 'simkai'],
+  minimal: ['txt', 'simsun'],
   r12r14: ['txt', 'simplex', 'romans', 'gbcbig', 'simsun'],
   modern: ['hztxt', 'simsun'],
   international: ['txt', 'simplex', 'romans', 'simsun'],
-  cjk: ['gbcbig', 'hztxt', 'simsun', 'simkai']
+  cjk: ['gbcbig', 'hztxt', 'simsun']
 }
 
 /**

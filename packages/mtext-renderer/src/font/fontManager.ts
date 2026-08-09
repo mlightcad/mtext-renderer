@@ -83,7 +83,7 @@ export class FontManager {
    * Default fonts to use when a requested font is not found or lacks a glyph.
    * Insertion order is preserved; earlier entries are tried first.
    */
-  public defaultFonts = new Set<string>(['simkai'])
+  public defaultFonts = new Set<string>(['simsun'])
   /**
    * GDT / SHX symbol fonts for AutoCAD control-code glyphs (`%%c`, `%%d`, `%%p`,
    * `%%nnn`, etc.). Separate from {@link defaultFonts} so text fallbacks are not
@@ -161,7 +161,7 @@ export class FontManager {
    * ```ts
    * FontManager.instance.setDefaultFonts('r12r14')
    * FontManager.instance.setDefaultFonts(['hztxt', 'simsun', 'gdt'])
-   * FontManager.instance.setDefaultFonts('simkai')
+   * FontManager.instance.setDefaultFonts('simsun')
    * ```
    */
   setDefaultFonts(fonts: DefaultFontsPreset): void

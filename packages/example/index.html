@@ -29,11 +29,11 @@
             min-width: 360px;
             background: #2b2b2b;
             color: #eee;
-            padding: 16px;
+            padding: 12px;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 8px;
         }
         #panel-splitter {
             flex: 0 0 6px;
@@ -92,20 +92,20 @@
         .page-header {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 4px;
             padding-bottom: 4px;
             border-bottom: 1px solid #3d3d3d;
         }
         .page-header h2 {
             margin: 0;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 600;
             color: #fff;
         }
         #status {
             margin: 0;
             min-height: 1.35em;
-            padding: 6px 8px;
+            padding: 5px 8px;
             border-radius: 4px;
             background: #1f1f1f;
             color: #ffd666;
@@ -116,13 +116,13 @@
 
         .panel {
             margin: 0;
-            padding: 12px;
+            padding: 10px;
             border: 1px solid #3d3d3d;
             border-radius: 6px;
             background: #333;
         }
         .panel-title {
-            margin: 0 0 10px;
+            margin: 0 0 8px;
             font-size: 12px;
             font-weight: 600;
             letter-spacing: 0.04em;
@@ -132,13 +132,84 @@
         .panel-body {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
+        }
+
+        details.panel {
+            padding: 0;
+        }
+        details.panel > summary.panel-title {
+            list-style: none;
+            margin: 0;
+            padding: 10px;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        details.panel > summary.panel-title::-webkit-details-marker {
+            display: none;
+        }
+        details.panel > summary.panel-title::before {
+            content: '';
+            width: 0;
+            height: 0;
+            border-top: 4px solid transparent;
+            border-bottom: 4px solid transparent;
+            border-left: 6px solid #9ad;
+            flex: 0 0 auto;
+            transition: transform 0.12s ease;
+        }
+        details.panel[open] > summary.panel-title::before {
+            transform: rotate(90deg);
+        }
+        details.panel[open] > summary.panel-title {
+            border-bottom: 1px solid #3d3d3d;
+        }
+        details.panel > .panel-body {
+            padding: 10px;
+        }
+        details.examples-details {
+            margin: 0;
+            border: 1px solid #3d3d3d;
+            border-radius: 4px;
+            background: #2f2f2f;
+        }
+        details.examples-details > summary {
+            list-style: none;
+            padding: 7px 8px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 12px;
+            color: #bbb;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        details.examples-details > summary::-webkit-details-marker {
+            display: none;
+        }
+        details.examples-details > summary::before {
+            content: '';
+            width: 0;
+            height: 0;
+            border-top: 3px solid transparent;
+            border-bottom: 3px solid transparent;
+            border-left: 5px solid #888;
+            transition: transform 0.12s ease;
+        }
+        details.examples-details[open] > summary::before {
+            transform: rotate(90deg);
+        }
+        details.examples-details .examples-grid {
+            padding: 0 8px 8px;
         }
 
         .row {
             display: flex;
             align-items: flex-end;
-            gap: 10px;
+            gap: 8px;
         }
         .row .field {
             flex: 1;
@@ -147,7 +218,7 @@
         .field label,
         .panel label {
             display: block;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
             font-size: 12px;
             color: #bbb;
         }
@@ -163,7 +234,7 @@
         textarea {
             width: 100%;
             margin: 0;
-            padding: 7px 8px;
+            padding: 6px 8px;
             border: 1px solid #555;
             border-radius: 4px;
             background: #1f1f1f;
@@ -179,7 +250,7 @@
         }
         input[type="color"] {
             width: 100%;
-            height: 34px;
+            height: 32px;
             margin: 0;
             padding: 2px;
             border: 1px solid #555;
@@ -187,8 +258,8 @@
             background: #1f1f1f;
         }
         #mtext-input {
-            height: 120px;
-            min-height: 80px;
+            height: 96px;
+            min-height: 72px;
             max-height: 280px;
             resize: vertical;
             line-height: 1.4;
@@ -224,7 +295,7 @@
         .checkbox-row {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px 14px;
+            gap: 8px 14px;
             align-items: center;
         }
         .checkbox-container {
@@ -271,13 +342,13 @@
 
         .examples-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-            gap: 6px;
+            grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+            gap: 5px;
         }
         .example-btn {
             width: 100%;
             margin: 0;
-            padding: 7px 8px;
+            padding: 6px 6px;
             background: #444;
             border: 1px solid #555;
             border-radius: 4px;
@@ -299,23 +370,13 @@
             display: none;
         }
         .content-panel .panel-body {
-            gap: 10px;
+            gap: 8px;
         }
 
-        .memory-panel-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .memory-panel-header .panel-title {
-            margin: 0;
-            margin-right: auto;
-        }
         #memory-stats {
             margin: 0;
             padding: 8px;
-            max-height: 200px;
+            max-height: 160px;
             overflow: auto;
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             font-size: 11px;
@@ -329,6 +390,22 @@
         }
         #memory-stats:empty::before {
             content: 'Click Refresh to estimate live isolate memory.';
+            color: #777;
+        }
+
+        .secondary-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 2px;
+            padding-top: 6px;
+            border-top: 1px dashed #3d3d3d;
+        }
+        .secondary-label {
+            margin: 0;
+            font-size: 10px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
             color: #777;
         }
     </style>
@@ -364,55 +441,6 @@
                     <div class="checkbox-container">
                         <input type="checkbox" id="lazy-font-loading" checked>
                         <label for="lazy-font-loading">Lazy Font Loading</label>
-                    </div>
-                </div>
-                <p class="hint">Lazy skips preload and redraws on <code>fontLoaded</code>. Off preloads before render. Use Release Fonts, then Render to compare.</p>
-            </div>
-        </section>
-
-        <section class="panel">
-            <h3 class="panel-title">Fonts</h3>
-            <div class="panel-body">
-                <div class="row">
-                    <div class="field">
-                        <label for="font-select">Text Style Font</label>
-                        <select id="font-select">
-                            <option value="simkai">simkai</option>
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label for="default-fonts-preset">Default Fonts Preset</label>
-                        <select id="default-fonts-preset">
-                            <option value="minimal" selected>minimal (txt → amgdt → gdt → simkai)</option>
-                            <option value="r12r14">r12r14 (txt → gdt)</option>
-                            <option value="modern">modern (hztxt → gdt)</option>
-                            <option value="international">international (txt → gdt)</option>
-                            <option value="cjk">cjk (gbcbig → gdt)</option>
-                        </select>
-                    </div>
-                </div>
-                <div>
-                    <label for="font-cache-input">Cache Local Font</label>
-                    <div class="font-cache-actions">
-                        <input type="file" id="font-cache-input" accept=".shx,.ttf,.otf,.woff,application/font-sfnt,font/woff" />
-                        <button type="button" id="font-cache-btn">Cache</button>
-                    </div>
-                    <p class="hint" style="margin-top: 6px;">Accepts .shx / .ttf / .otf / .woff. Cached entries show <code>[cached]</code> in the lists.</p>
-                </div>
-            </div>
-        </section>
-
-        <section class="panel">
-            <h3 class="panel-title">Colors</h3>
-            <div class="panel-body">
-                <div class="row">
-                    <div class="field">
-                        <label for="by-layer-color">ByLayer</label>
-                        <input type="color" id="by-layer-color" value="#ffffff">
-                    </div>
-                    <div class="field">
-                        <label for="by-block-color">ByBlock</label>
-                        <input type="color" id="by-block-color" value="#ffffff">
                     </div>
                 </div>
             </div>
@@ -483,10 +511,8 @@
                         <label for="show-line-boxes">Lines</label>
                     </div>
                 </div>
-                <div>
-                    <div class="field" style="margin-bottom: 6px;">
-                        <label>Examples</label>
-                    </div>
+                <details class="examples-details" open>
+                    <summary>Examples</summary>
                     <div class="examples-grid">
                         <button class="example-btn" data-example="basic">Basic</button>
                         <button class="example-btn" data-example="complex">Complex</button>
@@ -502,21 +528,74 @@
                         <button class="example-btn" data-example="attachmentGrid">Attachments</button>
                         <button class="example-btn" data-example="largeCoordinates" title="Large WCS coords; two MText blocks (\P\P); fonts via \Fname;">Large Coords</button>
                     </div>
-                </div>
+                </details>
             </div>
         </section>
 
-        <section class="panel">
-            <div class="memory-panel-header">
-                <h3 class="panel-title">Memory</h3>
-                <button type="button" id="memory-stats-btn">Refresh</button>
-                <button type="button" id="release-fonts-btn">Release Fonts</button>
-            </div>
-            <div class="panel-body" style="margin-top: 10px;">
-                <pre id="memory-stats" aria-live="polite"></pre>
-                <p class="hint">Totals exclude IndexedDB. Release clears main-thread fonts and recreates workers.</p>
-            </div>
-        </section>
+        <div class="secondary-group">
+            <p class="secondary-label">Advanced</p>
+
+            <details class="panel">
+                <summary class="panel-title">Fonts</summary>
+                <div class="panel-body">
+                    <div class="row">
+                        <div class="field">
+                            <label for="font-select">Text Style Font</label>
+                            <select id="font-select">
+                                <option value="simsun">simsun</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="default-fonts-preset">Default Fonts Preset</label>
+                            <select id="default-fonts-preset">
+                                <option value="minimal" selected>minimal (txt → amgdt → gdt → simsun)</option>
+                                <option value="r12r14">r12r14 (txt → gdt)</option>
+                                <option value="modern">modern (hztxt → gdt)</option>
+                                <option value="international">international (txt → gdt)</option>
+                                <option value="cjk">cjk (gbcbig → gdt)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="font-cache-input">Cache Local Font</label>
+                        <div class="font-cache-actions">
+                            <input type="file" id="font-cache-input" accept=".shx,.ttf,.otf,.woff,application/font-sfnt,font/woff" />
+                            <button type="button" id="font-cache-btn">Cache</button>
+                        </div>
+                        <p class="hint" style="margin-top: 6px;">Accepts .shx / .ttf / .otf / .woff. Cached entries show <code>[cached]</code> in the lists.</p>
+                    </div>
+                    <p class="hint">Lazy Font Loading skips preload and redraws on <code>fontLoaded</code>. Use Release Fonts, then Render to compare.</p>
+                </div>
+            </details>
+
+            <details class="panel">
+                <summary class="panel-title">Colors</summary>
+                <div class="panel-body">
+                    <div class="row">
+                        <div class="field">
+                            <label for="by-layer-color">ByLayer</label>
+                            <input type="color" id="by-layer-color" value="#ffffff">
+                        </div>
+                        <div class="field">
+                            <label for="by-block-color">ByBlock</label>
+                            <input type="color" id="by-block-color" value="#ffffff">
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <details class="panel">
+                <summary class="panel-title">Memory</summary>
+                <div class="panel-body">
+                    <div class="action-row">
+                        <button type="button" id="memory-stats-btn">Refresh</button>
+                        <button type="button" id="release-fonts-btn">Release Fonts</button>
+                    </div>
+                    <pre id="memory-stats" aria-live="polite"></pre>
+                    <p class="hint">Totals exclude IndexedDB. Release clears main-thread fonts and recreates workers.</p>
+                </div>
+            </details>
+        </div>
     </div>
     <div
         id="panel-splitter"
