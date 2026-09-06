@@ -18,10 +18,13 @@ export class FontCacheManager {
   private isClosing: boolean = false
 
   private constructor() {
-    // Add window unload handler to close database
+    // Close IndexedDB on page leave. Prefer pagehide over unload — Chrome
+    // deprecates unload via Permissions-Policy and logs a violation.
     if (typeof window !== 'undefined') {
-      window.addEventListener('unload', () => {
-        this.close()
+      window.addEventListener('pagehide', event => {
+        if (!event.persisted) {
+          this.close()
+        }
       })
     }
   }

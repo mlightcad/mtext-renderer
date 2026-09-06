@@ -12,6 +12,12 @@ export class DefaultFontLoader implements FontLoader {
   private _avaiableFonts: FontInfo[]
   private _baseUrl: string
   private _avaiableFontMap: Map<string, FontInfo>
+  /**
+   * Shared in-flight metadata fetch. Concurrent {@link getAvailableFonts} /
+   * {@link load} callers (common with lazy per-entity font requests) must not
+   * each hit `fonts.json` independently.
+   */
+  private _availableFontsPromise: Promise<FontInfo[]> | null = null
 
   /**
    * Creates a new instance of DefaultFontLoader
@@ -35,6 +41,7 @@ export class DefaultFontLoader implements FontLoader {
     this._baseUrl = value
     this._avaiableFonts = []
     this._avaiableFontMap.clear()
+    this._availableFontsPromise = null
     this.onFontUrlChanged(value)
   }
 
@@ -57,27 +64,30 @@ export class DefaultFontLoader implements FontLoader {
   /**
    * Retrieves information about all available fonts in the system.
    * Loads font metadata from a CDN if not already loaded.
+   * Concurrent callers share one in-flight fetch so `fonts.json` is requested
+   * at most once per loader instance / baseUrl.
    * @returns Promise that resolves to an array of FontInfo objects
    * @throws {Error} If font metadata cannot be loaded from the CDN
    */
   async getAvailableFonts() {
-    if (this._avaiableFonts.length == 0) {
-      const fontMetaDataUrl = this._baseUrl + 'fonts.json'
-      try {
-        const response = await fetch(fontMetaDataUrl)
-        this._avaiableFonts = (await response.json()) as FontInfo[]
-      } catch (error) {
-        throw new Error(
-          `Filed to get avaiable font from '${fontMetaDataUrl}' due to ${error}!`
-        )
-      }
-
-      this._avaiableFonts.forEach(font => {
-        font.url = this._baseUrl + font.file
-      })
+    if (this._avaiableFonts.length > 0) {
+      this.buildFontMap()
+      return this._avaiableFonts
     }
-    this.buildFontMap()
-    return this._avaiableFonts
+    if (this._availableFontsPromise) {
+      return this._availableFontsPromise
+    }
+
+    const baseUrl = this._baseUrl
+    const promise = this.fetchAvailableFonts(baseUrl).finally(() => {
+      // Only clear if this promise is still the active one (a newer fetch may
+      // have started after baseUrl changed, including A→B→A cycles).
+      if (this._availableFontsPromise === promise) {
+        this._availableFontsPromise = null
+      }
+    })
+    this._availableFontsPromise = promise
+    return promise
   }
 
   /**
@@ -171,6 +181,34 @@ export class DefaultFontLoader implements FontLoader {
       })
     }
     return statuses
+  }
+
+  /**
+   * Fetches and caches remote font metadata for the given base URL.
+   */
+  private async fetchAvailableFonts(baseUrl: string): Promise<FontInfo[]> {
+    const fontMetaDataUrl = baseUrl + 'fonts.json'
+    let fonts: FontInfo[]
+    try {
+      const response = await fetch(fontMetaDataUrl)
+      fonts = (await response.json()) as FontInfo[]
+    } catch (error) {
+      throw new Error(
+        `Filed to get avaiable font from '${fontMetaDataUrl}' due to ${error}!`
+      )
+    }
+
+    // Stale response after baseUrl changed — discard and load for the new URL.
+    if (this._baseUrl !== baseUrl) {
+      return this.getAvailableFonts()
+    }
+
+    fonts.forEach(font => {
+      font.url = baseUrl + font.file
+    })
+    this._avaiableFonts = fonts
+    this.buildFontMap()
+    return this._avaiableFonts
   }
 
   /**

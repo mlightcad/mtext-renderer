@@ -655,7 +655,7 @@ export class MText extends THREE.Object3D {
     }
 
     const context = new MTextContext()
-    context.fontFace.family = style.font
+    context.fontFace.family = this.fontManager.findAndReplaceFont(style.font)
     context.capHeight = {
       value: defaultFontSize,
       isRelative: false
