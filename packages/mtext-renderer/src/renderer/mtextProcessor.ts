@@ -286,7 +286,11 @@ export class MTextProcessor {
     this._vOffset = 0
     this._lineCount = 1
     this._currentLineObjects = []
-    const resolvedFont = this.fontManager.findAndReplaceFont(this.textStyle.font)
+    // Resolve missing style fonts to the default chain before the first glyph.
+    // Normalize to lowercase to match FontManager's loadedFontMap keys.
+    const resolvedFont = this.fontManager
+      .findAndReplaceFont(this.textStyle.font)
+      .toLowerCase()
     this._currentContext = new RenderContext({
       fontScaleFactor: this.fontManager.getFontScaleFactor(resolvedFont),
       fontSize: options.fontSize,
@@ -302,7 +306,6 @@ export class MTextProcessor {
     // Baking via setColorFromHex collapses ACI 7 into literal white and prevents
     // canvas-background inversion after worker reconstruct.
     this._currentContext.color = this._colorSettings.color.copy()
-    // Resolve missing style fonts to the default chain before the first glyph.
     this._currentContext.fontFace.family = resolvedFont
     // Set initial width factor
     this._currentContext.widthFactor = {
