@@ -24,6 +24,7 @@ interface WorkerMessage {
     | 'setLazyFontLoading'
     | 'setAwaitFontsBeforeDraw'
     | 'setFontUrl'
+    | 'setMissedFonts'
     | 'getAvailableFonts'
     | 'getMemoryStats'
   id: string
@@ -33,6 +34,7 @@ interface WorkerMessage {
     colorSettings?: unknown
     fonts?: string[]
     symbolFonts?: string[]
+    missedFonts?: Record<string, number>
     url?: string
     enabled?: boolean
   }
@@ -46,9 +48,11 @@ interface WorkerResponse {
     | 'setLazyFontLoading'
     | 'setAwaitFontsBeforeDraw'
     | 'setFontUrl'
+    | 'setMissedFonts'
     | 'getAvailableFonts'
     | 'getMemoryStats'
     | 'fontLoaded'
+    | 'fontNotFound'
     | 'error'
   id: string
   success: boolean
@@ -67,6 +71,16 @@ fontManager.events.fontLoaded.addEventListener(payload => {
     id: '',
     success: true,
     data: { fontName: payload?.fontName }
+  } as WorkerResponse)
+})
+
+// Forward missed-font reports so the main thread can drive status-bar / UI.
+fontManager.events.fontNotFound.addEventListener(payload => {
+  self.postMessage({
+    type: 'fontNotFound',
+    id: '',
+    success: true,
+    data: { fontName: payload?.fontName, count: payload?.count }
   } as WorkerResponse)
 })
 
@@ -188,6 +202,20 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
           id,
           success: true,
           data: {}
+        } as WorkerResponse)
+        break
+      }
+
+      case 'setMissedFonts': {
+        const { missedFonts } = (data ?? {}) as {
+          missedFonts?: Record<string, number>
+        }
+        fontManager.replaceMissedFonts(missedFonts ?? {})
+        self.postMessage({
+          type: 'setMissedFonts',
+          id,
+          success: true,
+          data: { missedFonts: { ...fontManager.missedFonts } }
         } as WorkerResponse)
         break
       }

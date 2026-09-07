@@ -237,6 +237,24 @@ export class UnifiedRenderer {
   }
 
   /**
+   * Replaces session-scoped missed-font bookkeeping on the main thread and workers.
+   * When a worker pool is active, {@link WebWorkerRenderer.replaceMissedFonts}
+   * owns the final main-thread map (intersection of worker-filtered results).
+   */
+  async replaceMissedFonts(fonts: Record<string, number>): Promise<void> {
+    if (this.webWorkerRenderer) {
+      await this.webWorkerRenderer.replaceMissedFonts(fonts)
+      return
+    }
+    FontManager.instance.replaceMissedFonts(fonts)
+  }
+
+  /** Clears session-scoped missed-font bookkeeping on the main thread and workers. */
+  async clearMissedFonts(): Promise<void> {
+    await this.replaceMissedFonts({})
+  }
+
+  /**
    * Returns font names for a predefined default-font preset.
    */
   getDefaultFontsPreset(preset: DefaultFontsPreset): readonly string[] {
