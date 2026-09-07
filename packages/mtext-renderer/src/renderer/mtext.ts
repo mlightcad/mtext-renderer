@@ -14,7 +14,6 @@ import { DEFAULT_LINE_SPACE_FACTOR } from './constants'
 import { resolveMTextWrapWidth } from './mtextDataUtils'
 import { MTextFormatOptions, MTextProcessor } from './mtextProcessor'
 import { expandPercentControlCodes } from './percentControlCodes'
-import { expandUnicodeEscapes } from './unicodeEscapes'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
@@ -30,6 +29,7 @@ import {
   ShapeData,
   TextStyle
 } from './types'
+import { expandUnicodeEscapes } from './unicodeEscapes'
 
 const tempPoint = /*@__PURE__*/ new THREE.Vector3()
 const tempPoint2 = /*@__PURE__*/ new THREE.Vector3()
