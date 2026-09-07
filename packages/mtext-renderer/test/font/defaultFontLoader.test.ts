@@ -86,6 +86,47 @@ describe('DefaultFontLoader', () => {
     expect(fetch).toHaveBeenCalledOnce()
   })
 
+  it('dedupes concurrent getAvailableFonts calls into one fonts.json fetch', async () => {
+    let resolveFetch!: (value: ReturnType<typeof jsonResponse>) => void
+    const fetchStarted = new Promise<void>(resolveStarted => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation(() => {
+          resolveStarted()
+          return new Promise(resolve => {
+            resolveFetch = resolve
+          })
+        })
+      )
+    })
+
+    const loader = new DefaultFontLoader()
+    loader.baseUrl = 'https://cdn.example.com/fonts/'
+
+    const first = loader.getAvailableFonts()
+    const second = loader.getAvailableFonts()
+    const third = loader.load(['old'])
+
+    await fetchStarted
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(fetch).toHaveBeenCalledWith(
+      'https://cdn.example.com/fonts/fonts.json'
+    )
+
+    resolveFetch(jsonResponse(oldFonts))
+
+    const [fontsA, fontsB, statuses] = await Promise.all([
+      first,
+      second,
+      third
+    ])
+
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(fontsA).toBe(fontsB)
+    expect(fontsA[0]?.file).toBe('old.shx')
+    expect(statuses).toHaveLength(1)
+  })
+
   it('reloads metadata from the new baseUrl after baseUrl changes', async () => {
     const loader = new DefaultFontLoader()
     loader.baseUrl = 'https://old.example.com/fonts/'
@@ -110,6 +151,46 @@ describe('DefaultFontLoader', () => {
         url: 'https://new.example.com/fonts/new.shx'
       }
     ])
+  })
+
+  it('keeps the newer in-flight fetch when baseUrl cycles A→B→A', async () => {
+    const resolvers: Array<(value: ReturnType<typeof jsonResponse>) => void> =
+      []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        return new Promise(resolve => {
+          resolvers.push(resolve)
+        })
+      })
+    )
+
+    const loader = new DefaultFontLoader()
+    loader.baseUrl = 'https://a.example.com/fonts/'
+    const first = loader.getAvailableFonts()
+
+    loader.baseUrl = 'https://b.example.com/fonts/'
+    const second = loader.getAvailableFonts()
+
+    loader.baseUrl = 'https://a.example.com/fonts/'
+    const third = loader.getAvailableFonts()
+
+    expect(fetch).toHaveBeenCalledTimes(3)
+
+    // Finish the original A fetch first so the stale B path can reuse cache
+    // instead of joining the still-pending third promise.
+    resolvers[0](jsonResponse(oldFonts))
+    await first
+    expect(fetch).toHaveBeenCalledTimes(3)
+
+    resolvers[1](jsonResponse(newFonts))
+    await second
+    expect(fetch).toHaveBeenCalledTimes(3)
+
+    resolvers[2](jsonResponse(oldFonts))
+    const fonts = await third
+    expect(fonts[0]?.file).toBe('old.shx')
+    expect(fetch).toHaveBeenCalledTimes(3)
   })
 
   it('notifies when baseUrl changes', () => {
