@@ -29,6 +29,7 @@ import {
   ShapeData,
   TextStyle
 } from './types'
+import { expandUnicodeEscapes } from './unicodeEscapes'
 
 const tempPoint = /*@__PURE__*/ new THREE.Vector3()
 const tempPoint2 = /*@__PURE__*/ new THREE.Vector3()
@@ -681,11 +682,15 @@ export class MText extends THREE.Object3D {
       this.fontManager,
       textLineFormatOptions
     )
-    const parser = new MTextParser(expandPercentControlCodes(mtextData.text), context, {
-      resetParagraphParameters: true,
-      yieldPropertyCommands: true,
-      yieldPercentSymbols: true
-    })
+    const parser = new MTextParser(
+      expandUnicodeEscapes(expandPercentControlCodes(mtextData.text)),
+      context,
+      {
+        resetParagraphParameters: true,
+        yieldPropertyCommands: true,
+        yieldPercentSymbols: true
+      }
+    )
     const tokens = parser.parse()
     const object = textLine.processText(tokens)
     return {

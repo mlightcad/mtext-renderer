@@ -1374,8 +1374,9 @@ export class MTextProcessor {
     const resolvedChars: Array<{ char: string; shape?: BaseTextShape }> = []
     let wordWidth = 0
 
-    for (let i = 0; i < word.length; i++) {
-      const char = word[i]
+    // Iterate by Unicode code point so supplementary-plane characters (e.g. 😀)
+    // are not split into UTF-16 surrogate halves.
+    for (const char of word) {
       const resolved = this.resolveCharShape(char)
       const shape = resolved?.shape
       resolvedChars.push({ char, shape })
@@ -1443,8 +1444,8 @@ export class MTextProcessor {
     this._hOffset = currentHOffset
     this._currentContext.charTrackingFactor = { value: 1, isRelative: false }
     let numeratorWidth = 0
-    for (let i = 0; i < numerator.length; i++) {
-      const shape = this.getCharShape(numerator[i])
+    for (const char of numerator) {
+      const shape = this.getCharShape(char)
       if (shape) {
         numeratorWidth += shape.width * this.currentWidthFactor
       }
@@ -1452,8 +1453,8 @@ export class MTextProcessor {
 
     this._hOffset = currentHOffset
     let denominatorWidth = 0
-    for (let i = 0; i < denominator.length; i++) {
-      const shape = this.getCharShape(denominator[i])
+    for (const char of denominator) {
+      const shape = this.getCharShape(char)
       if (shape) {
         denominatorWidth += shape.width * this.currentWidthFactor
       }
@@ -1481,9 +1482,9 @@ export class MTextProcessor {
           currentVOffset + currentStackFontSize * 0.1,
           this.currentFontSize
         )
-        for (let i = 0; i < numerator.length; i++) {
+        for (const char of numerator) {
           this.processChar(
-            numerator[i],
+            char,
             superscriptGeometries,
             superscriptLineGeometries,
             superscriptMeshCharBoxes,
@@ -1516,9 +1517,9 @@ export class MTextProcessor {
           currentVOffset - currentStackFontSize * 0.6,
           this.currentFontSize
         )
-        for (let i = 0; i < denominator.length; i++) {
+        for (const char of denominator) {
           this.processChar(
-            denominator[i],
+            char,
             subscriptGeometries,
             subscriptLineGeometries,
             subscriptMeshCharBoxes,
@@ -1564,9 +1565,9 @@ export class MTextProcessor {
 
         this._hOffset = currentHOffset + upperOffset
         this._vOffset = upperBaseline
-        for (let i = 0; i < numerator.length; i++) {
+        for (const char of numerator) {
           this.processChar(
-            numerator[i],
+            char,
             upperGeometries,
             upperLineGeometries,
             upperMeshCharBoxes,
@@ -1585,9 +1586,9 @@ export class MTextProcessor {
 
         this._hOffset = currentHOffset + lowerOffset
         this._vOffset = lowerBaseline
-        for (let i = 0; i < denominator.length; i++) {
+        for (const char of denominator) {
           this.processChar(
-            denominator[i],
+            char,
             lowerGeometries,
             lowerLineGeometries,
             lowerMeshCharBoxes,
@@ -1618,9 +1619,9 @@ export class MTextProcessor {
         currentVOffset + this.currentFontSize * 0.3,
         this.currentFontSize
       )
-      for (let i = 0; i < numerator.length; i++) {
+      for (const char of numerator) {
         this.processChar(
-          numerator[i],
+          char,
           numeratorGeometries,
           numeratorLineGeometries,
           numeratorMeshCharBoxes,
@@ -1654,9 +1655,9 @@ export class MTextProcessor {
         currentVOffset - this.currentFontSize * 0.6,
         this.currentFontSize
       )
-      for (let i = 0; i < denominator.length; i++) {
+      for (const char of denominator) {
         this.processChar(
-          denominator[i],
+          char,
           denominatorGeometries,
           denominatorLineGeometries,
           denominatorMeshCharBoxes,

@@ -186,7 +186,7 @@ function createProcessor(
     options
   )
 
-  return { processor, style, options }
+  return { processor, style, options, fontManager }
 }
 
 function getCurrentContext(processor: MTextProcessor) {
@@ -781,5 +781,20 @@ describe('MTextProcessor format state', () => {
     expect(breakIndices).toHaveLength(2)
     expect(breakIndices[0]).toBeLessThanOrEqual(breakIndices[1])
     expect(lines[2].breakIndex).toBeUndefined()
+  })
+
+  it('resolves supplementary-plane characters as one glyph, not surrogate halves', () => {
+    const { processor, fontManager } = createProcessor('mesh')
+    const getCharShape = vi.spyOn(fontManager, 'getCharShape')
+
+    processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: '😀' }
+    ] as any)
+
+    const lookedUp = getCharShape.mock.calls.map(call => call[0])
+    expect(lookedUp.length).toBeGreaterThan(0)
+    expect(lookedUp.every(char => char === '😀')).toBe(true)
+    expect(lookedUp).not.toContain('\uD83D')
+    expect(lookedUp).not.toContain('\uDE00')
   })
 })

@@ -95,8 +95,8 @@ export class ShxFont extends BaseFont {
     const shapes: ShxTextShape[] = []
     let hOffset = 0.0
 
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i]
+    // Iterate by Unicode code point so supplementary-plane characters stay intact.
+    for (const char of text) {
       if (char === ' ') {
         hOffset += this.getSpaceAdvance(size)
         continue
