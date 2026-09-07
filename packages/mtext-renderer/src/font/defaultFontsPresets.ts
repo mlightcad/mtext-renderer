@@ -9,11 +9,11 @@ export type DefaultFontsPreset =
   | 'minimal'
   /** Classic R12/R14 stack: SHX basics, GB big font, then mesh CJK and AMGDT. */
   | 'r12r14'
-  /** Later-era stack: hztxt big font with simsun and AMGDT symbols. */
+  /** Later-era stack: simsun first for Latin metrics, then hztxt big font. */
   | 'modern'
   /** Western SHX fonts plus simsun and AMGDT; no CJK-specific SHX big fonts. */
   | 'international'
-  /** Broad CJK coverage: both GB big-font SHX files plus common mesh fallbacks. */
+  /** Broad CJK coverage: simsun first, then GB big-font SHX files. */
   | 'cjk'
 
 /**
@@ -27,9 +27,11 @@ export const DEFAULT_FONTS_PRESETS: Record<
 > = {
   minimal: ['txt', 'simsun'],
   r12r14: ['txt', 'simplex', 'romans', 'gbcbig', 'simsun'],
-  modern: ['hztxt', 'simsun'],
+  // Mesh/TTF first so missing style fonts (e.g. "标准") get correct Latin metrics.
+  // BIGFONT SHX stays available via glyph fallback for CJK coverage.
+  modern: ['simsun', 'hztxt'],
   international: ['txt', 'simplex', 'romans', 'simsun'],
-  cjk: ['gbcbig', 'hztxt', 'simsun']
+  cjk: ['simsun', 'gbcbig', 'hztxt']
 }
 
 /**

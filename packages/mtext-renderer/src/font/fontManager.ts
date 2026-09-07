@@ -584,16 +584,47 @@ export class FontManager {
     if (this.lazyFontLoading && requested) {
       void this.requestFont(requested)
     }
-    for (const defaultFontName of this.defaultFonts) {
-      if (this.loadedFontMap.has(defaultFontName.toLowerCase())) {
-        return defaultFontName
-      }
+    // Prefer non-BIGFONT defaults as the primary face. BIGFONT SHX files (hztxt,
+    // gbcbig, …) map ASCII to GBK fullwidth cells (0xA3xx), which makes Latin
+    // runs much wider than AutoCAD and triggers false MTEXT wrapping when the
+    // style font is missing (e.g. Chinese styles named "标准").
+    const loadedDefault = this.pickLoadedDefaultFont(true)
+    if (loadedDefault) {
+      return loadedDefault
+    }
+    const anyLoadedDefault = this.pickLoadedDefaultFont(false)
+    if (anyLoadedDefault) {
+      return anyLoadedDefault
     }
     const firstDefault = [...this.defaultFonts][0] ?? ''
     if (firstDefault && this.lazyFontLoading) {
       void this.requestFont(firstDefault)
     }
     return firstDefault
+  }
+
+  /**
+   * Returns the first loaded font from {@link defaultFonts}.
+   *
+   * @param skipBigfont When true, ignores SHX BIGFONT faces so ASCII/Latin text
+   *   is not forced through fullwidth CJK glyph cells.
+   */
+  private pickLoadedDefaultFont(skipBigfont: boolean): string | undefined {
+    for (const defaultFontName of this.defaultFonts) {
+      const loaded = this.loadedFontMap.get(defaultFontName.toLowerCase())
+      if (!loaded) {
+        continue
+      }
+      if (
+        skipBigfont &&
+        loaded.type === 'shx' &&
+        (loaded.data as ShxFontData).header?.fontType === ShxFontType.BIGFONT
+      ) {
+        continue
+      }
+      return defaultFontName
+    }
+    return undefined
   }
 
   /**

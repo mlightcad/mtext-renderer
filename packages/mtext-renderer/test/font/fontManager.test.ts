@@ -444,7 +444,7 @@ describe('FontManager', () => {
 
     await manager.loadDefaultFont()
 
-    expect(loader.load).toHaveBeenCalledWith(['hztxt', 'simsun', 'simplex', 'amgdt'])
+    expect(loader.load).toHaveBeenCalledWith(['simsun', 'hztxt', 'simplex', 'amgdt'])
   })
 
   it('resolves fonts by alias names after loading', async () => {

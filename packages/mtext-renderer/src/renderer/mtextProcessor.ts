@@ -729,6 +729,10 @@ export class MTextProcessor {
 
   /**
    * Apply width factor changes, resolving relative factors to absolute values.
+   *
+   * Absolute `\Wvalue;` replaces the current width factor. Relative `\Wvaluex;`
+   * multiplies the current width factor (AutoCAD / ezdxf semantics).
+   *
    * @param widthFactor Width factor change data.
    */
   private applyWidthFactorChange(
@@ -737,12 +741,12 @@ export class MTextProcessor {
     if (!widthFactor) return
     if (widthFactor.isRelative) {
       this._currentContext.widthFactor = {
-        value: widthFactor.value * this.maxWidth,
+        value: widthFactor.value * this._currentContext.widthFactor.value,
         isRelative: false
       }
     } else {
       this._currentContext.widthFactor = {
-        value: widthFactor.value * 0.85,
+        value: widthFactor.value,
         isRelative: false
       }
     }
