@@ -14,6 +14,7 @@ import { DEFAULT_LINE_SPACE_FACTOR } from './constants'
 import { resolveMTextWrapWidth } from './mtextDataUtils'
 import { MTextFormatOptions, MTextProcessor } from './mtextProcessor'
 import { expandPercentControlCodes } from './percentControlCodes'
+import { expandUnicodeEscapes } from './unicodeEscapes'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
@@ -681,11 +682,15 @@ export class MText extends THREE.Object3D {
       this.fontManager,
       textLineFormatOptions
     )
-    const parser = new MTextParser(expandPercentControlCodes(mtextData.text), context, {
-      resetParagraphParameters: true,
-      yieldPropertyCommands: true,
-      yieldPercentSymbols: true
-    })
+    const parser = new MTextParser(
+      expandUnicodeEscapes(expandPercentControlCodes(mtextData.text)),
+      context,
+      {
+        resetParagraphParameters: true,
+        yieldPropertyCommands: true,
+        yieldPercentSymbols: true
+      }
+    )
     const tokens = parser.parse()
     const object = textLine.processText(tokens)
     return {
