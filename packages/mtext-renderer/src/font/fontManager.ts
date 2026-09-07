@@ -561,12 +561,22 @@ export class FontManager {
 
   /**
    * Tries to find the specified font. If not found, uses a replacement font and returns its name.
+   *
+   * When the requested face is not loaded, the original name is recorded in
+   * {@link missedFonts} and {@link events.fontNotFound} is dispatched (once per
+   * miss cycle) so hosts can surface missing-font UI. Lazy loading still
+   * schedules {@link requestFont} for the face that will be fetched.
+   *
    * @param fontName - The font name to find
    * @returns The original font name if found, or the replacement font name if not found
    */
   findAndReplaceFont(fontName: string) {
     const requested = fontName == null ? '' : String(fontName)
+    const missName = this.stripFontFileExtension(requested)
     let font = this.loadedFontMap.get(requested.toLowerCase())
+    if (font == null && missName && missName !== requested) {
+      font = this.loadedFontMap.get(missName.toLowerCase())
+    }
     if (font == null) {
       const mappedFontName = this.fontMapping[requested]
       if (mappedFontName) {
@@ -574,6 +584,9 @@ export class FontManager {
         if (!font && this.lazyFontLoading) {
           void this.requestFont(mappedFontName)
         }
+        // Drawing still asked for the original face — report it even when a
+        // mapping supplies a replacement (do not also request the original).
+        this.recordMissedFonts(missName, false)
         // Prefer the mapped face even while it is still loading (legacy behavior).
         return mappedFontName
       }
@@ -581,9 +594,8 @@ export class FontManager {
     if (font) {
       return requested
     }
-    if (this.lazyFontLoading && requested) {
-      void this.requestFont(requested)
-    }
+    // Not loaded and no mapping — record miss (schedules lazy load once).
+    this.recordMissedFonts(missName, true)
     // Prefer non-BIGFONT defaults as the primary face. BIGFONT SHX files (hztxt,
     // gbcbig, …) map ASCII to GBK fullwidth cells (0xA3xx), which makes Latin
     // runs much wider than AutoCAD and triggers false MTEXT wrapping when the
@@ -816,10 +828,95 @@ export class FontManager {
   }
 
   /**
+   * Applies a missed-font report from another isolate (e.g. a web worker).
+   * Updates {@link missedFonts} and dispatches {@link events.fontNotFound} on
+   * first sighting. Does not call {@link requestFont} — the remote isolate owns loading.
+   */
+  applyRemoteFontNotFound(fontName: string, count: number = 1): void {
+    if (!fontName) {
+      return
+    }
+    const prev = this.missedFonts[fontName] ?? 0
+    this.missedFonts[fontName] = Math.max(prev, count)
+    if (prev === 0) {
+      this.events.fontNotFound.dispatch({
+        fontName,
+        count: this.missedFonts[fontName]
+      })
+    }
+  }
+
+  /**
+   * Clears a missed-font entry after a remote isolate reports the font loaded.
+   * Call before dispatching {@link events.fontLoaded} on the main thread.
+   */
+  applyRemoteFontLoaded(fontName: string): void {
+    if (!fontName) {
+      return
+    }
+    this.clearMissedFontEntry(fontName)
+    this.fontRequestFailed.delete(fontName.toLowerCase())
+  }
+
+  /**
+   * Replaces session-scoped missed-font bookkeeping without dispatching events.
+   * Entries for faces that are already loaded are dropped.
+   */
+  replaceMissedFonts(fonts: Record<string, number>): void {
+    const next: Record<string, number> = {}
+    for (const [name, count] of Object.entries(fonts ?? {})) {
+      if (!name || this.isFontLoaded(name)) {
+        continue
+      }
+      next[name] = count
+    }
+    this.missedFonts = next
+  }
+
+  /**
+   * Clears {@link missedFonts}. Does not unload faces or cancel in-flight loads.
+   */
+  clearMissedFonts(): void {
+    this.missedFonts = {}
+  }
+
+  /**
+   * Strips a trailing `.ttf` / `.otf` / `.woff` / `.shx` extension when present.
+   * Matches the normalization used by {@link getFontByName}.
+   */
+  private stripFontFileExtension(fontName: string): string {
+    if (!fontName) {
+      return fontName
+    }
+    const dotIndex = fontName.lastIndexOf('.')
+    if (
+      (dotIndex > 0 && dotIndex == fontName.length - 4) ||
+      dotIndex == fontName.length - 5
+    ) {
+      return fontName.substring(0, dotIndex)
+    }
+    return fontName
+  }
+
+  /**
+   * Removes {@link missedFonts} entries whose name matches `fontName`
+   * case-insensitively (CAD style names and loaded face names often differ in case).
+   */
+  private clearMissedFontEntry(fontName: string): void {
+    const key = fontName.toLowerCase()
+    for (const name of Object.keys(this.missedFonts)) {
+      if (name.toLowerCase() === key) {
+        delete this.missedFonts[name]
+      }
+    }
+  }
+
+  /**
    * Records a font that was requested but not found
    * @param fontName - The name of the font that was not found
+   * @param scheduleLoad - When true (default), also {@link requestFont} on first miss if lazy loading is on
    */
-  private recordMissedFonts(fontName: string) {
+  private recordMissedFonts(fontName: string, scheduleLoad: boolean = true) {
     if (fontName) {
       if (!this.missedFonts[fontName]) {
         this.missedFonts[fontName] = 0
@@ -831,7 +928,7 @@ export class FontManager {
           fontName: fontName,
           count: this.missedFonts[fontName]
         })
-        if (this.lazyFontLoading) {
+        if (scheduleLoad && this.lazyFontLoading) {
           void this.requestFont(fontName)
         }
       }
@@ -892,7 +989,7 @@ export class FontManager {
     if (epoch !== this.loadEpoch || !this.isFontLoaded(fontName)) {
       return
     }
-    delete this.missedFonts[fontName]
+    this.clearMissedFontEntry(fontName)
     this.fontRequestFailed.delete(fontName.toLowerCase())
     this.events.fontLoaded.dispatch({
       fontName: fontName

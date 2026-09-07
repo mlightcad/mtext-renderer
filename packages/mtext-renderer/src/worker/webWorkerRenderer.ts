@@ -111,12 +111,20 @@ type SetAwaitFontsBeforeDrawMessage = WorkerMessageBase<
   }
 >
 
+type SetMissedFontsMessage = WorkerMessageBase<
+  'setMissedFonts',
+  {
+    missedFonts: Record<string, number>
+  }
+>
+
 type WorkerMessageTyped =
   | RenderMessage
   | LoadFontsMessage
   | SetDefaultFontsMessage
   | SetLazyFontLoadingMessage
   | SetAwaitFontsBeforeDrawMessage
+  | SetMissedFontsMessage
   | SetFontUrlMessage
   | GetAvailableFontsMessage
   | GetMemoryStatsMessage
@@ -169,11 +177,27 @@ type SetAwaitFontsBeforeDrawResponse = WorkerResponseBase<
   }
 >
 
+type SetMissedFontsResponse = WorkerResponseBase<
+  'setMissedFonts',
+  {
+    missedFonts: Record<string, number>
+  }
+>
+
 /** Push notification from a worker when a font finishes lazy-loading. */
 type FontLoadedNotification = WorkerResponseBase<
   'fontLoaded',
   {
     fontName: string
+  }
+>
+
+/** Push notification from a worker when a requested face is first recorded as missing. */
+type FontNotFoundNotification = WorkerResponseBase<
+  'fontNotFound',
+  {
+    fontName: string
+    count?: number
   }
 >
 
@@ -184,9 +208,11 @@ type WorkerResponseTyped =
   | SetLazyFontLoadingResponse
   | SetAwaitFontsBeforeDrawResponse
   | SetFontUrlResponse
+  | SetMissedFontsResponse
   | GetAvailableFontsResponse
   | GetMemoryStatsResponse
   | FontLoadedNotification
+  | FontNotFoundNotification
 
 // Serialized MText data from worker (JSON-based)
 interface SerializedMText {
@@ -348,6 +374,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
         void this.syncFontToWorkerPool(fontName)
           .then(shouldDispatch => {
             if (shouldDispatch) {
+              FontManager.instance.applyRemoteFontLoaded(fontName)
               FontManager.instance.events.fontLoaded.dispatch({ fontName })
             }
           })
@@ -357,6 +384,17 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
               error
             )
           })
+      }
+      return
+    }
+
+    if (response.type === 'fontNotFound') {
+      const fontName = response.data?.fontName
+      if (fontName) {
+        FontManager.instance.applyRemoteFontNotFound(
+          fontName,
+          response.data?.count ?? 1
+        )
       }
       return
     }
@@ -615,6 +653,45 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       type: 'setAwaitFontsBeforeDraw',
       data: { enabled }
     })
+  }
+
+  /**
+   * Replaces session-scoped {@link FontManager.missedFonts} on every worker,
+   * then adopts the intersection of worker-filtered maps on the main thread.
+   *
+   * Workers drop faces they have already loaded; in worker-only mode the main
+   * isolate often has an empty {@link FontManager.loadedFontMap}, so the
+   * authoritative "still missing" set comes from the pool responses.
+   */
+  async replaceMissedFonts(fonts: Record<string, number>): Promise<void> {
+    const results = await this.sendMessageToAllWorkers<
+      SetMissedFontsMessage,
+      SetMissedFontsResponse
+    >({
+      type: 'setMissedFonts',
+      data: { missedFonts: { ...(fonts ?? {}) } }
+    })
+
+    if (results.length === 0) {
+      FontManager.instance.replaceMissedFonts(fonts ?? {})
+      return
+    }
+
+    const intersected: Record<string, number> = {}
+    for (const name of Object.keys(results[0]?.missedFonts ?? {})) {
+      if (!results.every(r => (r?.missedFonts?.[name] ?? 0) > 0)) {
+        continue
+      }
+      intersected[name] = Math.max(
+        ...results.map(r => r?.missedFonts?.[name] ?? 0)
+      )
+    }
+    FontManager.instance.replaceMissedFonts(intersected)
+  }
+
+  /** Clears {@link FontManager.missedFonts} on the main thread and every worker. */
+  async clearMissedFonts(): Promise<void> {
+    await this.replaceMissedFonts({})
   }
 
   /**

@@ -18,6 +18,8 @@ const workerInstances: MockWorker[] = []
 class MockWorker {
   onmessage: ((event: MessageEvent) => void) | null = null
   onerror: ((event: ErrorEvent) => void) | null = null
+  /** Faces this mock pretends to have loaded (used by setMissedFonts filtering). */
+  loadedFaces = new Set<string>()
 
   postMessage = vi.fn((message: Record<string, unknown>) => {
     queueMicrotask(() => {
@@ -68,6 +70,25 @@ class MockWorker {
               fonts: (data as { fonts: string[] }).fonts,
               symbolFonts: (data as { symbolFonts: string[] }).symbolFonts
             }
+          }
+        } as MessageEvent)
+        return
+      }
+      if (type === 'setMissedFonts') {
+        const incoming =
+          (data as { missedFonts?: Record<string, number> }).missedFonts ?? {}
+        const missedFonts: Record<string, number> = {}
+        for (const [name, count] of Object.entries(incoming)) {
+          if (!this.loadedFaces.has(name.toLowerCase())) {
+            missedFonts[name] = count
+          }
+        }
+        this.onmessage?.({
+          data: {
+            id,
+            type,
+            success: true,
+            data: { missedFonts }
           }
         } as MessageEvent)
         return
@@ -468,6 +489,7 @@ describe('render remote font loading', () => {
     const renderer = new WebWorkerRenderer({ poolSize: 1, timeOut: 5000 })
     const listener = vi.fn()
     FontManager.instance.events.fontLoaded.addEventListener(listener)
+    FontManager.instance.missedFonts = { hztxt: 1 }
 
     await renderer.asyncRenderMText(
       minimalMTextData,
@@ -487,7 +509,47 @@ describe('render remote font loading', () => {
     await vi.waitFor(() => {
       expect(listener).toHaveBeenCalledWith({ fontName: 'hztxt' })
     })
+    expect(FontManager.instance.missedFonts.hztxt).toBeUndefined()
     FontManager.instance.events.fontLoaded.removeEventListener(listener)
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer forwards worker fontNotFound to main FontManager', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 1, timeOut: 5000 })
+    const listener = vi.fn()
+    FontManager.instance.events.fontNotFound.addEventListener(listener)
+
+    workerInstances[0].onmessage?.({
+      data: {
+        id: '',
+        type: 'fontNotFound',
+        success: true,
+        data: { fontName: 'missing-face', count: 1 }
+      }
+    } as MessageEvent)
+
+    expect(listener).toHaveBeenCalledWith({
+      fontName: 'missing-face',
+      count: 1
+    })
+    expect(FontManager.instance.missedFonts).toEqual({ 'missing-face': 1 })
+
+    FontManager.instance.events.fontNotFound.removeEventListener(listener)
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer.replaceMissedFonts adopts intersection of worker-filtered maps', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 2, timeOut: 5000 })
+    for (const worker of workerInstances) {
+      worker.loadedFaces.add('worker-loaded')
+    }
+
+    await renderer.replaceMissedFonts({
+      'worker-loaded': 1,
+      stillMissing: 2
+    })
+
+    expect(FontManager.instance.missedFonts).toEqual({ stillMissing: 2 })
     renderer.destroy()
   })
 

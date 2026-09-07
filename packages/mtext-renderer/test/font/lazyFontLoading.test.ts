@@ -44,11 +44,17 @@ describe('FontManager lazy font loading', () => {
     const requestFont = vi
       .spyOn(FontManager.instance, 'requestFont')
       .mockResolvedValue([])
+    const listener = vi.fn()
+    FontManager.instance.events.fontNotFound.addEventListener(listener)
 
     const replacement = FontManager.instance.findAndReplaceFont('arial')
     expect(replacement).toBe('simkai')
     expect(requestFont).toHaveBeenCalledWith('arial')
     expect(requestFont).toHaveBeenCalledWith('simkai')
+    expect(FontManager.instance.missedFonts).toEqual({ arial: 1 })
+    expect(listener).toHaveBeenCalledWith({ fontName: 'arial', count: 1 })
+
+    FontManager.instance.events.fontNotFound.removeEventListener(listener)
     requestFont.mockRestore()
   })
 
@@ -57,11 +63,17 @@ describe('FontManager lazy font loading', () => {
     const requestFont = vi
       .spyOn(FontManager.instance, 'requestFont')
       .mockResolvedValue([])
+    const listener = vi.fn()
+    FontManager.instance.events.fontNotFound.addEventListener(listener)
 
     expect(FontManager.instance.findAndReplaceFont('arial')).toBe('times')
     expect(requestFont).toHaveBeenCalledWith('times')
     expect(requestFont).not.toHaveBeenCalledWith('arial')
     expect(requestFont).not.toHaveBeenCalledWith('simkai')
+    expect(FontManager.instance.missedFonts).toEqual({ arial: 1 })
+    expect(listener).toHaveBeenCalledWith({ fontName: 'arial', count: 1 })
+
+    FontManager.instance.events.fontNotFound.removeEventListener(listener)
     requestFont.mockRestore()
     FontManager.instance.setFontMapping({})
   })

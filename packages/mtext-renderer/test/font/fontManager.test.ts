@@ -200,11 +200,20 @@ describe('FontManager', () => {
     const manager = FontManager.instance as any
     manager.loadedFontMap.set('replacement', createFakeFont())
     FontManager.instance.setFontMapping({ Missing: 'replacement' })
+    const listener = vi.fn()
+    FontManager.instance.events.fontNotFound.addEventListener(listener)
 
     expect(FontManager.instance.findAndReplaceFont('Missing')).toBe(
       'replacement'
     )
+    expect(FontManager.instance.missedFonts).toEqual({ Missing: 1 })
+    expect(listener).toHaveBeenCalledWith({ fontName: 'Missing', count: 1 })
+
     expect(FontManager.instance.findAndReplaceFont('Unknown')).toBe('simkai')
+    expect(FontManager.instance.missedFonts.Unknown).toBe(1)
+    expect(listener).toHaveBeenCalledWith({ fontName: 'Unknown', count: 1 })
+
+    FontManager.instance.events.fontNotFound.removeEventListener(listener)
   })
 
   it('finds fonts by name, strips common font extensions, and records misses', () => {
@@ -220,6 +229,24 @@ describe('FontManager', () => {
     expect(FontManager.instance.missedFonts).toEqual({ missing: 1 })
     expect(listener).toHaveBeenCalledWith({ fontName: 'missing', count: 1 })
     FontManager.instance.events.fontNotFound.removeEventListener(listener)
+  })
+
+  it('replaceMissedFonts drops already-loaded faces and clearMissedFonts empties the map', () => {
+    const manager = FontManager.instance as any
+    manager.loadedFontMap.set('arial', createFakeFont())
+    FontManager.instance.missedFonts = { arial: 2, missing: 3 }
+
+    FontManager.instance.replaceMissedFonts({ arial: 2, missing: 3, other: 1 })
+    expect(FontManager.instance.missedFonts).toEqual({ missing: 3, other: 1 })
+
+    FontManager.instance.clearMissedFonts()
+    expect(FontManager.instance.missedFonts).toEqual({})
+  })
+
+  it('applyRemoteFontLoaded clears missedFonts case-insensitively', () => {
+    FontManager.instance.missedFonts = { HZTXT: 1, Other: 2 }
+    FontManager.instance.applyRemoteFontLoaded('hztxt')
+    expect(FontManager.instance.missedFonts).toEqual({ Other: 2 })
   })
 
   it('does not fall back when the requested font lacks a glyph', () => {
