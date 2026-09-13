@@ -74,9 +74,13 @@ describe('missing style font Latin wrap width', () => {
       await loadFont('simsun', 'simsun.woff')
 
       expect(FontManager.instance.findAndReplaceFont('标准')).toBe('simsun')
+      // CJK TrueType faces use em-square scale (not Latin-A inflation).
+      expect(FontManager.instance.getFontScaleFactor('simsun')).toBe(1)
 
       const wrapWidth = 31.945271
-      const autocadExtents = 29.527606
+      // Measured under em-square SimSun scale. The previous ~29.5 value assumed
+      // Latin-A inflation (~1.43×) and no longer matches AutoCAD CJK TrueType.
+      const expectedExtents = 20.646255
 
       const unconstrained = new MText(
         {
@@ -95,7 +99,7 @@ describe('missing style font Latin wrap width', () => {
       unconstrained.syncDraw()
       const contentWidth =
         unconstrained.box.max.x - unconstrained.box.min.x
-      expect(contentWidth).toBeCloseTo(autocadExtents, 1)
+      expect(contentWidth).toBeCloseTo(expectedExtents, 1)
       expect(contentWidth).toBeLessThan(wrapWidth)
 
       const wrapped = new MText(
