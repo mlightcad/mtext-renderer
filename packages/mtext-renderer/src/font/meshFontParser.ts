@@ -1,6 +1,7 @@
 import { parse } from 'opentype.js'
 
 import { MeshFontData } from './meshFont'
+import { computeMeshFontScaleFactor } from './meshFontScaleFactor'
 
 /**
  * Parses a mesh font from raw binary data.
@@ -19,12 +20,7 @@ export function parseMeshFont(data: ArrayBuffer) {
     const glyphIndexMap = font.encoding.cmap.glyphIndexMap
     const unicodes = Object.keys(glyphIndexMap)
 
-    // Use character 'A' to calculate scale factor
-    const scaleFactorCharGlyph = font.glyphs.glyphs[glyphIndexMap[65]]
-    let scaleFactor = 1
-    if (scaleFactorCharGlyph) {
-      scaleFactor = font.unitsPerEm / scaleFactorCharGlyph.yMax
-    }
+    const scaleFactor = computeMeshFontScaleFactor(font)
 
     for (let i = 0; i < unicodes.length; i++) {
       const unicode = unicodes[i]

@@ -8,6 +8,7 @@ import {
   MESH_PARSED_FONT_OVERHEAD} from '../memory/types'
 import { BaseFont } from './baseFont'
 import { FontData } from './font'
+import { computeMeshFontScaleFactor } from './meshFontScaleFactor'
 import { MeshTextShape } from './meshTextShape'
 import { ThreeFont } from './threeFont'
 
@@ -114,11 +115,7 @@ export class MeshFont extends BaseFont {
     const font = parse(data)
     const round = Math.round
 
-    // Use character 'A' to calculate scale factor
-    const scaleGlyph = font.charToGlyph('A')
-    const scaleFactor = scaleGlyph
-      ? font.unitsPerEm / (scaleGlyph.yMax || font.unitsPerEm)
-      : 1
+    const scaleFactor = computeMeshFontScaleFactor(font)
 
     const meshData: MeshFontData = {
       glyphs: {}, // Lazy loaded later
