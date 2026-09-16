@@ -91,7 +91,7 @@ export class ExampleFontManager {
   }
 
   /**
-   * Fonts that non-lazy mode should preload for the active preset and selects.
+   * Fonts to load for the active preset and currently selected UI fonts.
    */
   getFontsToPreload(): string[] {
     const preset = this.getSelectedDefaultFontsPreset()
@@ -121,9 +121,9 @@ export class ExampleFontManager {
   }
 
   /**
-   * Applies the selected preset. In non-lazy mode, also preloads the text/symbol
-   * chains and the currently selected fonts. In lazy mode, only configures the
-   * fallback chains so the next render can fetch fonts on demand.
+   * Applies the selected preset and loads its text/symbol fallback fonts
+   * (plus the currently selected UI fonts). Lazy mode still loads the preset
+   * chain here so faces such as `malgun` are available after switching presets.
    */
   async applyDefaultFontsPreset(): Promise<void> {
     const preset = this.getSelectedDefaultFontsPreset()
@@ -132,12 +132,9 @@ export class ExampleFontManager {
     const symbolChain = this.unifiedRenderer.getSymbolFontsPreset(preset)
     const fontsToLoad = this.getFontsToPreload()
 
-    if (!this.isLazyFontLoading()) {
-      await this.unifiedRenderer.loadFonts(fontsToLoad)
-      this.statusDiv.textContent = `Preset "${preset}" (non-lazy): preloaded ${fontsToLoad.join(', ')}`
-    } else {
-      this.statusDiv.textContent = `Preset "${preset}" (lazy): text ${textChain.join(' → ')} | symbol ${symbolChain.join(' → ')} — fonts load on render`
-    }
+    await this.unifiedRenderer.loadFonts(fontsToLoad)
+    const mode = this.isLazyFontLoading() ? 'lazy' : 'non-lazy'
+    this.statusDiv.textContent = `Preset "${preset}" (${mode}): loaded ${fontsToLoad.join(', ')} | text ${textChain.join(' → ')} | symbol ${symbolChain.join(' → ')}`
     this.statusDiv.style.color = '#0f0'
   }
 

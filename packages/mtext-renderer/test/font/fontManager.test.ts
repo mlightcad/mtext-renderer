@@ -460,6 +460,21 @@ describe('FontManager', () => {
     expect(FontManager.instance.getSymbolFontsPreset('cjk')).toEqual(
       SYMBOL_FONTS_PRESETS.cjk
     )
+    expect(FontManager.instance.getDefaultFontsPreset('chinese')).toEqual([
+      'simsun',
+      'gbcbig',
+      'hztxt'
+    ])
+    expect(FontManager.instance.getDefaultFontsPreset('korean')).toEqual([
+      'malgun',
+      'whgtxt',
+      'whgdtxt'
+    ])
+    expect(FontManager.instance.getDefaultFontsPreset('japanese')).toEqual([
+      'msgothic',
+      'extfont2',
+      'extfont'
+    ])
   })
 
   it('loads default and symbol fonts configured by preset', async () => {

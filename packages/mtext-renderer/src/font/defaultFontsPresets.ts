@@ -13,8 +13,17 @@ export type DefaultFontsPreset =
   | 'modern'
   /** Western SHX fonts plus simsun and AMGDT; no CJK-specific SHX big fonts. */
   | 'international'
-  /** Broad CJK coverage: simsun first, then GB big-font SHX files. */
+  /**
+   * Broad CJK coverage: Chinese / Korean / Japanese mesh fonts plus matching
+   * SHX big fonts.
+   */
   | 'cjk'
+  /** Simplified Chinese: simsun (TTF) plus GB big-font SHX. */
+  | 'chinese'
+  /** Korean: malgun / Noto Sans KR (TTF) plus Korean big-font SHX. */
+  | 'korean'
+  /** Japanese: MS Gothic (TTF) plus extfont2 / extfont SHX. */
+  | 'japanese'
 
 /**
  * Predefined text-font fallback chains (primary / big-font substitutes and CJK
@@ -31,7 +40,22 @@ export const DEFAULT_FONTS_PRESETS: Record<
   // BIGFONT SHX stays available via glyph fallback for CJK coverage.
   modern: ['simsun', 'hztxt'],
   international: ['txt', 'simplex', 'romans', 'simsun'],
-  cjk: ['simsun', 'gbcbig', 'hztxt']
+  // Full CJK: mesh faces for CN/KR/JP, then matching SHX big fonts.
+  // `malgun` → Noto Sans KR; `msgothic` → MS Gothic in the font repository.
+  cjk: [
+    'simsun',
+    'malgun',
+    'msgothic',
+    'gbcbig',
+    'hztxt',
+    'extfont2',
+    'extfont',
+    'whgtxt',
+    'whgdtxt'
+  ],
+  chinese: ['simsun', 'gbcbig', 'hztxt'],
+  korean: ['malgun', 'whgtxt', 'whgdtxt'],
+  japanese: ['msgothic', 'extfont2', 'extfont']
 }
 
 /**
@@ -46,7 +70,10 @@ export const SYMBOL_FONTS_PRESETS: Record<
   r12r14: ['simplex', 'amgdt'],
   modern: ['simplex', 'amgdt'],
   international: ['simplex', 'amgdt'],
-  cjk: ['simplex', 'amgdt']
+  cjk: ['simplex', 'amgdt'],
+  chinese: ['simplex', 'amgdt'],
+  korean: ['simplex', 'amgdt'],
+  japanese: ['simplex', 'amgdt']
 }
 
 export function isDefaultFontsPreset(

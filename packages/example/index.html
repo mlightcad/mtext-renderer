@@ -552,11 +552,14 @@
                         <div class="field">
                             <label for="default-fonts-preset">Default Fonts Preset</label>
                             <select id="default-fonts-preset">
-                                <option value="minimal" selected>minimal (txt → amgdt → gdt → simsun)</option>
-                                <option value="r12r14">r12r14 (txt → gdt)</option>
-                                <option value="modern">modern (hztxt → gdt)</option>
-                                <option value="international">international (txt → gdt)</option>
-                                <option value="cjk">cjk (gbcbig → gdt)</option>
+                                <option value="minimal" selected>minimal (txt → simsun | simplex → amgdt)</option>
+                                <option value="r12r14">r12r14 (txt → simplex → romans → gbcbig → simsun | simplex → amgdt)</option>
+                                <option value="modern">modern (simsun → hztxt | simplex → amgdt)</option>
+                                <option value="international">international (txt → simplex → romans → simsun | simplex → amgdt)</option>
+                                <option value="cjk">cjk (simsun → malgun → msgothic → gbcbig → hztxt → extfont2 → extfont → whgtxt → whgdtxt | simplex → amgdt)</option>
+                                <option value="chinese">chinese (simsun → gbcbig → hztxt | simplex → amgdt)</option>
+                                <option value="korean">korean (malgun → whgtxt → whgdtxt | simplex → amgdt)</option>
+                                <option value="japanese">japanese (msgothic → extfont2 → extfont | simplex → amgdt)</option>
                             </select>
                         </div>
                     </div>
