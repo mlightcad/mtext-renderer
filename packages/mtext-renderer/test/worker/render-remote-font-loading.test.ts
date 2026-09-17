@@ -259,9 +259,20 @@ describe('render remote font loading', () => {
     })
 
     await Promise.resolve()
+    await Promise.resolve()
     expect(drawSettled).toBe(false)
+    // Awaited call is content/style only; preset fallbacks are fire-and-forget.
+    const contentCall = requestFonts.mock.calls.find(call => {
+      const names = call[0] as string[]
+      return names.includes('arial') && names.includes('txt')
+    })
+    expect(contentCall?.[0]).toEqual(
+      expect.arrayContaining(['arial', 'txt', 'hztxt'])
+    )
+    expect(contentCall?.[0]).not.toContain('simkai')
+    expect(contentCall?.[0]).not.toContain('amgdt')
     expect(requestFonts).toHaveBeenCalledWith(
-      expect.arrayContaining(['arial', 'txt', 'hztxt', 'simkai', 'amgdt'])
+      expect.arrayContaining(['simkai', 'amgdt'])
     )
 
     releaseFonts()
@@ -296,11 +307,21 @@ describe('render remote font loading', () => {
     })
 
     await Promise.resolve()
+    await Promise.resolve()
     expect(drawSettled).toBe(false)
-    // Must include symbol/default fallbacks so single-pass draw can resolve
-    // diameter (U+2205) via amgdt without relying on a later fontLoaded redraw.
+    // Content/style fonts are awaited; default/symbol fallbacks are only
+    // scheduled so unused preset faces do not block every draw.
+    const contentCall = requestFonts.mock.calls.find(call => {
+      const names = call[0] as string[]
+      return names.includes('arial')
+    })
+    expect(contentCall?.[0]).toEqual(
+      expect.arrayContaining(['arial', 'txt', 'hztxt'])
+    )
+    expect(contentCall?.[0]).not.toContain('simkai')
+    expect(contentCall?.[0]).not.toContain('amgdt')
     expect(requestFonts).toHaveBeenCalledWith(
-      expect.arrayContaining(['arial', 'txt', 'hztxt', 'simkai', 'amgdt'])
+      expect.arrayContaining(['simkai', 'amgdt'])
     )
 
     releaseFonts()
