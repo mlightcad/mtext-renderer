@@ -936,6 +936,85 @@ export class FontManager {
   }
 
   /**
+   * Adds catalog / `fonts.json` names onto a font instance.
+   */
+  private applyCatalogNames(font: BaseFont, names: readonly string[]) {
+    names.forEach(name => {
+      if (name) {
+        font.names.add(name)
+      }
+    })
+  }
+
+  /**
+   * Ensures an already-loaded primary face is also addressable under the
+   * current catalog names. Needed when IndexedDB still has an older alias
+   * list (e.g. `noto-sans-kr` cached before `malgun` was added) or when the
+   * binary was loaded under the file basename first.
+   */
+  private ensureCatalogAliases(
+    primaryName: string,
+    names: readonly string[]
+  ): void {
+    const font =
+      this.loadedFontMap.get(primaryName.toLowerCase()) ??
+      names
+        .map(name => this.loadedFontMap.get(name.toLowerCase()))
+        .find((entry): entry is BaseFont => entry != null)
+    if (!font) {
+      return
+    }
+    this.applyCatalogNames(font, names)
+    this.registerFontInMap(primaryName, font)
+  }
+
+  /**
+   * Merges catalog / primary names into an existing IndexedDB alias list so
+   * cold starts after `getAllFontsFromCache` pick up newly added style names.
+   */
+  private async persistCatalogAliases(
+    fontName: string,
+    catalogNames: readonly string[]
+  ): Promise<void> {
+    if (!this.enableFontCache) {
+      return
+    }
+    const data = await FontCacheManager.instance.get(fontName)
+    if (!data) {
+      return
+    }
+    const mergedAlias = [
+      ...new Set([...(data.alias ?? []), ...catalogNames, fontName])
+    ]
+    const previous = data.alias ?? []
+    if (
+      mergedAlias.length === previous.length &&
+      mergedAlias.every(name => previous.includes(name))
+    ) {
+      return
+    }
+    await FontCacheManager.instance.set(fontName, {
+      ...data,
+      alias: mergedAlias
+    })
+  }
+
+  /**
+   * Clears miss / failed-request bookkeeping for a primary name and aliases
+   * so a later alias request is not permanently blocked after the binary
+   * loaded under a different key.
+   */
+  private clearRequestStateForNames(names: readonly string[]) {
+    for (const name of names) {
+      if (!name) {
+        continue
+      }
+      this.clearMissedFontEntry(name)
+      this.fontRequestFailed.delete(name.toLowerCase())
+    }
+  }
+
+  /**
    * Loads a single font
    * @param fontInfo - The matadata of the font to be loaded
    */
@@ -947,7 +1026,14 @@ export class FontManager {
 
     const fontData = this.fontInfoToFontData(fontInfo)
     const fontName = fontData.name
+    const catalogNames = fontInfo.name ?? []
+
+    // Primary file may already be in memory without the latest catalog
+    // aliases — still register them so style names like `malgun` resolve.
     if (this.isFontLoaded(fontData.name)) {
+      this.ensureCatalogAliases(fontName, catalogNames)
+      this.clearRequestStateForNames([fontName, ...catalogNames])
+      await this.persistCatalogAliases(fontName, catalogNames)
       return
     }
 
@@ -959,12 +1045,21 @@ export class FontManager {
     if (data) {
       // Yield so open-time entity convert can keep draining between parses.
       await new Promise<void>(resolve => setTimeout(resolve, 0))
-      if (epoch !== this.loadEpoch || this.isFontLoaded(fontName)) {
+      if (epoch !== this.loadEpoch) {
+        return
+      }
+      if (this.isFontLoaded(fontName)) {
+        this.ensureCatalogAliases(fontName, catalogNames)
+        this.clearRequestStateForNames([fontName, ...catalogNames])
+        await this.persistCatalogAliases(fontName, catalogNames)
         return
       }
       const font = FontFactory.instance.createFont(data)
       if (font) {
+        // Prefer current fonts.json names over stale IndexedDB alias lists.
+        this.applyCatalogNames(font, catalogNames)
         this.registerFontInMap(fontName, font)
+        await this.persistCatalogAliases(fontName, catalogNames)
       }
     } else {
       const buffer = (await this.loader.loadAsync(fontInfo.url)) as ArrayBuffer
@@ -973,12 +1068,18 @@ export class FontManager {
       }
       fontData.data = buffer
       await new Promise<void>(resolve => setTimeout(resolve, 0))
-      if (epoch !== this.loadEpoch || this.isFontLoaded(fontName)) {
+      if (epoch !== this.loadEpoch) {
+        return
+      }
+      if (this.isFontLoaded(fontName)) {
+        this.ensureCatalogAliases(fontName, catalogNames)
+        this.clearRequestStateForNames([fontName, ...catalogNames])
+        await this.persistCatalogAliases(fontName, catalogNames)
         return
       }
       const font = FontFactory.instance.createFont(fontData)
       if (font) {
-        fontInfo.name.forEach(name => font.names.add(name))
+        this.applyCatalogNames(font, catalogNames)
         this.registerFontInMap(fontName, font)
         if (this.enableFontCache) {
           await FontCacheManager.instance.set(fontName, fontData)
@@ -989,8 +1090,7 @@ export class FontManager {
     if (epoch !== this.loadEpoch || !this.isFontLoaded(fontName)) {
       return
     }
-    this.clearMissedFontEntry(fontName)
-    this.fontRequestFailed.delete(fontName.toLowerCase())
+    this.clearRequestStateForNames([fontName, ...catalogNames])
     this.events.fontLoaded.dispatch({
       fontName: fontName
     })
