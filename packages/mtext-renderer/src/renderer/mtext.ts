@@ -41,9 +41,10 @@ const AxisX = /*@__PURE__*/ new THREE.Vector3(1, 0, 0)
  */
 export interface MTextDrawOptions {
   /**
-   * Wait for fonts referenced by the content/style — and, when awaiting, the
-   * configured default/symbol fallback chains — to finish loading before
-   * building geometry.
+   * Wait for fonts referenced by the content/style to finish loading before
+   * building geometry. Default/symbol fallback chains are requested in the
+   * background under lazy loading (not awaited) so open-time draws are not
+   * blocked on unused preset faces.
    *
    * Defaults to `true` when {@link FontManager.lazyFontLoading} is false, or
    * when {@link FontManager.awaitFontsBeforeDraw} is true. Otherwise fonts are
@@ -232,43 +233,58 @@ export class MText extends THREE.Object3D {
       (!this._fontManager.lazyFontLoading ||
         this._fontManager.awaitFontsBeforeDraw)
 
-    // Single-pass await must also cover default/symbol fallback chains. Content
-    // and style faces alone are not enough for glyphs resolved only via
-    // symbolFonts (e.g. literal U+2205 diameter → amgdt) — otherwise the first
-    // draw uses '?' and consumers that skip fontLoaded redraws never recover.
-    const fontsToRequest = awaitFonts
-      ? [...new Set([...fonts, ...this._fontManager.getFontsToLoad()])]
-      : fonts
+    // Await only content/style fonts so open-time draws do not block on the
+    // full default/symbol preset (e.g. simsun+hztxt) when the drawing never
+    // needs those faces. Kick fallbacks off in the background; consumers that
+    // redraw on FontManager.events.fontLoaded (or call regen) pick up glyphs
+    // that resolve only via symbolFonts / defaultFonts (e.g. U+2205 → amgdt).
+    const fontsToRequest = [...new Set(fonts)]
+    const requested = new Set(fontsToRequest.map(name => name.toLowerCase()))
+    const fallbackFonts = this._fontManager
+      .getFontsToLoad()
+      .filter(name => !requested.has(name.toLowerCase()))
 
-    if (fontsToRequest.length > 0) {
-      if (this._fontManager.lazyFontLoading) {
+    if (this._fontManager.lazyFontLoading) {
+      if (fontsToRequest.length > 0) {
+        // Schedule unused preset faces in the background only when this draw
+        // actually waits on content/style fonts — empty first draws should not
+        // pull the whole default chain.
+        if (awaitFonts && fallbackFonts.length > 0) {
+          void this._fontManager.requestFonts(fallbackFonts)
+        }
         if (awaitFonts) {
           await this._fontManager.requestFonts(fontsToRequest)
         } else {
           void this._fontManager.requestFonts(fontsToRequest)
         }
-      } else {
-        await this._fontManager.loadFontsByNames(fontsToRequest)
       }
-      // Only mark style fonts handled once they are actually registered.
-      // Otherwise a FailedToLoad / NotFound on first open (CDN race, stale
-      // fonts.json) permanently skips re-requesting `malgun` and Hangul stays '?'.
-      if (fonts.length > 0) {
-        const styleNames = [
-          this._style.font ? this.getFontName(this._style.font) : undefined,
-          this._style.bigFont
-            ? this.getFontName(this._style.bigFont)
-            : undefined,
-          this._style.extendedFont
-            ? this.getFontName(this._style.extendedFont)
-            : undefined
-        ].filter((name): name is string => !!name)
-        const styleFontsReady =
-          styleNames.length === 0 ||
-          styleNames.every(name => this._fontManager.isFontLoaded(name))
-        if (styleFontsReady) {
-          this._fontsInStyleLoaded = true
-        }
+    } else if (fontsToRequest.length > 0 || fallbackFonts.length > 0) {
+      // Non-lazy mode still needs the configured fallbacks available before
+      // syncDraw; keep awaiting the full set when not using on-demand loads.
+      await this._fontManager.loadFontsByNames([
+        ...fontsToRequest,
+        ...fallbackFonts
+      ])
+    }
+
+    // Only mark style fonts handled once they are actually registered.
+    // Otherwise a FailedToLoad / NotFound on first open (CDN race, stale
+    // fonts.json) permanently skips re-requesting `malgun` and Hangul stays '?'.
+    if (fonts.length > 0) {
+      const styleNames = [
+        this._style.font ? this.getFontName(this._style.font) : undefined,
+        this._style.bigFont
+          ? this.getFontName(this._style.bigFont)
+          : undefined,
+        this._style.extendedFont
+          ? this.getFontName(this._style.extendedFont)
+          : undefined
+      ].filter((name): name is string => !!name)
+      const styleFontsReady =
+        styleNames.length === 0 ||
+        styleNames.every(name => this._fontManager.isFontLoaded(name))
+      if (styleFontsReady) {
+        this._fontsInStyleLoaded = true
       }
     }
 

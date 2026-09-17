@@ -76,31 +76,40 @@ export class Shape extends THREE.Object3D {
       (!this._fontManager.lazyFontLoading ||
         this._fontManager.awaitFontsBeforeDraw)
 
-    // Match MText.asyncDraw: when waiting for a single pass, also load
-    // default/symbol fallback fonts used for missing glyphs.
-    const fontsToRequest = awaitFonts
-      ? [...new Set([...fonts, ...this._fontManager.getFontsToLoad()])]
-      : fonts
+    // Match MText.asyncDraw: await style fonts only; schedule default/symbol
+    // fallbacks in the background under lazy loading.
+    const fontsToRequest = [...new Set(fonts)]
+    const requested = new Set(fontsToRequest.map(name => name.toLowerCase()))
+    const fallbackFonts = this._fontManager
+      .getFontsToLoad()
+      .filter(name => !requested.has(name.toLowerCase()))
 
-    if (fontsToRequest.length > 0) {
-      if (this._fontManager.lazyFontLoading) {
+    if (this._fontManager.lazyFontLoading) {
+      if (fontsToRequest.length > 0) {
+        if (awaitFonts && fallbackFonts.length > 0) {
+          void this._fontManager.requestFonts(fallbackFonts)
+        }
         if (awaitFonts) {
           await this._fontManager.requestFonts(fontsToRequest)
         } else {
           void this._fontManager.requestFonts(fontsToRequest)
         }
-      } else {
-        await this._fontManager.loadFontsByNames(fontsToRequest)
       }
-      // Only mark style fonts handled once they are actually registered.
-      // Same sticky-skip trap as MText.asyncDraw when the first attempt fails.
-      if (fonts.length > 0) {
-        const styleFontsReady = fonts.every(name =>
-          this._fontManager.isFontLoaded(name)
-        )
-        if (styleFontsReady) {
-          this._fontsInStyleLoaded = true
-        }
+    } else if (fontsToRequest.length > 0 || fallbackFonts.length > 0) {
+      await this._fontManager.loadFontsByNames([
+        ...fontsToRequest,
+        ...fallbackFonts
+      ])
+    }
+
+    // Only mark style fonts handled once they are actually registered.
+    // Same sticky-skip trap as MText.asyncDraw when the first attempt fails.
+    if (fonts.length > 0) {
+      const styleFontsReady = fonts.every(name =>
+        this._fontManager.isFontLoaded(name)
+      )
+      if (styleFontsReady) {
+        this._fontsInStyleLoaded = true
       }
     }
     this.syncDraw()

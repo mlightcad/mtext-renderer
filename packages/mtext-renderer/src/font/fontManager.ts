@@ -77,8 +77,10 @@ export class FontManager {
   /**
    * When true, {@link MText.asyncDraw} / {@link Shape.asyncDraw} wait for fonts
    * referenced by the content and style to finish loading before building
-   * geometry. Useful with {@link lazyFontLoading} when callers prefer a single
-   * draw pass instead of redrawing on {@link events.fontLoaded}.
+   * geometry. Default/symbol fallback chains are still requested in the
+   * background (not awaited) under {@link lazyFontLoading}, so unused preset
+   * faces do not block the draw; redraw on {@link events.fontLoaded} if those
+   * faces are needed for the final glyphs.
    *
    * Has no effect when {@link lazyFontLoading} is false (draw already awaits).
    */
