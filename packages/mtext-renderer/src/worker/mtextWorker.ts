@@ -197,6 +197,13 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
         if (!data) throw new Error('Missing data for setFontUrl message')
         const { url } = data as { url: string }
         fontManager.baseUrl = url
+        // Wait for fonts.json so the first style-font request (e.g. `malgun`)
+        // does not race an empty catalog and sticky-fail as FailedToLoad.
+        try {
+          await fontManager.getAvailableFonts()
+        } catch {
+          // Catalog fetch errors surface later as NotFound/FailedToLoad per face.
+        }
         self.postMessage({
           type: 'setFontUrl',
           id,

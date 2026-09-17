@@ -3,7 +3,8 @@ import { DefaultFontsPreset, FontLoadStatus, FontManager } from '../font'
 import {
   collectIsolateMemoryStats,
   type MemoryUsageReport,
-  readJsHeapStats} from '../memory'
+  readJsHeapStats
+} from '../memory'
 import { StyleManager } from '../renderer'
 import {
   ColorSettings,
@@ -32,6 +33,8 @@ export class UnifiedRenderer {
   private workerLazyFontLoading: boolean | null = null
   /** Last awaitFontsBeforeDraw value pushed to the worker pool, if any. */
   private workerAwaitFontsBeforeDraw: boolean | null = null
+  /** Last font base URL pushed to the worker pool, if any. */
+  private workerFontUrl: string | null = null
   /**
    * Constructor
    *
@@ -69,6 +72,11 @@ export class UnifiedRenderer {
         [...FontManager.instance.symbolFonts]
       )
       this.webWorkerConfigured = true
+    }
+    const fontUrl = FontManager.instance.baseUrl
+    if (fontUrl && this.workerFontUrl !== fontUrl) {
+      await renderer.setFontUrl(fontUrl)
+      this.workerFontUrl = fontUrl
     }
     const lazy = FontManager.instance.lazyFontLoading
     if (this.workerLazyFontLoading !== lazy) {
@@ -120,8 +128,14 @@ export class UnifiedRenderer {
    * Set URL to load fonts
    * @param value - URL to load fonts
    */
-  setFontUrl(value: string) {
-    return this.renderer.setFontUrl(value)
+  async setFontUrl(value: string) {
+    // Always update the main-thread catalog so FontManager.instance.baseUrl
+    // (used by syncRenderMText and later worker activation) stays aligned.
+    await this.mainThreadRenderer.setFontUrl(value)
+    if (this.webWorkerRenderer) {
+      await this.webWorkerRenderer.setFontUrl(value)
+      this.workerFontUrl = value
+    }
   }
 
   /**
@@ -355,6 +369,8 @@ export class UnifiedRenderer {
     this.webWorkerRenderer = null
     this.webWorkerConfigured = false
     this.workerLazyFontLoading = null
+    this.workerAwaitFontsBeforeDraw = null
+    this.workerFontUrl = null
     this.renderer = this.mainThreadRenderer
   }
 

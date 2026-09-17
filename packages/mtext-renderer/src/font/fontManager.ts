@@ -1,7 +1,4 @@
-import {
-  ShxFontData,
-  ShxFontType
-} from '@mlightcad/shx-parser'
+import { ShxFontData, ShxFontType } from '@mlightcad/shx-parser'
 import * as THREE from 'three'
 
 import { FontCacheManager } from '../cache'
@@ -11,10 +8,7 @@ import {
   getFileName,
   getFileNameWithoutExtension
 } from '../common'
-import type {
-  IsolateMemoryStats,
-  MaterialMemoryStats
-} from '../memory/types'
+import type { IsolateMemoryStats, MaterialMemoryStats } from '../memory/types'
 import { emptyMaterialStats } from '../memory/types'
 import { BaseFont } from './baseFont'
 import { BaseTextShape } from './baseTextShape'
@@ -341,8 +335,12 @@ export class FontManager {
         if (this.isFontLoaded(key)) {
           this.fontRequestFailed.delete(key)
         } else {
-          // Do not auto-retry on every subsequent glyph miss in the same draw.
-          this.fontRequestFailed.add(key)
+          // Sticky-fail only after a real fetch/parse failure. NotFound can
+          // recover after fonts.json is refreshed (e.g. new CDN aliases).
+          const hardFail = statuses.some(s => s.status === 'FailedToLoad')
+          if (hardFail) {
+            this.fontRequestFailed.add(key)
+          }
         }
         return statuses
       })
@@ -387,8 +385,8 @@ export class FontManager {
     let name = String(fontName)
     const dotIndex = name.lastIndexOf('.')
     if (
-      (dotIndex > 0 && dotIndex == name.length - 4) ||
-      dotIndex == name.length - 5
+      dotIndex > 0 &&
+      (dotIndex === name.length - 4 || dotIndex === name.length - 5)
     ) {
       name = name.substring(0, dotIndex)
     }
@@ -543,9 +541,13 @@ export class FontManager {
         const fontName = getFileNameWithoutExtension(
           fonts[index].file || url
         ).toLowerCase()
+        const catalogNames = fonts[index].name ?? []
         // loadFont may fulfill after a release/epoch abort without registering.
+        // Catalog aliases (e.g. `malgun` → `noto-sans-kr.woff`) must also count.
         const isSuccess =
-          result.status === 'fulfilled' && this.isFontLoaded(fontName)
+          result.status === 'fulfilled' &&
+          (this.isFontLoaded(fontName) ||
+            catalogNames.some(name => this.isFontLoaded(name)))
         status.push({
           fontName: fontName,
           url: url,
@@ -592,7 +594,10 @@ export class FontManager {
       }
     }
     if (font) {
-      return requested
+      // Return the stripped/normalized key that matches loadedFontMap, not the
+      // raw `malgun.ttf` request string — callers pass this into isFontLoaded /
+      // getFontScaleFactor which historically did not strip extensions.
+      return missName || requested
     }
     // Not loaded and no mapping — record miss (schedules lazy load once).
     this.recordMissedFonts(missName, true)
@@ -657,8 +662,8 @@ export class FontManager {
     // Check if font name contain file extension
     const dotIndex = fontName.lastIndexOf('.')
     if (
-      (dotIndex > 0 && dotIndex == fontName.length - 4) ||
-      dotIndex == fontName.length - 5
+      dotIndex > 0 &&
+      (dotIndex === fontName.length - 4 || dotIndex === fontName.length - 5)
     ) {
       // Remove extension of font file name
       fontName = fontName.substring(0, dotIndex)
@@ -781,7 +786,7 @@ export class FontManager {
    * @returns The scale factor for the font, or 1 if the font is not found
    */
   getFontScaleFactor(fontName: string) {
-    const font = this.loadedFontMap.get(fontName.toLowerCase())
+    const font = this.getFontByName(fontName, false)
     return font ? font.getScaleFactor() : 1
   }
 
@@ -791,8 +796,7 @@ export class FontManager {
    * @returns The type of the font. If the specified font can't be found, `undefined` is returned
    */
   getFontType(fontName: string): FontType | undefined {
-    const font = this.loadedFontMap.get(fontName.toLowerCase())
-    return font?.type
+    return this.getFontByName(fontName, false)?.type
   }
 
   /**
@@ -801,8 +805,10 @@ export class FontManager {
    * @returns The type of the SHX font, or undefined if the specified font is not a SHX font
    */
   getShxFontType(fontName: string): ShxFontType | undefined {
-    const font = this.loadedFontMap.get(fontName.toLowerCase())
-    return font?.type === 'shx' ? (font.data as ShxFontData).header.fontType : undefined
+    const font = this.getFontByName(fontName, false)
+    return font?.type === 'shx'
+      ? (font.data as ShxFontData).header.fontType
+      : undefined
   }
 
   /**
@@ -824,7 +830,8 @@ export class FontManager {
    * @returns True if the font is loaded, false otherwise
    */
   isFontLoaded(fontName: string): boolean {
-    return this.loadedFontMap.has(fontName.toLowerCase())
+    const key = this.normalizeFontName(fontName)
+    return !!key && this.loadedFontMap.has(key)
   }
 
   /**
@@ -890,8 +897,8 @@ export class FontManager {
     }
     const dotIndex = fontName.lastIndexOf('.')
     if (
-      (dotIndex > 0 && dotIndex == fontName.length - 4) ||
-      dotIndex == fontName.length - 5
+      dotIndex > 0 &&
+      (dotIndex === fontName.length - 4 || dotIndex === fontName.length - 5)
     ) {
       return fontName.substring(0, dotIndex)
     }
@@ -1038,11 +1045,14 @@ export class FontManager {
     }
 
     const epoch = this.loadEpoch
-    const data = await FontCacheManager.instance.get(fontName)
+    const cached = this.enableFontCache
+      ? await FontCacheManager.instance.get(fontName)
+      : undefined
     if (epoch !== this.loadEpoch) {
       return
     }
-    if (data) {
+    let loadedFromCache = false
+    if (cached) {
       // Yield so open-time entity convert can keep draining between parses.
       await new Promise<void>(resolve => setTimeout(resolve, 0))
       if (epoch !== this.loadEpoch) {
@@ -1054,14 +1064,25 @@ export class FontManager {
         await this.persistCatalogAliases(fontName, catalogNames)
         return
       }
-      const font = FontFactory.instance.createFont(data)
-      if (font) {
-        // Prefer current fonts.json names over stale IndexedDB alias lists.
-        this.applyCatalogNames(font, catalogNames)
-        this.registerFontInMap(fontName, font)
-        await this.persistCatalogAliases(fontName, catalogNames)
+      try {
+        const font = FontFactory.instance.createFont(cached)
+        if (font) {
+          // Prefer current fonts.json names over stale IndexedDB alias lists.
+          this.applyCatalogNames(font, catalogNames)
+          this.registerFontInMap(fontName, font)
+          await this.persistCatalogAliases(fontName, catalogNames)
+          loadedFromCache = true
+        }
+      } catch {
+        // Corrupt / schema-stale IndexedDB entry — drop it and fetch again.
+        try {
+          await FontCacheManager.instance.delete(fontName)
+        } catch {
+          // Ignore cache deletion errors; network fetch is the recovery path.
+        }
       }
-    } else {
+    }
+    if (!loadedFromCache && !this.isFontLoaded(fontName)) {
       const buffer = (await this.loader.loadAsync(fontInfo.url)) as ArrayBuffer
       if (epoch !== this.loadEpoch) {
         return
@@ -1248,7 +1269,9 @@ export class FontManager {
       uniqueFonts.add(font)
     }
 
-    const fonts = Array.from(uniqueFonts).map(font => font.estimateMemoryUsage())
+    const fonts = Array.from(uniqueFonts).map(font =>
+      font.estimateMemoryUsage()
+    )
     const materials = options?.materials ?? emptyMaterialStats()
     const fontsBytes = fonts.reduce((sum, font) => sum + font.estimatedBytes, 0)
 

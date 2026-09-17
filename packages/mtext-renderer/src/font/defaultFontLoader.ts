@@ -18,6 +18,12 @@ export class DefaultFontLoader implements FontLoader {
    * each hit `fonts.json` independently.
    */
   private _availableFontsPromise: Promise<FontInfo[]> | null = null
+  /**
+   * At most one forced `fonts.json` revalidation per baseUrl. Used when a
+   * requested face is missing from a possibly stale HTTP-cached catalog
+   * (e.g. jsDelivr `@main` with a long max-age).
+   */
+  private _catalogRefreshAttempted = false
 
   /**
    * Creates a new instance of DefaultFontLoader
@@ -39,9 +45,8 @@ export class DefaultFontLoader implements FontLoader {
       return
     }
     this._baseUrl = value
-    this._avaiableFonts = []
-    this._avaiableFontMap.clear()
-    this._availableFontsPromise = null
+    this.clearAvailableFontsCache()
+    this._catalogRefreshAttempted = false
     this.onFontUrlChanged(value)
   }
 
@@ -102,6 +107,17 @@ export class DefaultFontLoader implements FontLoader {
       return []
     }
     await this.getAvailableFonts()
+
+    // Stale HTTP-cached fonts.json can omit newly published faces (e.g. malgun).
+    // Keep normal caching for the common path; revalidate at most once per baseUrl
+    // when a requested name is absent from the in-memory catalog.
+    const missingFromCatalog = fontNames.some(
+      font => !this._avaiableFontMap.has(font.toLowerCase())
+    )
+    if (missingFromCatalog && !this._catalogRefreshAttempted) {
+      this._catalogRefreshAttempted = true
+      await this.refreshAvailableFontsFromNetwork()
+    }
 
     const alreadyLoadedStatuses: FontLoadStatus[] = []
     const fontsToLoad: FontInfo[] = []
@@ -183,14 +199,45 @@ export class DefaultFontLoader implements FontLoader {
     return statuses
   }
 
+  private clearAvailableFontsCache() {
+    this._avaiableFonts = []
+    this._avaiableFontMap.clear()
+    this._availableFontsPromise = null
+  }
+
+  /**
+   * Drops the in-memory catalog and refetches `fonts.json`, bypassing the HTTP
+   * cache so CDN updates are visible after a miss.
+   */
+  private async refreshAvailableFontsFromNetwork(): Promise<FontInfo[]> {
+    this.clearAvailableFontsCache()
+    const baseUrl = this._baseUrl
+    const promise = this.fetchAvailableFonts(baseUrl, {
+      bypassHttpCache: true
+    }).finally(() => {
+      if (this._availableFontsPromise === promise) {
+        this._availableFontsPromise = null
+      }
+    })
+    this._availableFontsPromise = promise
+    return promise
+  }
+
   /**
    * Fetches and caches remote font metadata for the given base URL.
    */
-  private async fetchAvailableFonts(baseUrl: string): Promise<FontInfo[]> {
+  private async fetchAvailableFonts(
+    baseUrl: string,
+    options?: { bypassHttpCache?: boolean }
+  ): Promise<FontInfo[]> {
     const fontMetaDataUrl = baseUrl + 'fonts.json'
     let fonts: FontInfo[]
     try {
-      const response = await fetch(fontMetaDataUrl)
+      // Default: allow HTTP cache (jsDelivr max-age is long). Callers that need
+      // a fresh catalog after a miss pass bypassHttpCache.
+      const response = options?.bypassHttpCache
+        ? await fetch(fontMetaDataUrl, { cache: 'no-cache' })
+        : await fetch(fontMetaDataUrl)
       fonts = (await response.json()) as FontInfo[]
     } catch (error) {
       throw new Error(

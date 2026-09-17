@@ -38,6 +38,8 @@ export const DEFAULT_FONTS_PRESETS: Record<
   r12r14: ['txt', 'simplex', 'romans', 'gbcbig', 'simsun'],
   // Mesh/TTF first so missing style fonts (e.g. "标准") get correct Latin metrics.
   // BIGFONT SHX stays available via glyph fallback for CJK coverage.
+  // Korean/Japanese faces are not in this preset — load on demand via style
+  // names (e.g. `malgun`) or switch to the `korean` / `cjk` presets.
   modern: ['simsun', 'hztxt'],
   international: ['txt', 'simplex', 'romans', 'simsun'],
   // Full CJK: mesh faces for CN/KR/JP, then matching SHX big fonts.

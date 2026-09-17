@@ -5,6 +5,7 @@ vi.mock('../../src/cache', () => ({
     instance: {
       get: vi.fn().mockResolvedValue(undefined),
       set: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
       getAll: vi.fn().mockResolvedValue([]),
       find: vi.fn().mockResolvedValue(undefined),
       has: vi.fn().mockResolvedValue(false)
@@ -340,7 +341,9 @@ describe('FontManager', () => {
     manager.loadedFontMap.set('fallback', font)
 
     expect(FontManager.instance.getFontByChar('A')).toBe(font)
-    expect(FontManager.instance.getCharShape('A', 'missing', 12)).toBeUndefined()
+    expect(
+      FontManager.instance.getCharShape('A', 'missing', 12)
+    ).toBeUndefined()
   })
 
   it('returns font metadata helpers from loaded fonts', () => {
@@ -426,12 +429,8 @@ describe('FontManager', () => {
     const manager = FontManager.instance
 
     manager.setDefaultFonts('r12r14')
-    expect([...manager.defaultFonts]).toEqual([
-      ...DEFAULT_FONTS_PRESETS.r12r14
-    ])
-    expect([...manager.symbolFonts]).toEqual([
-      ...SYMBOL_FONTS_PRESETS.r12r14
-    ])
+    expect([...manager.defaultFonts]).toEqual([...DEFAULT_FONTS_PRESETS.r12r14])
+    expect([...manager.symbolFonts]).toEqual([...SYMBOL_FONTS_PRESETS.r12r14])
 
     manager.setDefaultFonts('modern')
     expect([...manager.defaultFonts]).toEqual([...DEFAULT_FONTS_PRESETS.modern])
@@ -486,7 +485,12 @@ describe('FontManager', () => {
 
     await manager.loadDefaultFont()
 
-    expect(loader.load).toHaveBeenCalledWith(['simsun', 'hztxt', 'simplex', 'amgdt'])
+    expect(loader.load).toHaveBeenCalledWith([
+      'simsun',
+      'hztxt',
+      'simplex',
+      'amgdt'
+    ])
   })
 
   it('resolves fonts by alias names after loading', async () => {
@@ -525,8 +529,13 @@ describe('FontManager', () => {
     expect(FontManager.instance.getFontByName('仿宋_gb2312')).toBe(font)
     expect(FontManager.instance.getFontScaleFactor('仿宋_GB2312')).toBe(0.8)
     expect(FontManager.instance.getFontType('华文仿宋')).toBe('mesh')
+    expect(FontManager.instance.isFontLoaded('simfang.woff')).toBe(true)
+    expect(FontManager.instance.getFontScaleFactor('simfang.woff')).toBe(0.8)
     expect(FontManager.instance.findAndReplaceFont('仿宋_gb2312')).toBe(
       '仿宋_gb2312'
+    )
+    expect(FontManager.instance.findAndReplaceFont('simfang.woff')).toBe(
+      'simfang'
     )
     expect(FontManager.instance.getCharShape('仿', '仿宋_GB2312', 12)).toBe(
       shape
@@ -785,12 +794,7 @@ describe('FontManager', () => {
     })
 
     const statuses = await FontManager.instance.loadFonts({
-      name: [
-        'noto-sans-kr',
-        'malgun',
-        'malgungothic',
-        'Malgun Gothic'
-      ],
+      name: ['noto-sans-kr', 'malgun', 'malgungothic', 'Malgun Gothic'],
       file: 'noto-sans-kr.woff',
       type: 'mesh',
       url: 'https://cdn.example.com/fonts/noto-sans-kr.woff'
@@ -847,7 +851,11 @@ describe('FontManager', () => {
     expect(FontCacheManager.instance.set).toHaveBeenCalledWith(
       'noto-sans-kr',
       expect.objectContaining({
-        alias: expect.arrayContaining(['noto-sans-kr', 'malgun', 'malgungothic'])
+        alias: expect.arrayContaining([
+          'noto-sans-kr',
+          'malgun',
+          'malgungothic'
+        ])
       })
     )
     expect(statuses[0].status).toBe('Success')
@@ -870,6 +878,41 @@ describe('FontManager', () => {
     expect(manager.fontRequestFailed.has('malgun')).toBe(false)
     expect(manager.missedFonts.malgun).toBeUndefined()
     expect(FontManager.instance.isFontLoaded('malgun')).toBe(true)
+  })
+
+  it('drops a corrupt IndexedDB font entry and loads from the network', async () => {
+    const manager = FontManager.instance as any
+    const buffer = new ArrayBuffer(8)
+    const font = createFakeFont({ names: new Set(['ghost']) })
+    manager.loader = {
+      loadAsync: vi.fn().mockResolvedValue(buffer)
+    }
+    vi.mocked(FontCacheManager.instance.get).mockResolvedValue({
+      name: 'ghost',
+      alias: ['ghost'],
+      type: 'shx' as const,
+      encoding: undefined,
+      data: new ArrayBuffer(4)
+    })
+    vi.mocked(FontFactory.instance.createFont)
+      .mockImplementationOnce(() => {
+        throw new Error('corrupt cache')
+      })
+      .mockReturnValueOnce(font as any)
+
+    const statuses = await FontManager.instance.loadFonts({
+      name: ['ghost'],
+      file: 'ghost.shx',
+      type: 'shx',
+      url: 'https://cdn.example.com/fonts/ghost.shx'
+    })
+
+    expect(FontCacheManager.instance.delete).toHaveBeenCalledWith('ghost')
+    expect(manager.loader.loadAsync).toHaveBeenCalledWith(
+      'https://cdn.example.com/fonts/ghost.shx'
+    )
+    expect(FontManager.instance.isFontLoaded('ghost')).toBe(true)
+    expect(statuses[0].status).toBe('Success')
   })
 
   it('estimates memory once per font instance when aliases share the same object', () => {
