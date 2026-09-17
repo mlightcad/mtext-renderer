@@ -769,6 +769,109 @@ describe('FontManager', () => {
     expect(statuses[0].status).toBe('Success')
   })
 
+  it('registers new catalog aliases when the primary face is already loaded', async () => {
+    const manager = FontManager.instance as any
+    const font = createFakeFont({ names: new Set(['noto-sans-kr']) })
+    manager.loadedFontMap.set('noto-sans-kr', font)
+    manager.loader = {
+      loadAsync: vi.fn()
+    }
+    vi.mocked(FontCacheManager.instance.get).mockResolvedValue({
+      name: 'noto-sans-kr',
+      alias: ['noto-sans-kr'],
+      type: 'mesh' as const,
+      encoding: undefined,
+      data: new ArrayBuffer(4)
+    })
+
+    const statuses = await FontManager.instance.loadFonts({
+      name: [
+        'noto-sans-kr',
+        'malgun',
+        'malgungothic',
+        'Malgun Gothic'
+      ],
+      file: 'noto-sans-kr.woff',
+      type: 'mesh',
+      url: 'https://cdn.example.com/fonts/noto-sans-kr.woff'
+    })
+
+    expect(manager.loader.loadAsync).not.toHaveBeenCalled()
+    expect(FontFactory.instance.createFont).not.toHaveBeenCalled()
+    expect(FontManager.instance.isFontLoaded('noto-sans-kr')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('malgun')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('Malgun Gothic')).toBe(true)
+    expect(FontManager.instance.getFontByName('malgun')).toBe(font)
+    expect(FontCacheManager.instance.set).toHaveBeenCalledWith(
+      'noto-sans-kr',
+      expect.objectContaining({
+        alias: expect.arrayContaining([
+          'noto-sans-kr',
+          'malgun',
+          'malgungothic',
+          'Malgun Gothic'
+        ])
+      })
+    )
+    expect(statuses[0].status).toBe('Success')
+  })
+
+  it('applies current catalog aliases when IndexedDB has a stale alias list', async () => {
+    const manager = FontManager.instance as any
+    const font = createFakeFont({ names: new Set(['noto-sans-kr']) })
+    const cachedFontData = {
+      name: 'noto-sans-kr',
+      // Older cache entry before malgun aliases were added to fonts.json
+      alias: ['noto-sans-kr'],
+      type: 'mesh' as const,
+      encoding: undefined,
+      data: new ArrayBuffer(4)
+    }
+    manager.loader = {
+      loadAsync: vi.fn()
+    }
+    vi.mocked(FontCacheManager.instance.get).mockResolvedValue(cachedFontData)
+    vi.mocked(FontFactory.instance.createFont).mockReturnValue(font as any)
+
+    const statuses = await FontManager.instance.loadFonts({
+      name: ['noto-sans-kr', 'malgun', 'malgungothic'],
+      file: 'noto-sans-kr.woff',
+      type: 'mesh',
+      url: 'https://cdn.example.com/fonts/noto-sans-kr.woff'
+    })
+
+    expect(manager.loader.loadAsync).not.toHaveBeenCalled()
+    expect(FontManager.instance.isFontLoaded('noto-sans-kr')).toBe(true)
+    expect(FontManager.instance.isFontLoaded('malgun')).toBe(true)
+    expect(FontManager.instance.getFontByName('malgun')).toBe(font)
+    expect(FontCacheManager.instance.set).toHaveBeenCalledWith(
+      'noto-sans-kr',
+      expect.objectContaining({
+        alias: expect.arrayContaining(['noto-sans-kr', 'malgun', 'malgungothic'])
+      })
+    )
+    expect(statuses[0].status).toBe('Success')
+  })
+
+  it('clears failed-request state for catalog aliases after primary load', async () => {
+    const manager = FontManager.instance as any
+    const font = createFakeFont({ names: new Set(['noto-sans-kr']) })
+    manager.loadedFontMap.set('noto-sans-kr', font)
+    manager.fontRequestFailed.add('malgun')
+    manager.missedFonts = { malgun: 1 }
+
+    await FontManager.instance.loadFonts({
+      name: ['noto-sans-kr', 'malgun'],
+      file: 'noto-sans-kr.woff',
+      type: 'mesh',
+      url: 'https://cdn.example.com/fonts/noto-sans-kr.woff'
+    })
+
+    expect(manager.fontRequestFailed.has('malgun')).toBe(false)
+    expect(manager.missedFonts.malgun).toBeUndefined()
+    expect(FontManager.instance.isFontLoaded('malgun')).toBe(true)
+  })
+
   it('estimates memory once per font instance when aliases share the same object', () => {
     const manager = FontManager.instance as any
     const font = createFakeFont({
