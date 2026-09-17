@@ -62,80 +62,74 @@ describe('missing style font Latin wrap width', () => {
   afterEach(() => {
     FontManager.instance.release()
     FontManager.instance.enableFontCache = true
+    FontManager.instance.lazyFontLoading = true
   })
 
-  it(
-    'keeps FYA/G-AE-01-01-2018 on one line inside AutoCAD defined width',
-    async () => {
-      FontManager.instance.release()
-      FontManager.instance.enableFontCache = false
-      FontManager.instance.setDefaultFonts('modern')
-      await loadFont('hztxt', 'hztxt.shx', 'gbk')
-      await loadFont('simsun', 'simsun.woff')
+  it('keeps FYA/G-AE-01-01-2018 on one line inside AutoCAD defined width', async () => {
+    FontManager.instance.release()
+    FontManager.instance.enableFontCache = false
+    FontManager.instance.lazyFontLoading = false
+    FontManager.instance.setDefaultFonts('modern')
+    await loadFont('hztxt', 'hztxt.shx', 'gbk')
+    await loadFont('simsun', 'simsun.woff')
 
-      expect(FontManager.instance.findAndReplaceFont('标准')).toBe('simsun')
-      // CJK TrueType faces use em-square scale (not Latin-A inflation).
-      expect(FontManager.instance.getFontScaleFactor('simsun')).toBe(1)
+    expect(FontManager.instance.findAndReplaceFont('标准')).toBe('simsun')
+    // CJK TrueType faces use em-square scale (not Latin-A inflation).
+    expect(FontManager.instance.getFontScaleFactor('simsun')).toBe(1)
 
-      const wrapWidth = 31.945271
-      // Measured under em-square SimSun scale. The previous ~29.5 value assumed
-      // Latin-A inflation (~1.43×) and no longer matches AutoCAD CJK TrueType.
-      const expectedExtents = 20.646255
+    const wrapWidth = 31.945271
+    // Measured under em-square SimSun scale. The previous ~29.5 value assumed
+    // Latin-A inflation (~1.43×) and no longer matches AutoCAD CJK TrueType.
+    const expectedExtents = 20.646255
 
-      const unconstrained = new MText(
-        {
-          text: '{\\W0.667;\\T1.1;FYA/G-AE-01-01-2018}',
-          height: 3,
-          width: 0,
-          position: { x: 0, y: 0, z: 0 },
-          attachmentPoint: MTextAttachmentPoint.TopLeft,
-          collectCharBoxes: true
-        },
-        style,
-        styleManager as any,
-        FontManager.instance as any,
-        createDefaultColorSettings()
-      )
-      unconstrained.syncDraw()
-      const contentWidth =
-        unconstrained.box.max.x - unconstrained.box.min.x
-      expect(contentWidth).toBeCloseTo(expectedExtents, 1)
-      expect(contentWidth).toBeLessThan(wrapWidth)
+    const unconstrained = new MText(
+      {
+        text: '{\\W0.667;\\T1.1;FYA/G-AE-01-01-2018}',
+        height: 3,
+        width: 0,
+        position: { x: 0, y: 0, z: 0 },
+        attachmentPoint: MTextAttachmentPoint.TopLeft,
+        collectCharBoxes: true
+      },
+      style,
+      styleManager as any,
+      FontManager.instance as any,
+      createDefaultColorSettings()
+    )
+    unconstrained.syncDraw()
+    const contentWidth = unconstrained.box.max.x - unconstrained.box.min.x
+    expect(contentWidth).toBeCloseTo(expectedExtents, 1)
+    expect(contentWidth).toBeLessThan(wrapWidth)
 
-      const wrapped = new MText(
-        {
-          text: '{\\W0.667;\\T1.1;FYA/G-AE-01-01-2018}',
-          height: 3,
-          width: wrapWidth,
-          position: { x: 0, y: 0, z: 0 },
-          attachmentPoint: MTextAttachmentPoint.MiddleRight,
-          collectCharBoxes: true
-        },
-        style,
-        styleManager as any,
-        FontManager.instance as any,
-        createDefaultColorSettings()
-      )
-      wrapped.syncDraw()
+    const wrapped = new MText(
+      {
+        text: '{\\W0.667;\\T1.1;FYA/G-AE-01-01-2018}',
+        height: 3,
+        width: wrapWidth,
+        position: { x: 0, y: 0, z: 0 },
+        attachmentPoint: MTextAttachmentPoint.MiddleRight,
+        collectCharBoxes: true
+      },
+      style,
+      styleManager as any,
+      FontManager.instance as any,
+      createDefaultColorSettings()
+    )
+    wrapped.syncDraw()
 
-      const height = wrapped.box.max.y - wrapped.box.min.y
-      // Single visual line: height stays near one cap-height, not ~2× after wrap.
-      expect(height).toBeLessThan(5)
-    },
-    120_000
-  )
+    const height = wrapped.box.max.y - wrapped.box.min.y
+    // Single visual line: height stays near one cap-height, not ~2× after wrap.
+    expect(height).toBeLessThan(5)
+  }, 120_000)
 
-  it(
-    'prefers simsun over hztxt even when hztxt is listed first in defaults',
-    async () => {
-      FontManager.instance.release()
-      FontManager.instance.enableFontCache = false
-      FontManager.instance.setDefaultFonts(['hztxt', 'simsun'])
-      await loadFont('hztxt', 'hztxt.shx', 'gbk')
-      await loadFont('simsun', 'simsun.woff')
+  it('prefers simsun over hztxt even when hztxt is listed first in defaults', async () => {
+    FontManager.instance.release()
+    FontManager.instance.enableFontCache = false
+    FontManager.instance.lazyFontLoading = false
+    FontManager.instance.setDefaultFonts(['hztxt', 'simsun'])
+    await loadFont('hztxt', 'hztxt.shx', 'gbk')
+    await loadFont('simsun', 'simsun.woff')
 
-      expect(FontManager.instance.findAndReplaceFont('标准')).toBe('simsun')
-    },
-    120_000
-  )
+    expect(FontManager.instance.findAndReplaceFont('标准')).toBe('simsun')
+  }, 120_000)
 })

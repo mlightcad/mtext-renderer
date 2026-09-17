@@ -9,6 +9,7 @@ const shxParserRoot = path.dirname(
 
 export default defineConfig({
   test: {
+    setupFiles: ['./test/setup.ts'],
     testTimeout: 30_000,
     hookTimeout: 60_000
   },

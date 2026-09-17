@@ -250,11 +250,25 @@ export class MText extends THREE.Object3D {
       } else {
         await this._fontManager.loadFontsByNames(fontsToRequest)
       }
-      // Only mark style fonts as handled when content/style contributed names so
-      // later asyncDraw calls can still pick up style fonts if none were present
-      // yet (or if a non-lazy preload threw before completing).
+      // Only mark style fonts handled once they are actually registered.
+      // Otherwise a FailedToLoad / NotFound on first open (CDN race, stale
+      // fonts.json) permanently skips re-requesting `malgun` and Hangul stays '?'.
       if (fonts.length > 0) {
-        this._fontsInStyleLoaded = true
+        const styleNames = [
+          this._style.font ? this.getFontName(this._style.font) : undefined,
+          this._style.bigFont
+            ? this.getFontName(this._style.bigFont)
+            : undefined,
+          this._style.extendedFont
+            ? this.getFontName(this._style.extendedFont)
+            : undefined
+        ].filter((name): name is string => !!name)
+        const styleFontsReady =
+          styleNames.length === 0 ||
+          styleNames.every(name => this._fontManager.isFontLoaded(name))
+        if (styleFontsReady) {
+          this._fontsInStyleLoaded = true
+        }
       }
     }
 
@@ -399,16 +413,13 @@ export class MText extends THREE.Object3D {
       drawingDirection: MTextFlowDirection.BOTTOM_TO_TOP,
       collectCharBoxes: false
     }
-    return this.finalizePlacement(
-      object,
-      placementData,
-      layoutHeight,
-      { shxFontType: this._fontManager.getShxFontType(style.font) }
-    )
+    return this.finalizePlacement(object, placementData, layoutHeight, {
+      shxFontType: this._fontManager.getShxFontType(style.font)
+    })
   }
 
   /**
-   * 
+   *
    * @param options.shxFontType The type of SHX font.
    */
   private finalizePlacement(
@@ -448,7 +459,10 @@ export class MText extends THREE.Object3D {
     if (options?.shxFontType === ShxFontType.SHAPES) {
       anchorPoint = { x: 0, y: 0 }
     } else {
-      anchorPoint = this.calculateAnchorPoint(anchorMetrics, mtextData.attachmentPoint)
+      anchorPoint = this.calculateAnchorPoint(
+        anchorMetrics,
+        mtextData.attachmentPoint
+      )
     }
 
     object.userData.logicalBounds = {
@@ -480,10 +494,7 @@ export class MText extends THREE.Object3D {
     object.traverse(obj => {
       if ('geometry' in obj) {
         const geometry = obj.geometry as THREE.BufferGeometry
-        if (
-          Number.isFinite(anchorPoint.x) &&
-          Number.isFinite(anchorPoint.y)
-        ) {
+        if (Number.isFinite(anchorPoint.x) && Number.isFinite(anchorPoint.y)) {
           geometry.translate(anchorPoint.x, anchorPoint.y, 0)
         }
       }
@@ -503,7 +514,10 @@ export class MText extends THREE.Object3D {
     let rotateAngle = mtextData.rotation || 0
     // SHAPES entity does not have MText’s direction property.
     // Only rotation, so direction cannot be computed from directionVector.
-    if (mtextData.directionVector && options?.shxFontType !== ShxFontType.SHAPES) {
+    if (
+      mtextData.directionVector &&
+      options?.shxFontType !== ShxFontType.SHAPES
+    ) {
       const dv = mtextData.directionVector
       const vec = new THREE.Vector3(dv.x, dv.y, dv.z)
       const v = vec.clone().cross(AxisX)
@@ -522,8 +536,7 @@ export class MText extends THREE.Object3D {
 
   private createShapeGroup(shapeData: ShapeData, style: TextStyle) {
     const defaultFontSize = shapeData.size || style.fixedTextHeight || 0
-    const defaultWidthFactor =
-      shapeData.widthFactor ?? style.widthFactor ?? 1.0
+    const defaultWidthFactor = shapeData.widthFactor ?? style.widthFactor ?? 1.0
     const textLineFormatOptions: MTextFormatOptions = {
       fontSize: defaultFontSize,
       widthFactor: defaultWidthFactor,

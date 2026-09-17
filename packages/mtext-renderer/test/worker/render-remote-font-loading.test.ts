@@ -48,7 +48,8 @@ class MockWorker {
       }
       if (
         type === 'setLazyFontLoading' ||
-        type === 'setAwaitFontsBeforeDraw'
+        type === 'setAwaitFontsBeforeDraw' ||
+        type === 'setFontUrl'
       ) {
         this.onmessage?.({
           data: {
@@ -148,6 +149,7 @@ const minimalTextStyle: TextStyle = {
 
 describe('render remote font loading', () => {
   let loadFontsByNames: ReturnType<typeof vi.spyOn>
+  let getAvailableFonts: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     FontManager.instance.release()
@@ -158,11 +160,15 @@ describe('render remote font loading', () => {
     loadFontsByNames = vi
       .spyOn(FontManager.instance, 'loadFontsByNames')
       .mockResolvedValue([])
+    getAvailableFonts = vi
+      .spyOn(FontManager.instance, 'getAvailableFonts')
+      .mockResolvedValue([])
     workerInstances.length = 0
   })
 
   afterEach(() => {
     loadFontsByNames.mockRestore()
+    getAvailableFonts.mockRestore()
     FontManager.instance.lazyFontLoading = true
     FontManager.instance.awaitFontsBeforeDraw = false
     vi.unstubAllGlobals()
@@ -452,22 +458,24 @@ describe('render remote font loading', () => {
     FontManager.instance.events.fontLoaded.addEventListener(listener)
 
     // Override MockWorker so loadFonts returns no successfully loaded faces.
-    workerInstances[0].postMessage = vi.fn((message: Record<string, unknown>) => {
-      queueMicrotask(() => {
-        const { type, id } = message
-        if (type === 'loadFonts') {
-          workerInstances[0].onmessage?.({
-            data: {
-              id,
-              type,
-              success: true,
-              data: { loaded: [] }
-            }
-          } as MessageEvent)
-          return
-        }
-      })
-    })
+    workerInstances[0].postMessage = vi.fn(
+      (message: Record<string, unknown>) => {
+        queueMicrotask(() => {
+          const { type, id } = message
+          if (type === 'loadFonts') {
+            workerInstances[0].onmessage?.({
+              data: {
+                id,
+                type,
+                success: true,
+                data: { loaded: [] }
+              }
+            } as MessageEvent)
+            return
+          }
+        })
+      }
+    )
 
     workerInstances[0].onmessage?.({
       data: {

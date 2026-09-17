@@ -92,10 +92,15 @@ export class Shape extends THREE.Object3D {
       } else {
         await this._fontManager.loadFontsByNames(fontsToRequest)
       }
-      // Only mark after content/style contributed names so reused objects can
-      // still request style fonts on a later draw if none were available yet.
+      // Only mark style fonts handled once they are actually registered.
+      // Same sticky-skip trap as MText.asyncDraw when the first attempt fails.
       if (fonts.length > 0) {
-        this._fontsInStyleLoaded = true
+        const styleFontsReady = fonts.every(name =>
+          this._fontManager.isFontLoaded(name)
+        )
+        if (styleFontsReady) {
+          this._fontsInStyleLoaded = true
+        }
       }
     }
     this.syncDraw()
@@ -125,8 +130,7 @@ export class Shape extends THREE.Object3D {
       text: '',
       height: this._shapeData.size,
       width: Infinity,
-      widthFactor:
-        this._shapeData.widthFactor ?? this._style.widthFactor ?? 1,
+      widthFactor: this._shapeData.widthFactor ?? this._style.widthFactor ?? 1,
       position: this._shapeData.position,
       rotation: this._shapeData.rotation,
       directionVector: this._shapeData.directionVector,

@@ -47,6 +47,13 @@ export class MainThreadRenderer implements MTextBaseRenderer {
    */
   async setFontUrl(value: string) {
     this.fontManager.baseUrl = value
+    // Match worker setFontUrl: resolve fonts.json before the first draw so
+    // on-demand style faces (e.g. `malgun`) are catalogued.
+    try {
+      await this.fontManager.getAvailableFonts()
+    } catch {
+      // Per-face loads still report NotFound/FailedToLoad.
+    }
   }
 
   /**
@@ -164,6 +171,12 @@ export class MainThreadRenderer implements MTextBaseRenderer {
 
   private async ensureInitialized() {
     if (!this.isInitialized) {
+      // Ensure fonts.json is ready before the first on-demand style request.
+      try {
+        await this.fontManager.getAvailableFonts()
+      } catch {
+        // Per-face loads still report NotFound/FailedToLoad.
+      }
       // Non-lazy mode still needs default/symbol fonts before the first draw.
       // Lazy mode schedules them on demand via requestFont / glyph fallbacks.
       if (!this.fontManager.lazyFontLoading) {

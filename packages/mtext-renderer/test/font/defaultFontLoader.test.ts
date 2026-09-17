@@ -115,11 +115,7 @@ describe('DefaultFontLoader', () => {
 
     resolveFetch(jsonResponse(oldFonts))
 
-    const [fontsA, fontsB, statuses] = await Promise.all([
-      first,
-      second,
-      third
-    ])
+    const [fontsA, fontsB, statuses] = await Promise.all([first, second, third])
 
     expect(fetch).toHaveBeenCalledOnce()
     expect(fontsA).toBe(fontsB)
@@ -265,11 +261,25 @@ describe('DefaultFontLoader', () => {
         status: 'Success'
       }
     ])
+    // Second fetch is the one-shot catalog revalidation after MissingFont miss.
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(oldFonts))
+        .mockResolvedValueOnce(jsonResponse(oldFonts))
+    )
     const loader = new DefaultFontLoader()
     loader.baseUrl = 'https://cdn.example.com/fonts/'
 
     const statuses = await loader.load(['old', 'MissingFont'])
 
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      'https://cdn.example.com/fonts/fonts.json',
+      { cache: 'no-cache' }
+    )
     expect(FontManager.instance.loadFonts).toHaveBeenCalledWith([
       {
         name: ['OldFont', 'old'],
@@ -290,6 +300,61 @@ describe('DefaultFontLoader', () => {
         status: 'NotFound'
       }
     ])
+  })
+
+  it('revalidates fonts.json once when a requested face is missing from cache', async () => {
+    const staleCatalog: FontInfo[] = [
+      {
+        name: ['simsun'],
+        file: 'simsun.woff',
+        type: 'mesh',
+        url: ''
+      }
+    ]
+    const freshCatalog: FontInfo[] = [
+      ...staleCatalog,
+      {
+        name: ['noto-sans-kr', 'malgun'],
+        file: 'noto-sans-kr.woff',
+        type: 'mesh',
+        url: ''
+      }
+    ]
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(staleCatalog))
+        .mockResolvedValueOnce(jsonResponse(freshCatalog))
+    )
+    vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([
+      {
+        fontName: 'noto-sans-kr',
+        url: 'https://cdn.example.com/fonts/noto-sans-kr.woff',
+        status: 'Success'
+      }
+    ])
+    const loader = new DefaultFontLoader()
+    loader.baseUrl = 'https://cdn.example.com/fonts/'
+
+    const first = await loader.load(['malgun'])
+    const second = await loader.load(['malgun', 'still-missing'])
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(first).toEqual([
+      {
+        fontName: 'malgun',
+        url: 'https://cdn.example.com/fonts/noto-sans-kr.woff',
+        status: 'Success'
+      }
+    ])
+    // Refresh already attempted for this baseUrl — no third fonts.json fetch.
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(second[1]).toEqual({
+      fontName: 'still-missing',
+      url: '',
+      status: 'NotFound'
+    })
   })
 
   it('reports success for alias requests when load status uses the file name', async () => {

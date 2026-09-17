@@ -134,6 +134,27 @@ describe('FontManager lazy font loading', () => {
     requestFont.mockRestore()
   })
 
+  it('requestFont retries NotFound so a later catalog refresh can succeed', async () => {
+    const load = vi
+      .spyOn(FontManager.instance, 'loadFontsByNames')
+      .mockResolvedValueOnce([
+        { fontName: 'malgun', url: '', status: 'NotFound' }
+      ])
+      .mockResolvedValueOnce([
+        {
+          fontName: 'malgun',
+          url: 'https://cdn.example.com/fonts/noto-sans-kr.woff',
+          status: 'Success'
+        }
+      ])
+
+    await FontManager.instance.requestFont('malgun')
+    await FontManager.instance.requestFont('malgun')
+
+    expect(load).toHaveBeenCalledTimes(2)
+    load.mockRestore()
+  })
+
   it('requestFont does not retry after a failed load until release', async () => {
     const load = vi
       .spyOn(FontManager.instance, 'loadFontsByNames')
