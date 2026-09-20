@@ -18,6 +18,17 @@ export abstract class BaseTextShape extends THREE.Shape {
   abstract toGeometry(): THREE.BufferGeometry
 
   /**
+   * Uniform XY scale applied to {@link toGeometry} when placing the glyph.
+   *
+   * Mesh fonts cache unit-size outlines and report the requested font size here
+   * so one geometry serves every height. SHX stroke geometries are already
+   * sized and leave this at `1`.
+   */
+  get geometryScale(): number {
+    return 1
+  }
+
+  /**
    * Whether the shape has drawable stroke or mesh geometry (not advance-only).
    */
   hasStrokeGeometry(): boolean {

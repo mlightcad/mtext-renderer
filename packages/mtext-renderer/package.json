@@ -41,7 +41,8 @@
     "clean": "rimraf dist lib tsconfig.tsbuildinfo",
     "lint": "eslint src/",
     "lint:fix": "eslint --fix --quiet src/",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench": "vitest run --config vitest.bench.config.ts"
   },
   "keywords": [
     "autocad",

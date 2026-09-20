@@ -12,6 +12,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { getColorByIndex } from '../common'
 import { FontManager } from '../font'
 import { BaseTextShape } from '../font/baseTextShape'
+import { isMeshGlyphGeometry } from '../font/meshGlyphGeometry'
 import {
   TextGeometryBuilder,
   type TransformedLineGeometryEntry
@@ -985,7 +986,8 @@ export class MTextProcessor {
     const { matrix, obliqueExtraAdvance } = this.buildCharTransformMatrix(
       charX,
       charY,
-      this.currentLayoutFontSize
+      this.currentLayoutFontSize,
+      shape.geometryScale
     )
     const canonical = shape.toGeometry()
     this.appendCharGeometry(
@@ -1015,9 +1017,14 @@ export class MTextProcessor {
   private buildCharTransformMatrix(
     charX: number,
     charY: number,
-    charHeight: number
+    charHeight: number,
+    geometryScale = 1
   ): { matrix: THREE.Matrix4; obliqueExtraAdvance: number } {
-    _scaleMatrix.makeScale(this.currentWidthFactor, 1, 1)
+    // Mesh glyphs are cached at unit size; bake height into the placement matrix
+    // so one outline serves every text height in the drawing.
+    const sx = this.currentWidthFactor * geometryScale
+    const sy = geometryScale
+    _scaleMatrix.makeScale(sx, sy, 1)
 
     let obliqueAngle = this._currentContext.oblique
     if (this._currentContext.italic) {
@@ -1072,14 +1079,15 @@ export class MTextProcessor {
   /**
    * Appends one glyph's geometry to the active batch buffers and optional char boxes.
    *
-   * Mesh fonts (`ShapeGeometry`) are transformed immediately; line fonts are queued in
+   * Mesh fonts (tagged via {@link isMeshGlyphGeometry}) are transformed immediately;
+   * line fonts are queued in
    * {@link _lineBatchEntries} for later merge via {@link TextGeometryBuilder.mergeLineGeometries}.
    *
    * @param shape Source text shape for the glyph.
    * @param label Character label stored on geometry and char boxes.
    * @param canonical Untransformed glyph geometry from the font.
    * @param matrix World transform to apply to the glyph.
-   * @param geometries Accumulator for mesh (`ShapeGeometry`) primitives.
+   * @param geometries Accumulator for mesh glyph primitives.
    * @param meshCharBoxes Accumulator for mesh-glyph picking boxes.
    * @param lineCharBoxes Accumulator for line-glyph picking boxes.
    */
@@ -1092,7 +1100,7 @@ export class MTextProcessor {
     meshCharBoxes: CharBox[],
     lineCharBoxes: CharBox[]
   ): void {
-    if (canonical instanceof THREE.ShapeGeometry) {
+    if (isMeshGlyphGeometry(canonical)) {
       const geometry = canonical.clone()
       geometry.applyMatrix4(matrix)
       geometries.push(geometry)
@@ -1927,7 +1935,8 @@ export class MTextProcessor {
     const { matrix, obliqueExtraAdvance } = this.buildCharTransformMatrix(
       charX,
       charY,
-      charHeight
+      charHeight,
+      shape.geometryScale
     )
     const canonical = shape.toGeometry()
     this.appendCharGeometry(
@@ -2476,7 +2485,7 @@ export class MTextProcessor {
   /**
    * Converts pending mesh and line geometries into a styled THREE.js object.
    *
-   * @param geometries Mesh (`ShapeGeometry`) primitives for the current style segment.
+   * @param geometries Mesh glyph primitives for the current style segment.
    * @param lineGeometries Line primitives and decorations for the current style segment.
    * @param meshCharBoxes Mesh char boxes to attach to the created object.
    * @param lineCharBoxes Line char boxes to attach to the created object.
@@ -2505,8 +2514,8 @@ export class MTextProcessor {
 
     const shouldCollectCharBoxes = this._options.collectCharBoxes !== false
 
-    // Mesh font (ShapeGeometry)
-    const meshGeoms = geometries.filter(g => g instanceof THREE.ShapeGeometry)
+    // Mesh font (filled glyphs — may be BufferGeometry after mergeVertices)
+    const meshGeoms = geometries.filter(g => isMeshGlyphGeometry(g))
 
     if (meshGeoms.length > 0) {
       const mergedMeshGeom =
@@ -2530,7 +2539,7 @@ export class MTextProcessor {
         matrix: _identityMatrix
       })),
       ...geometries
-        .filter(g => !(g instanceof THREE.ShapeGeometry))
+        .filter(g => !isMeshGlyphGeometry(g))
         .map(geometry => ({ geometry, matrix: _identityMatrix }))
     ]
 

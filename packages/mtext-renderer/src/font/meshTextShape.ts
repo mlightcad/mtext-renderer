@@ -3,8 +3,10 @@ import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 import { BaseTextShape } from './baseTextShape'
 import { MeshFont } from './meshFont'
-
-const _tmp = new THREE.Vector2()
+import {
+  markMeshGlyphGeometry,
+  MESH_GLYPH_CACHE_SIZE
+} from './meshGlyphGeometry'
 
 function hasFinitePositions(geometry: THREE.BufferGeometry) {
   const position = geometry.getAttribute('position')
@@ -44,17 +46,23 @@ export class MeshTextShape extends BaseTextShape {
   }
 
   /**
+   * Scale from the unit-size cached outline to the requested drawing height.
+   */
+  override get geometryScale(): number {
+    return this.fontSize / MESH_GLYPH_CACHE_SIZE
+  }
+
+  /**
    * Converts the text shape to a THREE.js geometry.
-   * This is used for 3D rendering of the text.
+   * Outlines are cached once at {@link MESH_GLYPH_CACHE_SIZE}; callers must
+   * apply {@link geometryScale} when placing the glyph.
    * @returns A THREE.js BufferGeometry representing the text shape
    */
   toGeometry(): THREE.BufferGeometry {
-    let geometry = this.font.cache.getGeometry(
-      this.char.charCodeAt(0),
-      this.fontSize
-    )
+    const code = this.char.codePointAt(0) ?? this.char.charCodeAt(0)
+    let geometry = this.font.cache.getGeometry(code, MESH_GLYPH_CACHE_SIZE)
     if (geometry == null) {
-      const shapes = this.font.generateShapes(this.char, this.fontSize)
+      const shapes = this.font.generateShapes(this.char, MESH_GLYPH_CACHE_SIZE)
       geometry = new THREE.ShapeGeometry(shapes, 4)
       if (!hasFinitePositions(geometry)) {
         geometry.dispose()
@@ -67,8 +75,11 @@ export class MeshTextShape extends BaseTextShape {
       if (geometry.hasAttribute('normal')) {
         geometry.deleteAttribute('normal')
       }
+      // mergeVertices returns a plain BufferGeometry — tag before caching so
+      // MTextProcessor keeps the filled-mesh path on cache hits.
       geometry = mergeVertices(geometry, 1e-6)
-      this.font.cache.setGeometry(this.char.charCodeAt(0), this.fontSize, geometry)
+      markMeshGlyphGeometry(geometry)
+      this.font.cache.setGeometry(code, MESH_GLYPH_CACHE_SIZE, geometry)
     }
     if (!hasFinitePositions(geometry)) {
       return new THREE.BufferGeometry()
