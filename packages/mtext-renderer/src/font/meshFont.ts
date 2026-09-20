@@ -80,8 +80,15 @@ export class MeshFont extends BaseFont {
 
   /** Internal opentype.js font instance used for on-demand glyph parsing */
   private readonly opentypeFont: OpenTypeFont
-  /** Glyph cache to limit memory usage */
-  private readonly glyphCache = new LRUCache<string, MeshGlyph>(512)
+  /** Glyph cache to limit memory usage; eviction removes entries from {@link data.glyphs}. */
+  private readonly glyphCache = new LRUCache<string, MeshGlyph>(
+    512,
+    (char, token) => {
+      if (this.data.glyphs[char] === token) {
+        delete this.data.glyphs[char]
+      }
+    }
+  )
 
   /**
    * Creates a new instance of MeshFont.
@@ -203,7 +210,14 @@ export class MeshFont extends BaseFont {
    * @param char - The character whose glyph should be loaded
    */
   private _loadGlyphIfNeeded(char: string) {
-    if (this.data.glyphs[char] || !this.opentypeFont) return
+    const existing = this.data.glyphs[char]
+    if (existing) {
+      // Touch LRU so frequently used glyphs stay resident.
+      this.glyphCache.get(char)
+      return
+    }
+
+    if (!this.opentypeFont) return
 
     const cached = this.glyphCache.get(char)
     if (cached) {

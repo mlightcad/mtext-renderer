@@ -41,3 +41,7 @@ Thumbs.db
 
 .nx/cache
 .nx/workspace-data
+
+# Local font downloads + previous bench metrics for `pnpm bench`
+packages/mtext-renderer/.font-cache
+packages/mtext-renderer/.bench-results

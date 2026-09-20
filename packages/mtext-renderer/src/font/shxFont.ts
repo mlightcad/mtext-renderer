@@ -34,7 +34,12 @@ export class ShxFont extends BaseFont {
   public readonly data: ShxFontData
 
   /** Cached layout-ready {@link ShxTextShape} instances keyed by code and size. */
-  private readonly layoutShapeCache = new LRUCache<string, ShxTextShape>(4096)
+  private readonly layoutShapeCache = new LRUCache<string, ShxTextShape>(
+    4096,
+    (_key, shape) => {
+      shape.dispose()
+    }
+  )
 
   /** Cached BIGFONT character encodings keyed by input character. */
   private readonly codeCache = new Map<string, number>()
@@ -155,20 +160,31 @@ export class ShxFont extends BaseFont {
    * @returns The shape data for the code, or undefined if not found.
    */
   public getCodeShape(code: number, size: number): ShxTextShape | undefined {
-    const cacheKey = `${code}_${size}`
+    const quantizedSize = ShxFont.quantizeSize(size)
+    const cacheKey = `${code}_${quantizedSize}`
     const cached = this.layoutShapeCache.get(cacheKey)
     if (cached) {
       return cached
     }
 
-    const layout = this.font.getLayoutCharShape(code, size)
+    const layout = this.font.getLayoutCharShape(code, quantizedSize)
     if (!layout || !ShxFont.hasRenderableStrokes(layout)) {
       return undefined
     }
 
-    const shape = new ShxTextShape(code, size, layout, this)
+    const shape = new ShxTextShape(code, quantizedSize, layout, this)
     this.layoutShapeCache.set(cacheKey, shape)
     return shape
+  }
+
+  /**
+   * Snaps near-equal heights so layout/geometry cache keys hit across float noise.
+   */
+  private static quantizeSize(size: number): number {
+    if (!Number.isFinite(size)) {
+      return size
+    }
+    return Math.round(size * 1e6) / 1e6
   }
 
   /**
@@ -244,9 +260,7 @@ export class ShxFont extends BaseFont {
    * Clears layout/code caches and disposes retained shape geometries.
    */
   dispose(): void {
-    for (const shape of this.layoutShapeCache.values()) {
-      shape.dispose()
-    }
+    // LRU onEvict disposes each shape; avoid disposing twice before clear.
     this.layoutShapeCache.clear()
     this.codeCache.clear()
     super.dispose()
