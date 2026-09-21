@@ -672,8 +672,11 @@ describe('MTextProcessor format state', () => {
     expect(chars).not.toContain('\n')
     const lines = getLineLayouts(obj)
     expect(lines).toHaveLength(2)
-    expect(lines[0].height).toBeCloseTo(processor.currentLineHeight, 3)
-    expect(lines[1].height).toBeCloseTo(processor.currentLineHeight, 3)
+    // 0.5 × 5/3 × 24 = 20. Default style is At Least, which must not raise
+    // uniform text up to single spacing.
+    expect(lines[0].height).toBeCloseTo(20, 3)
+    expect(lines[1].height).toBeCloseTo(20, 3)
+    expect(lines[0].y - lines[1].y).toBeCloseTo(20, 3)
   })
 
   it('stores one line layout entry for single-line text', () => {
@@ -720,6 +723,98 @@ describe('MTextProcessor format state', () => {
     expect(lines[0].height).toBeCloseTo(40, 3)
     expect(lines[1].height).toBeCloseTo(40, 3)
     expect(lines[0].y - lines[1].y).toBeCloseTo(40, 3)
+  })
+
+  it('At Least style keeps compact factors for uniform text', () => {
+    const { processor } = createProcessor('mesh', {
+      lineSpaceFactor: 0.25,
+      lineSpaceStyle: 1
+    })
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'A' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_WORD, ctx: null, data: 'B' }
+    ] as any)
+    const lines = getLineLayouts(obj)
+
+    // Factor spacing is 0.25 × 5/3 × 24 = 10. At Least keeps that distance
+    // when every character is the nominal height.
+    expect(lines).toHaveLength(2)
+    expect(lines[0].height).toBeCloseTo(10, 3)
+    expect(lines[1].height).toBeCloseTo(10, 3)
+    expect(lines[0].y - lines[1].y).toBeCloseTo(10, 3)
+  })
+
+  it('Exact style keeps compact factor spacing even when characters would overlap', () => {
+    const { processor } = createProcessor('mesh', {
+      lineSpaceFactor: 0.25,
+      lineSpaceStyle: 2
+    })
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'A' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_WORD, ctx: null, data: 'B' }
+    ] as any)
+    const lines = getLineLayouts(obj)
+
+    expect(lines).toHaveLength(2)
+    expect(lines[0].height).toBeCloseTo(10, 3)
+    expect(lines[1].height).toBeCloseTo(10, 3)
+    expect(lines[0].y - lines[1].y).toBeCloseTo(10, 3)
+  })
+
+  it('treats omitted/zero lineSpaceStyle as At Least', () => {
+    const { processor } = createProcessor('mesh', {
+      lineSpaceFactor: 0.25,
+      lineSpaceStyle: 0
+    })
+
+    const obj = processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'A' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_WORD, ctx: null, data: 'B' }
+    ] as any)
+    const lines = getLineLayouts(obj)
+
+    expect(lines[0].y - lines[1].y).toBeCloseTo(10, 3)
+  })
+
+  it('At Least expands spacing only when a character is taller than the nominal height', () => {
+    const tokens = [
+      {
+        type: TOKEN_PROPERTIES_CHANGED,
+        ctx: null,
+        data: {
+          depth: 1,
+          command: 'H',
+          changes: { capHeight: { value: 2.5, isRelative: true } }
+        }
+      },
+      { type: TOKEN_WORD, ctx: null, data: 'A' },
+      { type: TOKEN_NEW_PARAGRAPH, ctx: null, data: null },
+      { type: TOKEN_WORD, ctx: null, data: 'B' }
+    ] as any
+
+    const atLeast = createProcessor('mesh', {
+      lineSpaceFactor: 2,
+      lineSpaceStyle: 1
+    }).processor
+    const atLeastLines = getLineLayouts(atLeast.processText(tokens))
+
+    // Nominal double spacing is 2 × 5/3 × 24 = 80. A 2.5× character needs
+    // single spacing of its own height (2.5 × 5/3 × 24 = 100).
+    expect(atLeastLines[0].height).toBeCloseTo(100, 3)
+    expect(atLeastLines[0].y - atLeastLines[1].y).toBeCloseTo(100, 3)
+
+    const exact = createProcessor('mesh', {
+      lineSpaceFactor: 2,
+      lineSpaceStyle: 2
+    }).processor
+    const exactLines = getLineLayouts(exact.processText(tokens))
+    expect(exactLines[0].height).toBeCloseTo(80, 3)
+    expect(exactLines[0].y - exactLines[1].y).toBeCloseTo(80, 3)
   })
 
   it('stores line layouts for explicit empty lines', () => {

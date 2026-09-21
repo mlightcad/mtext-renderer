@@ -77,6 +77,22 @@ export enum MTextAttachmentPoint {
 }
 
 /**
+ * AutoCAD MTEXT line spacing style (DXF group 73).
+ *
+ * - At Least: factor sets a minimum; taller characters on a line increase spacing
+ * - Exact: factor spacing is fixed even if characters overlap
+ *
+ * Omitted or `0` values are treated as {@link MTextLineSpacingStyle.AtLeast}
+ * (AutoCAD's default).
+ */
+export enum MTextLineSpacingStyle {
+  /** At least — taller characters override the factor-based minimum. */
+  AtLeast = 1,
+  /** Exact — fixed baseline spacing; tall characters may overlap. */
+  Exact = 2
+}
+
+/**
  * Logical text token with optional pick box information.
  *
  * Semantics by {@link CharBoxType}:
@@ -193,6 +209,11 @@ export interface MTextData {
    * Default is `1.0`.
    */
   lineSpaceFactor?: number
+  /**
+   * AutoCAD DXF group-73 line spacing style.
+   * `1` = At Least (default when omitted/`0`), `2` = Exact.
+   */
+  lineSpaceStyle?: MTextLineSpacingStyle | number
   /** The width scaling factor applied to each character. Default is 1.0 */
   widthFactor?: number
   /** Whether to collect per-character bounding boxes for picking. Default is true */

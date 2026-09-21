@@ -106,6 +106,28 @@ export class DefaultFontLoader implements FontLoader {
     if (fontNames == null || fontNames.length === 0) {
       return []
     }
+
+    // Fast path: every requested face is already in memory — skip catalog /
+    // IndexedDB entirely. Open-drawing awaits this per TEXT/MTEXT entity.
+    const alreadyLoadedFast: FontLoadStatus[] = []
+    let allLoaded = true
+    for (const font of fontNames) {
+      const lowerCaseFontName = font.toLowerCase()
+      if (FontManager.instance.isFontLoaded(lowerCaseFontName)) {
+        alreadyLoadedFast.push({
+          fontName: lowerCaseFontName,
+          url: '',
+          status: 'Success'
+        })
+      } else {
+        allLoaded = false
+        break
+      }
+    }
+    if (allLoaded) {
+      return alreadyLoadedFast
+    }
+
     await this.getAvailableFonts()
 
     // Stale HTTP-cached fonts.json can omit newly published faces (e.g. malgun).
@@ -122,6 +144,7 @@ export class DefaultFontLoader implements FontLoader {
     const alreadyLoadedStatuses: FontLoadStatus[] = []
     const fontsToLoad: FontInfo[] = []
     const requestedFontInfos = new Map<string, FontInfo>()
+    const seenFiles = new Set<string>()
     fontNames.forEach(font => {
       const lowerCaseFontName = font.toLowerCase()
       const fontInfo = this._avaiableFontMap.get(lowerCaseFontName)
@@ -133,12 +156,19 @@ export class DefaultFontLoader implements FontLoader {
             url: fontInfo.url,
             status: 'Success'
           })
+          return
         }
-        fontsToLoad.push(fontInfo)
+        const fileKey = fontInfo.file.toLowerCase()
+        if (!seenFiles.has(fileKey)) {
+          seenFiles.add(fileKey)
+          fontsToLoad.push(fontInfo)
+        }
       }
     })
     const newlyLoadedStatuses =
-      await FontManager.instance.loadFonts(fontsToLoad)
+      fontsToLoad.length > 0
+        ? await FontManager.instance.loadFonts(fontsToLoad)
+        : []
 
     // Merge and return statuses for all requested fonts, preserving order.
     // FontManager reports status by file name; alias requests need remapping.
