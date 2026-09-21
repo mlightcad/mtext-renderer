@@ -672,11 +672,11 @@ describe('MTextProcessor format state', () => {
     expect(chars).not.toContain('\n')
     const lines = getLineLayouts(obj)
     expect(lines).toHaveLength(2)
-    // 0.5 × 5/3 × 24 = 20. Default style is At Least, which must not raise
-    // uniform text up to single spacing.
-    expect(lines[0].height).toBeCloseTo(20, 3)
-    expect(lines[1].height).toBeCloseTo(20, 3)
-    expect(lines[0].y - lines[1].y).toBeCloseTo(20, 3)
+    // 0.5 × 5/3 × 24 = 20. At Least raises that to single spacing (5/3 × 24 = 40)
+    // so a compact factor does not stack the empty line onto the text.
+    expect(lines[0].height).toBeCloseTo(40, 3)
+    expect(lines[1].height).toBeCloseTo(40, 3)
+    expect(lines[0].y - lines[1].y).toBeCloseTo(40, 3)
   })
 
   it('stores one line layout entry for single-line text', () => {
@@ -725,7 +725,7 @@ describe('MTextProcessor format state', () => {
     expect(lines[0].y - lines[1].y).toBeCloseTo(40, 3)
   })
 
-  it('At Least style keeps compact factors for uniform text', () => {
+  it('At Least style prevents compact factors from stacking characters', () => {
     const { processor } = createProcessor('mesh', {
       lineSpaceFactor: 0.25,
       lineSpaceStyle: 1
@@ -738,12 +738,12 @@ describe('MTextProcessor format state', () => {
     ] as any)
     const lines = getLineLayouts(obj)
 
-    // Factor spacing is 0.25 × 5/3 × 24 = 10. At Least keeps that distance
-    // when every character is the nominal height.
+    // Factor spacing would be 0.25 × 5/3 × 24 = 10; At Least raises to
+    // single spacing of the line content (5/3 × 24 = 40).
     expect(lines).toHaveLength(2)
-    expect(lines[0].height).toBeCloseTo(10, 3)
-    expect(lines[1].height).toBeCloseTo(10, 3)
-    expect(lines[0].y - lines[1].y).toBeCloseTo(10, 3)
+    expect(lines[0].height).toBeCloseTo(40, 3)
+    expect(lines[1].height).toBeCloseTo(40, 3)
+    expect(lines[0].y - lines[1].y).toBeCloseTo(40, 3)
   })
 
   it('Exact style keeps compact factor spacing even when characters would overlap', () => {
@@ -778,7 +778,7 @@ describe('MTextProcessor format state', () => {
     ] as any)
     const lines = getLineLayouts(obj)
 
-    expect(lines[0].y - lines[1].y).toBeCloseTo(10, 3)
+    expect(lines[0].y - lines[1].y).toBeCloseTo(40, 3)
   })
 
   it('At Least expands spacing only when a character is taller than the nominal height', () => {

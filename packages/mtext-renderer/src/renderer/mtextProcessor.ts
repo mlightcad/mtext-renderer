@@ -479,9 +479,9 @@ export class MTextProcessor {
    *
    * Nominal spacing is `lineSpaceFactor × MTEXT height × 5/3`. Exact style
    * always uses that distance. At Least (DXF group 73 = 1, or omitted/`0`)
-   * uses it as a minimum and raises a line only when a character is taller
-   * than the nominal height — compact factors such as `0.25` still squash
-   * uniform text (AutoCAD's "squashed together" range).
+   * never goes below single spacing of the line's layout height, so a compact
+   * factor such as `0.25` does not stack glyphs. Taller characters on the line
+   * raise the floor further.
    */
   get currentLineHeight() {
     const factor = Math.max(this.defaultLineSpaceFactor, 0)
@@ -496,9 +496,6 @@ export class MTextProcessor {
       this._maxLayoutFontSize > 0
         ? this._maxLayoutFontSize
         : this.currentLayoutFontSize
-    if (contentHeight <= nominalHeight) {
-      return factorSpacing
-    }
     return Math.max(factorSpacing, contentHeight * LINE_SPACING_SCALE_FACTOR)
   }
 
@@ -530,11 +527,28 @@ export class MTextProcessor {
 
   /** Horizontal advance for one space, including tracking and width factor. */
   get currentBlankAdvance() {
-    return (
-      this._currentContext.blankWidth *
-      this.currentWordSpace *
-      this.currentWidthFactor
-    )
+    return this.penAdvance(this._currentContext.blankWidth)
+  }
+
+  /**
+   * Horizontal pen advance for a glyph (or space) width.
+   *
+   * AutoCAD MTEXT tracking (`\T`) adjusts the space *between* characters: 1.0 is
+   * normal. Multiplying the full advance by the tracking factor over-spaces CJK
+   * ideographs (full-em cells) and forces early soft wraps. Instead, apply width
+   * factor to the glyph advance, then add `(tracking - 1) × textHeight × widthFactor`.
+   *
+   * @param shapeWidth - Unscaled glyph/space advance from the font.
+   * @param obliqueExtraAdvance - Extra advance from oblique shear, if any.
+   */
+  private penAdvance(shapeWidth: number, obliqueExtraAdvance = 0) {
+    const widthFactor = this.currentWidthFactor
+    const base = (shapeWidth + obliqueExtraAdvance) * widthFactor
+    const tracking = this.currentWordSpace
+    if (tracking === 1) {
+      return base
+    }
+    return base + (tracking - 1) * this.currentLayoutFontSize * widthFactor
   }
 
   /**
@@ -1436,8 +1450,7 @@ export class MTextProcessor {
         ) {
           wordWidth += shape.width * this.currentWidthFactor
         } else {
-          wordWidth +=
-            shape.width * this.currentWordSpace * this.currentWidthFactor
+          wordWidth += this.penAdvance(shape.width)
         }
       } else {
         wordWidth += this.currentBlankAdvance
@@ -1998,9 +2011,10 @@ export class MTextProcessor {
     ) {
       this._hOffset += horizontalAdvance
     } else {
-      this._hOffset +=
-        shape.width * this.currentWordSpace * this.currentWidthFactor +
-        obliqueExtraAdvance * this.currentWidthFactor
+      this._hOffset += this.penAdvance(
+        shape.width,
+        obliqueExtraAdvance
+      )
     }
     this._lineHasRenderableChar = true
 
