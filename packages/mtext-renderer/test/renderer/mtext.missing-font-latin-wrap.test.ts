@@ -79,9 +79,9 @@ describe('missing style font Latin wrap width', () => {
     expect(scale).toBeGreaterThan(1.2)
 
     const wrapWidth = 31.945271
-    // Capital-A SimSun scale (~1.43×) plus inter-character tracking (`\T1.1`) —
-    // not glyphWidth × tracking. Measured under current penAdvance semantics.
-    const expectedExtents = 30.553818
+    // Capital-A SimSun scale (~1.43×) plus inter-character tracking (`\T1.1`)
+    // scaled by 1/fontScale (tied to MTEXT height, not inflated outlines).
+    const expectedExtents = 29.470463
 
     const unconstrained = new MText(
       {
