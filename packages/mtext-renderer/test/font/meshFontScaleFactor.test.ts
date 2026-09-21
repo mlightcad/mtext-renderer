@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  CJK_LATIN_SCALE_INFLATION_THRESHOLD,
-  computeMeshFontScaleFactor
-} from '../../src/font/meshFontScaleFactor'
+import { computeMeshFontScaleFactor } from '../../src/font/meshFontScaleFactor'
 
 describe('computeMeshFontScaleFactor', () => {
   it('uses Latin capital height for Western-only fonts', () => {
@@ -12,43 +9,37 @@ describe('computeMeshFontScaleFactor', () => {
       charToGlyphIndex: (char: string) => (char === 'A' ? 36 : 0),
       charToGlyph: (char: string) => {
         if (char === 'A') return { yMax: 700, advanceWidth: 600 }
-        // opentype.js returns .notdef (index 0) for missing glyphs
         return { yMax: 800, advanceWidth: 1000 }
       }
     })
     expect(scale).toBeCloseTo(1000 / 700)
   })
 
-  it('ignores .notdef CJK probes on Western fonts with full-em notdef advance', () => {
-    const latinScale = 1000 / 700
-    expect(latinScale).toBeGreaterThan(CJK_LATIN_SCALE_INFLATION_THRESHOLD)
+  it('ignores .notdef for missing Latin A', () => {
     const scale = computeMeshFontScaleFactor({
       unitsPerEm: 1000,
-      charToGlyphIndex: (char: string) => (char === 'A' ? 36 : 0),
-      charToGlyph: (char: string) => {
-        if (char === 'A') return { yMax: 700, advanceWidth: 600 }
-        return { yMax: 800, advanceWidth: 1000 }
-      }
+      charToGlyphIndex: () => 0,
+      charToGlyph: () => ({ yMax: 800, advanceWidth: 1000 })
     })
-    expect(scale).toBeCloseTo(latinScale)
+    expect(scale).toBe(1)
   })
 
-  it('returns 1 for CJK fonts where Latin scale would inflate advances', () => {
-    const latinScale = 1000 / 683
-    expect(latinScale).toBeGreaterThan(CJK_LATIN_SCALE_INFLATION_THRESHOLD)
+  it('uses Latin capital height for CJK faces too', () => {
+    // SimSun-like: em 256, A.yMax 179. Em-square scale (1) under-sizes
+    // advances and delays soft wraps versus AutoCAD.
     const scale = computeMeshFontScaleFactor({
-      unitsPerEm: 1000,
+      unitsPerEm: 256,
       charToGlyphIndex: (char: string) => {
         if (char === 'A') return 36
         if (char === '国') return 9726
         return 0
       },
       charToGlyph: (char: string) => {
-        if (char === 'A') return { yMax: 683, advanceWidth: 600 }
-        if (char === '国') return { yMax: 880, advanceWidth: 1000 }
+        if (char === 'A') return { yMax: 179, advanceWidth: 128 }
+        if (char === '国') return { yMax: 207, advanceWidth: 256 }
         return undefined
       }
     })
-    expect(scale).toBe(1)
+    expect(scale).toBeCloseTo(256 / 179)
   })
 })

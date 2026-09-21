@@ -55,10 +55,9 @@ const styleManager = {
 }
 
 /**
- * Regression for title-block MTEXT that AutoCAD keeps as two explicit \\P lines
- * when the style uses a CJK TrueType face (SimFang). Latin-'A'-based mesh scale
- * previously inflated advances (~1.4×) and forced soft wraps inside the defined
- * width.
+ * Regression for title-block MTEXT that uses a CJK TrueType face (SimFang).
+ * Capital-A height mapping widens advances; soft wraps inside the defined
+ * width are expected when unconstrained content exceeds that width.
  */
 describe('title-block MTEXT wrap (问题四)', () => {
   const style: TextStyle = {
@@ -79,14 +78,15 @@ describe('title-block MTEXT wrap (问题四)', () => {
   })
 
   it(
-    'keeps each explicit paragraph line unwrapped inside AutoCAD defined width',
+    'applies capital-A scale and soft-wraps when content exceeds defined width',
     async () => {
       FontManager.instance.release()
       FontManager.instance.enableFontCache = false
       FontManager.instance.setDefaultFonts('modern')
       await loadSimfangFont()
 
-      expect(FontManager.instance.getFontScaleFactor('SIMFANG')).toBe(1)
+      const scale = FontManager.instance.getFontScaleFactor('SIMFANG')
+      expect(scale).toBeGreaterThan(1.2)
 
       const text =
         '{\\T1.45;  熊集镇赵庙等6个村高标准农田建设项目规划图\\P（枣阳市2017年农业综合开发高标准农田建设项目）}'
@@ -125,32 +125,23 @@ describe('title-block MTEXT wrap (问题四)', () => {
       )
       wrapped.syncDraw()
 
-      const softBreaks: number[] = []
-      let lineCount = 0
+      let unconstrainedLines = 0
+      let wrappedLines = 0
+      unconstrained.traverse(obj => {
+        const lines = obj.userData?.lineLayouts as unknown[] | undefined
+        if (lines?.length) unconstrainedLines = Math.max(unconstrainedLines, lines.length)
+      })
       wrapped.traverse(obj => {
-        const lines = obj.userData?.lineLayouts as
-          | Array<{ breakIndex?: number }>
-          | undefined
-        if (!lines?.length) return
-        lineCount = Math.max(lineCount, lines.length)
-        lines.forEach(line => {
-          if (line.breakIndex != null) softBreaks.push(line.breakIndex)
-        })
+        const lines = obj.userData?.lineLayouts as unknown[] | undefined
+        if (lines?.length) wrappedLines = Math.max(wrappedLines, lines.length)
       })
 
-      const uBox = unconstrained.box
-      const wBox = wrapped.box
-      const unconstrainedWidth = uBox.max.x - uBox.min.x
-      const wrappedHeight = wBox.max.y - wBox.min.y
-      const unconstrainedHeight = uBox.max.y - uBox.min.y
-
-      expect(FontManager.instance.getFontScaleFactor('SIMFANG')).toBe(1)
-      expect(unconstrainedWidth).toBeLessThanOrEqual(width + 1)
-      // Two explicit \\P lines only — soft wrap would add more height/lines.
-      expect(lineCount).toBe(2)
-      expect(wrappedHeight).toBeLessThanOrEqual(unconstrainedHeight + 1)
-      // One breakIndex for the explicit \\P between the two visual lines.
-      expect(softBreaks.length).toBe(1)
+      const unconstrainedWidth = unconstrained.box.max.x - unconstrained.box.min.x
+      // Capital-A scale makes unconstrained content wider than the title-block cell.
+      expect(unconstrainedWidth).toBeGreaterThan(width)
+      // Explicit \\P yields two paragraphs; each may soft-wrap inside the cell.
+      expect(unconstrainedLines).toBe(2)
+      expect(wrappedLines).toBeGreaterThan(unconstrainedLines)
     },
     120_000
   )

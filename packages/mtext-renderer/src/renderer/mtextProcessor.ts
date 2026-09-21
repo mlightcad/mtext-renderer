@@ -271,6 +271,12 @@ export class MTextProcessor {
   private _currentLeftMargin: number = 0
   /** Current paragraph right margin in drawing units. */
   private _currentRightMargin: number = 0
+  /**
+   * When true, {@link processChar} will not soft-wrap even if the pen is past the
+   * defined width. Used while finishing a short word that AutoCAD keeps on the
+   * current line with a slight overhang.
+   */
+  private _suppressSoftWrap: boolean = false
 
   /**
    * Construct one instance of this class and initialize some properties with default values.
@@ -479,9 +485,9 @@ export class MTextProcessor {
    *
    * Nominal spacing is `lineSpaceFactor × MTEXT height × 5/3`. Exact style
    * always uses that distance. At Least (DXF group 73 = 1, or omitted/`0`)
-   * uses it as a minimum and raises a line only when a character is taller
-   * than the nominal height — compact factors such as `0.25` still squash
-   * uniform text (AutoCAD's "squashed together" range).
+   * never goes below single spacing of the line's layout height, so a compact
+   * factor such as `0.25` does not stack glyphs. Taller characters on the line
+   * raise the floor further.
    */
   get currentLineHeight() {
     const factor = Math.max(this.defaultLineSpaceFactor, 0)
@@ -496,9 +502,6 @@ export class MTextProcessor {
       this._maxLayoutFontSize > 0
         ? this._maxLayoutFontSize
         : this.currentLayoutFontSize
-    if (contentHeight <= nominalHeight) {
-      return factorSpacing
-    }
     return Math.max(factorSpacing, contentHeight * LINE_SPACING_SCALE_FACTOR)
   }
 
@@ -514,8 +517,8 @@ export class MTextProcessor {
   /**
    * The current space setting between two characters. The meaning of this value is as follows.
    * - 1: no extra spacing (default tracking)
-   * - 1.2: increases spacing by 20% of the text height
-   * - 0.8: decreases spacing by 20% of the text height
+   * - 1.2: increases spacing by 20% of (text height × width factor / font scale)
+   * - 0.8: decreases spacing by 20% of that same base
    */
   get currentWordSpace() {
     return this._currentContext.charTrackingFactor.value
@@ -530,10 +533,35 @@ export class MTextProcessor {
 
   /** Horizontal advance for one space, including tracking and width factor. */
   get currentBlankAdvance() {
+    return this.penAdvance(this._currentContext.blankWidth)
+  }
+
+  /**
+   * Horizontal pen advance for a glyph (or space) width.
+   *
+   * AutoCAD MTEXT tracking (`\T`) adjusts the space *between* characters: 1.0 is
+   * normal. Multiplying the full advance by the tracking factor over-spaces CJK
+   * ideographs (full-em cells) and forces early soft wraps. Instead, apply width
+   * factor to the glyph advance, then add
+   * `(tracking - 1) × textHeight × widthFactor / fontScaleFactor`.
+   *
+   * Dividing by the TrueType capital-A scale keeps tracking tied to the MTEXT
+   * text height rather than the inflated outline size used for glyph advances.
+   *
+   * @param shapeWidth - Unscaled glyph/space advance from the font.
+   * @param obliqueExtraAdvance - Extra advance from oblique shear, if any.
+   */
+  private penAdvance(shapeWidth: number, obliqueExtraAdvance = 0) {
+    const widthFactor = this.currentWidthFactor
+    const base = (shapeWidth + obliqueExtraAdvance) * widthFactor
+    const tracking = this.currentWordSpace
+    if (tracking === 1) {
+      return base
+    }
+    const fontScale = this._currentContext.fontScaleFactor || 1
     return (
-      this._currentContext.blankWidth *
-      this.currentWordSpace *
-      this.currentWidthFactor
+      base +
+      ((tracking - 1) * this.currentLayoutFontSize * widthFactor) / fontScale
     )
   }
 
@@ -1405,7 +1433,27 @@ export class MTextProcessor {
   }
 
   /**
+   * True when every code point is in Basic Latin / Latin-1 (drawing numbers,
+   * hyphens, etc.). CJK and other scripts soft-wrap between characters.
+   */
+  private isLatinAsciiRun(word: string): boolean {
+    for (const ch of word) {
+      const code = ch.codePointAt(0) ?? 0
+      if (code >= 0x0100) {
+        return false
+      }
+    }
+    return word.length > 0
+  }
+
+  /**
    * Lays out and renders one parser word token, breaking to a new visual line when needed.
+   *
+   * - CJK / non-Latin: no whole-word wrap — {@link processChar} breaks between
+   *   characters when the next glyph would not fit in the defined width.
+   * - Latin/ASCII: keep Western word wrapping, except a short run that only
+   *   slightly overshoots after CJK (e.g. `秘密-FJP-898E-G`) may stay on the
+   *   current line with a small overhang (AutoCAD).
    *
    * @param word Character sequence for a single word token.
    * @param geometries Mesh geometry accumulator for the active style segment.
@@ -1422,6 +1470,7 @@ export class MTextProcessor {
   ) {
     const resolvedChars: Array<{ char: string; shape?: BaseTextShape }> = []
     let wordWidth = 0
+    const isLatinRun = this.isLatinAsciiRun(word)
 
     // Iterate by Unicode code point so supplementary-plane characters (e.g. 😀)
     // are not split into UTF-16 surrogate halves.
@@ -1436,31 +1485,55 @@ export class MTextProcessor {
         ) {
           wordWidth += shape.width * this.currentWidthFactor
         } else {
-          wordWidth +=
-            shape.width * this.currentWordSpace * this.currentWidthFactor
+          wordWidth += this.penAdvance(shape.width)
         }
       } else {
         wordWidth += this.currentBlankAdvance
       }
     }
 
-    if (this.hOffset + wordWidth > (this.maxLineWidth || Infinity)) {
-      if (this._vOffset <= 0 && this._currentLineObjects.length <= 0) {
-        // Do nothing
-      } else {
+    const maxWidth = this.maxLineWidth || Infinity
+    let keepOnLineWithOverhang = false
+    if (
+      isLatinRun &&
+      this.hOffset + wordWidth > maxWidth &&
+      this.hOffset > 0
+    ) {
+      const overflow = this.hOffset + wordWidth - maxWidth
+      const allowOverflow =
+        this.currentLayoutFontSize * this.currentWidthFactor * 2
+      if (
+        overflow > 0 &&
+        overflow <= allowOverflow &&
+        wordWidth <= maxWidth
+      ) {
+        // Short Latin run after CJK: keep on this line (slight overhang OK).
+        keepOnLineWithOverhang = true
+      } else if (wordWidth <= maxWidth) {
+        // Western word wrap: move the whole token to the next line.
         this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
         this.advanceToNextLine(false)
       }
+      // Word wider than the full line: fall through to per-character breaks.
     }
 
-    for (const { char } of resolvedChars) {
-      this.processChar(
-        char,
-        geometries,
-        lineGeometries,
-        meshCharBoxes,
-        lineCharBoxes
-      )
+    if (keepOnLineWithOverhang) {
+      this._suppressSoftWrap = true
+    }
+    try {
+      for (const { char } of resolvedChars) {
+        this.processChar(
+          char,
+          geometries,
+          lineGeometries,
+          meshCharBoxes,
+          lineCharBoxes
+        )
+      }
+    } finally {
+      if (keepOnLineWithOverhang) {
+        this._suppressSoftWrap = false
+      }
     }
   }
 
@@ -1929,8 +2002,10 @@ export class MTextProcessor {
   /**
    * Renders one character glyph, including decorations and line-break handling.
    *
-   * Missing glyphs are treated as spaces. When the pen exceeds {@link maxLineWidth},
-   * a visual line break is recorded before placement.
+   * Missing glyphs are treated as spaces. Soft wrap is decided before placement:
+   * if the glyph's advance would not fit in the remaining defined width, break
+   * first (CJK may break between any two characters). The first glyph on an
+   * empty line is always placed even when wider than the box.
    *
    * @param char Character to render.
    * @param geometries Mesh geometry accumulator.
@@ -1960,7 +2035,21 @@ export class MTextProcessor {
       this.applyPendingEmptyLineYAdjust()
     }
 
-    if (this.hOffset > (this.maxLineWidth || Infinity)) {
+    const maxWidth = this.maxLineWidth || Infinity
+    const isDistributed =
+      this.currentHorizontalAlignment == MTextParagraphAlignment.DISTRIBUTED
+    // Advance without oblique shear — enough to decide soft wrap; shear is
+    // applied again when committing the pen below.
+    const wrapAdvance = isDistributed
+      ? shape.width * this.currentWidthFactor
+      : this.penAdvance(shape.width)
+
+    if (
+      !this._suppressSoftWrap &&
+      Number.isFinite(maxWidth) &&
+      this.hOffset > 0 &&
+      this.hOffset + wrapAdvance > maxWidth
+    ) {
       this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
       this.advanceToNextLine(false)
     }
@@ -1990,17 +2079,12 @@ export class MTextProcessor {
       lineCharBoxes
     )
 
-    const horizontalAdvance =
-      shape.width * this.currentWidthFactor +
-      obliqueExtraAdvance * this.currentWidthFactor
-    if (
-      this.currentHorizontalAlignment == MTextParagraphAlignment.DISTRIBUTED
-    ) {
-      this._hOffset += horizontalAdvance
-    } else {
+    if (isDistributed) {
       this._hOffset +=
-        shape.width * this.currentWordSpace * this.currentWidthFactor +
+        shape.width * this.currentWidthFactor +
         obliqueExtraAdvance * this.currentWidthFactor
+    } else {
+      this._hOffset += this.penAdvance(shape.width, obliqueExtraAdvance)
     }
     this._lineHasRenderableChar = true
 

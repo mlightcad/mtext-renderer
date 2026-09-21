@@ -79,14 +79,15 @@ export enum MTextAttachmentPoint {
 /**
  * AutoCAD MTEXT line spacing style (DXF group 73).
  *
- * - At Least: factor sets a minimum; taller characters on a line increase spacing
+ * - At Least: never below single spacing of the line's layout height; factors
+ *   above 1.0 raise that floor, and taller characters raise it further
  * - Exact: factor spacing is fixed even if characters overlap
  *
  * Omitted or `0` values are treated as {@link MTextLineSpacingStyle.AtLeast}
  * (AutoCAD's default).
  */
 export enum MTextLineSpacingStyle {
-  /** At least — taller characters override the factor-based minimum. */
+  /** At least — floor at single spacing of content; taller glyphs raise further. */
   AtLeast = 1,
   /** Exact — fixed baseline spacing; tall characters may overlap. */
   Exact = 2
