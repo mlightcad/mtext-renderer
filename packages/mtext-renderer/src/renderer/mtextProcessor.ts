@@ -51,6 +51,27 @@ const _translateMatrix = /*@__PURE__*/ new THREE.Matrix4()
 const _charBox = /*@__PURE__*/ new THREE.Box3()
 
 /**
+ * Splits an inline `\f` / `\F` family into a primary face and an optional big font.
+ *
+ * AutoCAD writes SHX pairs as `\Ftssdeng,hztxt|c134;`. A name without a comma
+ * is a single face and replaces the big font as well.
+ */
+function splitInlineFontFamily(family: string | undefined): {
+  primary: string
+  bigFont?: string
+} {
+  const raw = family ?? ''
+  const comma = raw.indexOf(',')
+  if (comma < 0) {
+    return { primary: raw.trim() }
+  }
+  return {
+    primary: raw.slice(0, comma).trim(),
+    bigFont: raw.slice(comma + 1).trim()
+  }
+}
+
+/**
  * Options for formatting MText.
  */
 export interface MTextFormatOptions {
@@ -136,6 +157,15 @@ class RenderContext extends MTextContext {
   blankWidth: number = 0
 
   /**
+   * Inline big-font override from an `\f` / `\F` command.
+   *
+   * `undefined` keeps the text style big font. An empty string means the
+   * active face has no big font, which is what AutoCAD does when a command
+   * names a single font (for example a TrueType symbol face).
+   */
+  bigFont?: string
+
+  /**
    * Creates a new RenderContext instance with optional initial values.
    * @param init - Partial object containing initial values for context properties
    */
@@ -169,6 +199,7 @@ class RenderContext extends MTextContext {
     copy.fontSize = this.fontSize
     copy.fontSizeScaleFactor = this.fontSizeScaleFactor
     copy.blankWidth = this.blankWidth
+    copy.bigFont = this.bigFont
 
     return copy
   }
@@ -704,8 +735,11 @@ export class MTextProcessor {
    * @param changes Full property snapshot to apply to the current render context.
    */
   private applyPropertyChanges(changes: ChangedProperties['changes']) {
-    this.applyFontFaceChange(changes.fontFace)
-    this.applyColorCommandChanges(changes)
+    // The context stack has already been popped to the outer group. Do not
+    // re-derive the inline big font from a comma-less family: the parser's
+    // initial context stores only the style primary name.
+    this.applyFontFaceChange(changes.fontFace, false)
+    this.applyColorSnapshotChanges(changes)
     this.applyWidthFactorChange(changes.widthFactor)
     this.applyCapHeightChange(changes.capHeight)
     this.applyCharTrackingChange(changes.charTrackingFactor)
@@ -729,12 +763,25 @@ export class MTextProcessor {
    * Apply a font face change to the current render context, including
    * derived bold/italic/oblique settings based on font type.
    * @param fontFace The font face change data from the parser.
+   * @param updateInlineBigFont When false, a comma-less family keeps the big
+   * font already restored by the context stack. Used for `{}` snapshots.
    */
   private applyFontFaceChange(
-    fontFace: ChangedProperties['changes']['fontFace']
+    fontFace: ChangedProperties['changes']['fontFace'],
+    updateInlineBigFont = true
   ) {
     if (!fontFace) return
-    this.changeFont(fontFace.family)
+    const { primary, bigFont } = splitInlineFontFamily(fontFace.family)
+    const useStyleFont = primary.length === 0
+    this.changeFont(useStyleFont ? this.textStyle.font : primary)
+    // `\Ftssdeng,hztxt` restores the SHX pair. `\fSJQY` is a single face and
+    // must not keep the style big font, or the following run stays on it.
+    // An empty family is the `{}` restore back to the text style.
+    // A restore of a non-empty single name (the style primary, or an outer
+    // `\fArial`) keeps the big font already restored by the context stack.
+    if (updateInlineBigFont || useStyleFont || bigFont !== undefined) {
+      this._currentContext.bigFont = useStyleFont ? undefined : (bigFont ?? '')
+    }
     const fontType = this.fontManager.getFontType(
       this._currentContext.fontFace.family
     )
@@ -760,13 +807,11 @@ export class MTextProcessor {
    */
   private applyColorCommandChanges(changes: ChangedProperties['changes']) {
     if (changes.aci !== undefined && changes.aci !== null) {
-      if (changes.aci === 0) {
-        this._currentContext.setColorFromHex(this._options.byBlockColor)
-      } else if (changes.aci === 256) {
-        this._currentContext.setColorFromHex(this._options.byLayerColor)
-      } else {
-        this._currentContext.color.aci = changes.aci
-      }
+      // Keep ACI 0 (ByBlock) and 256 (ByLayer) symbolic. Baking them to the
+      // entity RGB makes `\C256` / `\C0` inherit an explicit entity colour
+      // (for example ACI 4 cyan) instead of the layer or block colour, and
+      // the next `\C7` then has to fight that baked RGB.
+      this._currentContext.color.aci = changes.aci
     } else if (changes.rgb) {
       this._currentContext.color.rgb = changes.rgb
     }
@@ -779,19 +824,12 @@ export class MTextProcessor {
    */
   private applyColorSnapshotChanges(changes: ChangedProperties['changes']) {
     if (changes.aci !== undefined) {
-      if (changes.aci === null) {
-        this._currentContext.color.aci = null
-      } else if (changes.aci === 0) {
-        this._currentContext.setColorFromHex(this._options.byBlockColor)
-      } else if (changes.aci === 256) {
-        this._currentContext.setColorFromHex(this._options.byLayerColor)
-      } else {
-        this._currentContext.color.aci = changes.aci
-      }
+      this._currentContext.color.aci = changes.aci
     }
 
     if (changes.rgb !== undefined) {
-      // rgb can be null to indicate switching back to ACI-based color
+      // rgb can be null to indicate switching back to ACI-based color.
+      // Apply it after ACI so a null RGB does not clear the restored index.
       this._currentContext.color.rgb = changes.rgb
     }
   }
@@ -2238,7 +2276,11 @@ export class MTextProcessor {
     char: string
   ): { shape: BaseTextShape; sourceFont: string } | undefined {
     const primaryFont = this.currentFont
-    const bigFont = this.textStyle.bigFont?.trim()
+    const bigFont = (
+      this._currentContext.bigFont !== undefined
+        ? this._currentContext.bigFont
+        : this.textStyle.bigFont
+    )?.trim()
     let shape: BaseTextShape | undefined
     let sourceFont = primaryFont
 

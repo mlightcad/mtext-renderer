@@ -139,7 +139,8 @@ export class MText extends THREE.Object3D {
    *
    * @param mtext - The MText string to analyze for font names
    * @param removeExtension - Whether to remove font file extensions (e.g., .ttf, .shx) from font names. Defaults to false.
-   * @returns A Set containing all unique font names found in the MText string, converted to lowercase
+   * @returns A Set containing all unique font names found in the MText string, converted to lowercase.
+   * SHX pairs such as `\Ftssdeng,hztxt|c134;` contribute both the primary face and the big font.
    * @example
    * ```ts
    * const mtext = "\\fArial.ttf|Hello\\fTimes New Roman.otf|World";
@@ -148,7 +149,21 @@ export class MText extends THREE.Object3D {
    * ```
    */
   static getFonts(mtext: string, removeExtension: boolean = false) {
-    return getFonts(mtext, removeExtension)
+    const fonts = new Set<string>()
+    // Strip extensions after splitting. The parser removes only the suffix of
+    // the whole `\f` name, so `\Ftssdeng.shx,hztxt.shx` would otherwise keep
+    // `.shx` on the primary face.
+    for (const name of getFonts(mtext, false)) {
+      for (const part of name.split(',')) {
+        let trimmed = part.trim()
+        if (!trimmed) continue
+        if (removeExtension) {
+          trimmed = trimmed.replace(/\.(ttf|otf|woff|shx)$/i, '')
+        }
+        fonts.add(trimmed)
+      }
+    }
+    return fonts
   }
 
   /**
@@ -692,6 +707,7 @@ export class MText extends THREE.Object3D {
     }
 
     const context = new MTextContext()
+    context.color = this._colorSettings.color.copy()
     context.fontFace.family = this.fontManager
       .findAndReplaceFont(style.font)
       .toLowerCase()
