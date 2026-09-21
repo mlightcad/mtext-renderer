@@ -411,46 +411,75 @@ describe('DefaultFontLoader', () => {
 
     const statuses = await loader.load(['old'])
 
+    expect(fetch).not.toHaveBeenCalled()
+    expect(FontManager.instance.loadFonts).not.toHaveBeenCalled()
     expect(statuses).toEqual([
       {
         fontName: 'old',
-        url: 'https://cdn.example.com/fonts/old.shx',
+        url: '',
         status: 'Success'
       }
     ])
   })
 
   it('loads fonts from IndexedDB cache when they are missing from the remote repository', async () => {
-    vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([
-      {
-        fontName: 'old',
-        url: 'https://cdn.example.com/fonts/old.shx',
-        status: 'Success'
-      }
-    ])
+    vi.mocked(FontManager.instance.isFontLoaded).mockReturnValue(false)
+    vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([])
     vi.mocked(FontManager.instance.loadFontFromCache).mockImplementation(
       async fontName => fontName.toLowerCase() === 'cachedfont'
     )
     const loader = new DefaultFontLoader()
     loader.baseUrl = 'https://cdn.example.com/fonts/'
 
-    const statuses = await loader.load(['old', 'CachedFont'])
+    const statuses = await loader.load(['CachedFont'])
 
     expect(FontManager.instance.loadFontFromCache).toHaveBeenCalledWith(
       'CachedFont'
     )
     expect(statuses).toEqual([
       {
-        fontName: 'old',
-        url: 'https://cdn.example.com/fonts/old.shx',
-        status: 'Success'
-      },
-      {
         fontName: 'cachedfont',
         url: '',
         status: 'Success'
       }
     ])
+  })
+
+  it('does not re-queue already-loaded catalog faces into loadFonts', async () => {
+    vi.mocked(FontManager.instance.isFontLoaded).mockImplementation(
+      name => name.toLowerCase() === 'old'
+    )
+    vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([
+      {
+        fontName: 'new',
+        url: 'https://cdn.example.com/fonts/new.shx',
+        status: 'Success'
+      }
+    ])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse([
+          ...oldFonts,
+          {
+            name: ['NewFont', 'new'],
+            file: 'new.shx',
+            type: 'shx',
+            url: ''
+          }
+        ])
+      )
+    )
+    const loader = new DefaultFontLoader()
+    loader.baseUrl = 'https://cdn.example.com/fonts/'
+
+    await loader.load(['old', 'new'])
+
+    expect(FontManager.instance.loadFonts).toHaveBeenCalledWith([
+      expect.objectContaining({ file: 'new.shx' })
+    ])
+    // Already-loaded 'old' must not be passed again.
+    expect(FontManager.instance.loadFonts.mock.calls[0]![0]).toHaveLength(1)
   })
 
   it('throws a contextual error when font metadata cannot be loaded', async () => {

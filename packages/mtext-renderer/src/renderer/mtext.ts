@@ -10,7 +10,7 @@ import * as THREE from 'three'
 
 import { FontManager } from '../font'
 import { buildCharBoxesFromObject } from './charBoxUtils'
-import { DEFAULT_LINE_SPACE_FACTOR } from './constants'
+import { DEFAULT_LINE_SPACE_FACTOR, DEFAULT_LINE_SPACE_STYLE } from './constants'
 import { resolveMTextWrapWidth } from './mtextDataUtils'
 import { MTextFormatOptions, MTextProcessor } from './mtextProcessor'
 import { expandPercentControlCodes } from './percentControlCodes'
@@ -25,6 +25,7 @@ import {
   MTextData,
   MTextFlowDirection,
   MTextLayout,
+  MTextLineSpacingStyle,
   Point2d,
   ShapeData,
   TextStyle
@@ -557,6 +558,7 @@ export class MText extends THREE.Object3D {
       fontSize: defaultFontSize,
       widthFactor: defaultWidthFactor,
       lineSpaceFactor: DEFAULT_LINE_SPACE_FACTOR,
+      lineSpaceStyle: DEFAULT_LINE_SPACE_STYLE,
       horizontalAlignment: MTextParagraphAlignment.LEFT,
       maxWidth: 0,
       flowDirection: MTextFlowDirection.BOTTOM_TO_TOP,
@@ -669,12 +671,17 @@ export class MText extends THREE.Object3D {
     const defaultWidthFactor = mtextData.widthFactor || style.widthFactor || 1.0
     const defaultLineSpaceFactor =
       mtextData.lineSpaceFactor ?? DEFAULT_LINE_SPACE_FACTOR
+    const defaultLineSpaceStyle =
+      mtextData.lineSpaceStyle === MTextLineSpacingStyle.Exact
+        ? MTextLineSpacingStyle.Exact
+        : DEFAULT_LINE_SPACE_STYLE
     const flowDirection =
       mtextData.drawingDirection ?? MTextFlowDirection.LEFT_TO_RIGHT
     const textLineFormatOptions: MTextFormatOptions = {
       fontSize: defaultFontSize,
       widthFactor: defaultWidthFactor,
       lineSpaceFactor: defaultLineSpaceFactor,
+      lineSpaceStyle: defaultLineSpaceStyle,
       horizontalAlignment: horizontalAlignment,
       maxWidth: maxWidth,
       flowDirection: flowDirection,

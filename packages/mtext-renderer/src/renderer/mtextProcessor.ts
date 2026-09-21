@@ -30,6 +30,7 @@ import {
   ColorSettings,
   LineLayout,
   MTextFlowDirection,
+  MTextLineSpacingStyle,
   STACK_DIVIDER_CHAR,
   TextStyle
 } from './types'
@@ -66,6 +67,11 @@ export interface MTextFormatOptions {
    * single spacing (`5/3` of text height). Default is `1.0`.
    */
   lineSpaceFactor: number
+  /**
+   * AutoCAD DXF group-73 line spacing style.
+   * `1` / omitted / `0` = At Least, `2` = Exact.
+   */
+  lineSpaceStyle?: number
   /**
    * The horizontal alignment.
    */
@@ -228,6 +234,11 @@ export class MTextProcessor {
   /** Largest font size encountered on the current visual line. */
   private _maxFontSize: number = 0
   /**
+   * Maximum drawing-space (layout) font size on the current line.
+   * Used by At Least line spacing so font glyph scale factors do not inflate the floor.
+   */
+  private _maxLayoutFontSize: number = 0
+  /**
    * The current horizontal alignment for the paragraph.
    *
    * In AutoCAD MText, paragraph-level formatting commands (such as \pqr, \pql, \pqc)
@@ -316,6 +327,7 @@ export class MTextProcessor {
     // Set initial oblique angle
     this._currentContext.oblique = style.obliqueAngle || 0
     this._maxFontSize = 0
+    this._maxLayoutFontSize = 0
     this._currentHorizontalAlignment = options.horizontalAlignment
     this._lastCharBoxTarget = undefined
     this._lineHasRenderableChar = false
@@ -413,6 +425,17 @@ export class MTextProcessor {
   }
 
   /**
+   * AutoCAD DXF group-73 line spacing style.
+   * Omitted/`0` values resolve to At Least (AutoCAD default).
+   */
+  get defaultLineSpaceStyle() {
+    const style = this._options.lineSpaceStyle
+    return style === MTextLineSpacingStyle.Exact
+      ? MTextLineSpacingStyle.Exact
+      : MTextLineSpacingStyle.AtLeast
+  }
+
+  /**
    * Font name of current character
    */
   get currentFont() {
@@ -450,16 +473,33 @@ export class MTextProcessor {
   /**
    * Baseline-to-baseline advance for the current line (AutoCAD MTEXT semantics).
    *
-   * Single spacing is `5/3` of the drawing-space text height; `lineSpaceFactor`
+   * Single spacing is `5/3` of the MTEXT text height; `lineSpaceFactor`
    * (DXF group 44) scales that distance. Font glyph scale factors must not
-   * affect this layout metric — use {@link currentLayoutFontSize}.
+   * affect this layout metric.
+   *
+   * Nominal spacing is `lineSpaceFactor × MTEXT height × 5/3`. Exact style
+   * always uses that distance. At Least (DXF group 73 = 1, or omitted/`0`)
+   * uses it as a minimum and raises a line only when a character is taller
+   * than the nominal height — compact factors such as `0.25` still squash
+   * uniform text (AutoCAD's "squashed together" range).
    */
   get currentLineHeight() {
-    return (
-      Math.max(this.defaultLineSpaceFactor, 0) *
-      this.currentLayoutFontSize *
-      LINE_SPACING_SCALE_FACTOR
-    )
+    const factor = Math.max(this.defaultLineSpaceFactor, 0)
+    const nominalHeight = this.defaultFontSize
+    const factorSpacing = factor * nominalHeight * LINE_SPACING_SCALE_FACTOR
+
+    if (this.defaultLineSpaceStyle === MTextLineSpacingStyle.Exact) {
+      return factorSpacing
+    }
+
+    const contentHeight =
+      this._maxLayoutFontSize > 0
+        ? this._maxLayoutFontSize
+        : this.currentLayoutFontSize
+    if (contentHeight <= nominalHeight) {
+      return factorSpacing
+    }
+    return Math.max(factorSpacing, contentHeight * LINE_SPACING_SCALE_FACTOR)
   }
 
   /**
@@ -916,6 +956,7 @@ export class MTextProcessor {
 
     this._totalHeight = this.currentLayoutFontSize
     this._maxFontSize = this.currentLayoutFontSize
+    this._maxLayoutFontSize = this.currentLayoutFontSize
     this._maxLineAdvance = advance
 
     const object = this.toThreeObject(
@@ -2091,6 +2132,9 @@ export class MTextProcessor {
         if (this.currentFontSize > this._maxFontSize) {
           this._maxFontSize = this.currentFontSize
         }
+        if (this.currentLayoutFontSize > this._maxLayoutFontSize) {
+          this._maxLayoutFontSize = this.currentLayoutFontSize
+        }
         return symbolShape
       }
     }
@@ -2175,6 +2219,9 @@ export class MTextProcessor {
     if (this.currentFontSize > this._maxFontSize) {
       this._maxFontSize = this.currentFontSize
     }
+    if (this.currentLayoutFontSize > this._maxLayoutFontSize) {
+      this._maxLayoutFontSize = this.currentLayoutFontSize
+    }
     return { shape, sourceFont }
   }
 
@@ -2236,6 +2283,7 @@ export class MTextProcessor {
     }
     // Reset maxFontSize for the new line
     this._maxFontSize = 0
+    this._maxLayoutFontSize = 0
     this._lineHasRenderableChar = false
   }
 

@@ -108,10 +108,18 @@ export class FontManager {
   /** In-flight {@link requestFont} promises keyed by normalized font name. */
   private fontRequestInFlight = new Map<string, Promise<FontLoadStatus[]>>()
   /**
-   * Fonts whose latest {@link requestFont} finished without registering the
-   * face. Prevents per-glyph retry storms until {@link release} clears state.
+   * Fonts whose latest {@link requestFont} failed to fetch or parse the face.
+   * Prevents per-glyph retry storms until {@link release} clears state.
+   * Catalog misses (`NotFound`) are not sticky — a later `fonts.json` refresh
+   * must still be able to resolve the name.
    */
   private fontRequestFailed = new Set<string>()
+  /**
+   * Names already confirmed absent from IndexedDB during this session.
+   * Repeated open-time MTEXT loads must not re-enter IndexedDB for the same miss.
+   * Cleared when the face is registered or {@link release} drops all fonts.
+   */
+  private fontCacheLookupMisses = new Set<string>()
   /**
    * Bumped by full {@link release} so in-flight loads that complete after a
    * release do not re-register fonts into a cleared manager.
@@ -339,6 +347,7 @@ export class FontManager {
         } else {
           // Sticky-fail only after a real fetch/parse failure. NotFound can
           // recover after fonts.json is refreshed (e.g. new CDN aliases).
+          // IndexedDB misses are cached separately so a retry stays cheap.
           const hardFail = statuses.some(s => s.status === 'FailedToLoad')
           if (hardFail) {
             this.fontRequestFailed.add(key)
@@ -507,11 +516,18 @@ export class FontManager {
     if (this.isFontLoaded(normalized)) {
       return true
     }
+    if (normalized && this.fontCacheLookupMisses.has(normalized)) {
+      return false
+    }
 
     const fontData = await FontCacheManager.instance.find(fontName)
     if (!fontData) {
+      if (normalized) {
+        this.fontCacheLookupMisses.add(normalized)
+      }
       return false
     }
+    this.fontCacheLookupMisses.delete(normalized)
 
     try {
       const font = FontFactory.instance.createFont(fontData)
@@ -1042,7 +1058,12 @@ export class FontManager {
     if (this.isFontLoaded(fontData.name)) {
       this.ensureCatalogAliases(fontName, catalogNames)
       this.clearRequestStateForNames([fontName, ...catalogNames])
-      await this.persistCatalogAliases(fontName, catalogNames)
+      // Do not await IndexedDB on the already-loaded hot path — thousands of
+      // open-time MTEXT awaits previously serialized on persistCatalogAliases.
+      void this.persistCatalogAliases(fontName, catalogNames).catch(() => {
+        // Alias persistence is best-effort. A failed write must not surface as
+        // an unhandled rejection on the already-loaded path.
+      })
       return
     }
 
@@ -1195,10 +1216,16 @@ export class FontManager {
    * Registers a loaded font under its primary name and all aliases.
    */
   private registerFontInMap(primaryName: string, font: BaseFont) {
-    this.loadedFontMap.set(primaryName.toLowerCase(), font)
-    font.names.forEach(name => {
-      this.loadedFontMap.set(name.toLowerCase(), font)
-    })
+    const register = (name: string) => {
+      const key = name.toLowerCase()
+      if (!key) {
+        return
+      }
+      this.loadedFontMap.set(key, font)
+      this.fontCacheLookupMisses.delete(key)
+    }
+    register(primaryName)
+    font.names.forEach(name => register(name))
   }
 
   /**
@@ -1236,6 +1263,7 @@ export class FontManager {
       this.loadedFontMap.clear()
       this.fontRequestInFlight.clear()
       this.fontRequestFailed.clear()
+      this.fontCacheLookupMisses.clear()
       this.missedFonts = {}
       this.loadEpoch++
       return true

@@ -747,6 +747,21 @@ describe('FontManager', () => {
     expect(loaded).toBe(false)
   })
 
+  it('does not repeat IndexedDB lookups for a confirmed cache miss', async () => {
+    vi.mocked(FontCacheManager.instance.find).mockResolvedValue(undefined)
+
+    expect(await FontManager.instance.loadFontFromCache('missing')).toBe(false)
+    expect(await FontManager.instance.loadFontFromCache('missing.shx')).toBe(
+      false
+    )
+
+    expect(FontCacheManager.instance.find).toHaveBeenCalledTimes(1)
+
+    FontManager.instance.release()
+    expect(await FontManager.instance.loadFontFromCache('missing')).toBe(false)
+    expect(FontCacheManager.instance.find).toHaveBeenCalledTimes(2)
+  })
+
   it('loads fonts from cache without requesting the font URL', async () => {
     const manager = FontManager.instance as any
     const font = createFakeFont({ names: new Set(['Romans']) })

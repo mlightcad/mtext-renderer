@@ -13,6 +13,13 @@ export const LINE_SPACING_SCALE_FACTOR = 5 / 3
 export const DEFAULT_LINE_SPACE_FACTOR = 1.0
 
 /**
+ * Default DXF group-73 line spacing style (AutoCAD "At Least").
+ *
+ * DXF may omit group 73 or write `0`; both mean At Least.
+ */
+export const DEFAULT_LINE_SPACE_STYLE = 1
+
+/**
  * Vertical compensation needed after switching normal glyph placement from
  * top-anchored to baseline-anchored coordinates.
  */
