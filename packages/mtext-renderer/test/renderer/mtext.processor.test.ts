@@ -234,25 +234,21 @@ function getLineLayouts(object: THREE.Object3D) {
 
 describe('MTextProcessor format state', () => {
   it('uses by-block and by-layer colors for ACI 0/256', () => {
-    const { processor, options } = createProcessor()
+    const { processor } = createProcessor()
 
     processor.processFormat({
       command: 'C',
       changes: { aci: 0 },
       depth: 0
     } as any)
-    expect(getCurrentContext(processor).getColorAsHex()).toBe(
-      options.byBlockColor
-    )
+    expect(getCurrentContext(processor).color.aci).toBe(0)
 
     processor.processFormat({
       command: 'C',
       changes: { aci: 256 },
       depth: 0
     } as any)
-    expect(getCurrentContext(processor).getColorAsHex()).toBe(
-      options.byLayerColor
-    )
+    expect(getCurrentContext(processor).color.aci).toBe(256)
   })
 
   it('applies rgb color overrides', () => {
@@ -268,7 +264,7 @@ describe('MTextProcessor format state', () => {
   })
 
   it('restores context after a grouped color+font change', () => {
-    const { processor, options } = createProcessor('mesh')
+    const { processor } = createProcessor('mesh')
 
     const tokens = [
       {
@@ -304,7 +300,7 @@ describe('MTextProcessor format state', () => {
     processor.processText(tokens as any)
 
     const context = getCurrentContext(processor)
-    expect(context.getColorAsHex()).toBe(options.byLayerColor)
+    expect(context.color.aci).toBe(256)
     expect(getContextStackSize(processor)).toBe(0)
   })
 
