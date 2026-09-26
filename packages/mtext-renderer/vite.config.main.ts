@@ -12,10 +12,14 @@ export default defineConfig({
       formats: ['es', 'umd']
     },
     rollupOptions: {
-      external: ['three'],
+      // Keep parser as a shared peer so host apps (and other libs like
+      // pdf-renderer) can dedupe a single @mlightcad/mtext-parser copy.
+      // The worker build still inlines it for a self-contained worker file.
+      external: ['three', '@mlightcad/mtext-parser'],
       output: {
         globals: {
-          three: 'THREE'
+          three: 'THREE',
+          '@mlightcad/mtext-parser': 'MTextParser'
         }
       }
     }
