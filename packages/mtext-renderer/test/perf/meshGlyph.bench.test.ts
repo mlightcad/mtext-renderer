@@ -7,12 +7,15 @@
  *
  * Run: `pnpm bench`
  */
+import * as THREE from 'three'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
+import { FontManager } from '../../src/font/fontManager'
 import { MeshFont } from '../../src/font/meshFont'
 import { MESH_GLYPH_CACHE_SIZE } from '../../src/font/meshGlyphGeometry'
+import { TextGeometryBuilder } from '../../src/font/textGeometryBuilder'
 import { MText } from '../../src/renderer/mtext'
-import { FontManager } from '../../src/font/fontManager'
 import {
   CJK_ANNOTATION_LINE,
   CJK_UNIQUE_CHARS,
@@ -141,6 +144,98 @@ describe('perf: mesh glyph geometry', () => {
       // Soft guard: remaining heights must stay cheap vs rebuilding each size.
       expect(extraSizesMs).toBeLessThan(firstSizeMs * 0.75)
       expect(allSizesMs).toBeLessThan(naiveAllSizesMs * 0.6)
+    },
+    180_000
+  )
+
+  it(
+    'keeps cold toGeometry near ShapeGeometry cost and batches placement',
+    async () => {
+      const chars = [...new Set(Array.from(CJK_UNIQUE_CHARS))]
+      for (const char of chars) {
+        simsun.getCharShape(char, SIZES[0]!)
+      }
+
+      const reference = measureMs(
+        () => {
+          for (const char of chars) {
+            const shapes = simsun.generateShapes(char, MESH_GLYPH_CACHE_SIZE)
+            const geometry = new THREE.ShapeGeometry(shapes, 4)
+            geometry.deleteAttribute('uv')
+            geometry.deleteAttribute('normal')
+            geometry.dispose()
+          }
+        },
+        { warmup: 1, runs: 3 }
+      )
+
+      const production = measureMs(
+        () => {
+          simsun.cache.dispose()
+          for (const char of chars) {
+            simsun.getCharShape(char, SIZES[0]!)?.toGeometry()
+          }
+        },
+        { warmup: 1, runs: 3 }
+      )
+
+      // mergeVertices used to cost more than ShapeGeometry itself. Baking
+      // position+index should stay in the same band as building the shape.
+      const coldRatio =
+        reference.medianMs > 0 ? production.medianMs / reference.medianMs : 0
+      expect(coldRatio).toBeLessThan(1.75)
+
+      for (const char of chars) {
+        simsun.getCharShape(char, SIZES[0]!)?.toGeometry()
+      }
+      const canonical = chars.map(
+        char => simsun.getCharShape(char, SIZES[0]!)!.toGeometry()
+      )
+      const copies = 40
+      const entries = []
+      for (let i = 0; i < chars.length * copies; i++) {
+        const matrix = new THREE.Matrix4().makeTranslation(i * 0.5, 0, 0)
+        entries.push({ geometry: canonical[i % canonical.length]!, matrix })
+      }
+
+      const batched = measureMs(
+        () => {
+          const merged = TextGeometryBuilder.mergeMeshGeometries(entries)
+          merged.dispose()
+        },
+        { warmup: 1, runs: 3 }
+      )
+      const cloned = measureMs(
+        () => {
+          const geoms = entries.map(entry => {
+            const geometry = entry.geometry.clone()
+            geometry.applyMatrix4(entry.matrix)
+            return geometry
+          })
+          const merged = mergeGeometries(geoms)
+          merged?.dispose()
+          for (const geometry of geoms) geometry.dispose()
+        },
+        { warmup: 1, runs: 3 }
+      )
+      const placeRatio =
+        cloned.medianMs > 0 ? batched.medianMs / cloned.medianMs : 0
+      expect(placeRatio).toBeLessThan(0.8)
+
+      await saveAndCompare('mesh-glyph-regression', [
+        {
+          name: 'cold_toGeometry_over_shapeGeometry',
+          value: coldRatio,
+          unit: '×',
+          note: 'lower is better; mergeVertices regression pushes this above ~2'
+        },
+        {
+          name: 'batched_place_over_clone_merge',
+          value: placeRatio,
+          unit: '×',
+          note: `${entries.length} glyph placements; lower is better`
+        }
+      ])
     },
     180_000
   )

@@ -7,12 +7,14 @@ import {
   TokenType
 } from '@mlightcad/mtext-parser'
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 import { getColorByIndex } from '../common'
 import { FontManager } from '../font'
 import { BaseTextShape } from '../font/baseTextShape'
-import { isMeshGlyphGeometry } from '../font/meshGlyphGeometry'
+import {
+  isMeshGlyphGeometry,
+  markMeshGlyphGeometry
+} from '../font/meshGlyphGeometry'
 import {
   TextGeometryBuilder,
   type TransformedLineGeometryEntry
@@ -296,6 +298,8 @@ export class MTextProcessor {
   private _processedCharCount: number
   /** Line glyph entries collected for batch geometry merge within a style segment. */
   private _lineBatchEntries: TransformedLineGeometryEntry[] = []
+  /** Mesh glyph entries collected for a single-pass triangle merge within a style segment. */
+  private _meshBatchEntries: TransformedLineGeometryEntry[] = []
   /** Current paragraph first-line indent in drawing units. */
   private _currentIndent: number = 0
   /** Current paragraph left margin in drawing units. */
@@ -1000,6 +1004,7 @@ export class MTextProcessor {
     }
 
     this._lineBatchEntries = []
+    this._meshBatchEntries = []
     const geometries: THREE.BufferGeometry[] = []
     const lineGeometries: THREE.BufferGeometry[] = []
     const meshCharBoxes: CharBox[] = []
@@ -1186,15 +1191,16 @@ export class MTextProcessor {
   /**
    * Appends one glyph's geometry to the active batch buffers and optional char boxes.
    *
-   * Mesh fonts (tagged via {@link isMeshGlyphGeometry}) are transformed immediately;
-   * line fonts are queued in
+   * Mesh fonts (tagged via {@link isMeshGlyphGeometry}) are queued in
+   * {@link _meshBatchEntries} and merged once via {@link TextGeometryBuilder.mergeMeshGeometries}.
+   * Line fonts are queued in
    * {@link _lineBatchEntries} for later merge via {@link TextGeometryBuilder.mergeLineGeometries}.
    *
    * @param shape Source text shape for the glyph.
    * @param label Character label stored on geometry and char boxes.
    * @param canonical Untransformed glyph geometry from the font.
    * @param matrix World transform to apply to the glyph.
-   * @param geometries Accumulator for mesh glyph primitives.
+   * @param geometries Unused. Mesh glyphs are queued on {@link _meshBatchEntries}.
    * @param meshCharBoxes Accumulator for mesh-glyph picking boxes.
    * @param lineCharBoxes Accumulator for line-glyph picking boxes.
    */
@@ -1208,18 +1214,16 @@ export class MTextProcessor {
     lineCharBoxes: CharBox[]
   ): void {
     if (isMeshGlyphGeometry(canonical)) {
-      const geometry = canonical.clone()
-      geometry.applyMatrix4(matrix)
-      geometries.push(geometry)
+      this._meshBatchEntries.push({ geometry: canonical, matrix })
 
       if (this._options.collectCharBoxes !== false) {
-        geometry.userData.char = label
-        if (!geometry.boundingBox) {
-          geometry.computeBoundingBox()
+        if (!canonical.boundingBox) {
+          canonical.computeBoundingBox()
         }
+        _charBox.copy(canonical.boundingBox!).applyMatrix4(matrix)
         meshCharBoxes.push({
           type: CharBoxType.CHAR,
-          box: new THREE.Box3().copy(geometry.boundingBox!),
+          box: new THREE.Box3().copy(_charBox),
           char: label,
           children: []
         })
@@ -1270,6 +1274,7 @@ export class MTextProcessor {
   processText(tokens: Generator<MTextToken>) {
     this._lastCharBoxTarget = undefined
     this._lineBatchEntries = []
+    this._meshBatchEntries = []
     const geometries: THREE.BufferGeometry[] = []
     const lineGeometries: THREE.BufferGeometry[] = []
     const meshCharBoxes: CharBox[] = []
@@ -1374,11 +1379,7 @@ export class MTextProcessor {
       }
     }
 
-    if (
-      geometries.length > 0 ||
-      lineGeometries.length > 0 ||
-      this._lineBatchEntries.length > 0
-    ) {
+    if (this.hasPendingDrawables(geometries, lineGeometries)) {
       this.processGeometries(
         geometries,
         lineGeometries,
@@ -1413,6 +1414,21 @@ export class MTextProcessor {
   }
 
   /**
+   * True when the current style segment still has mesh glyphs, line glyphs, or decorations to flush.
+   */
+  private hasPendingDrawables(
+    geometries: THREE.BufferGeometry[],
+    lineGeometries: THREE.BufferGeometry[]
+  ): boolean {
+    return (
+      geometries.length > 0 ||
+      lineGeometries.length > 0 ||
+      this._lineBatchEntries.length > 0 ||
+      this._meshBatchEntries.length > 0
+    )
+  }
+
+  /**
    * Flushes pending geometry and char boxes into a styled THREE.js object on `group`.
    *
    * When only char boxes exist (spaces, empty lines), creates a marker object with
@@ -1439,7 +1455,7 @@ export class MTextProcessor {
       charBoxType
     )
 
-    if (geometries.length > 0 || lineGeometries.length > 0 || this._lineBatchEntries.length > 0) {
+    if (this.hasPendingDrawables(geometries, lineGeometries)) {
       const object = this.toThreeObject(
         geometries,
         lineGeometries,
@@ -1452,6 +1468,7 @@ export class MTextProcessor {
       geometries.length = 0
       lineGeometries.length = 0
       this._lineBatchEntries = []
+      this._meshBatchEntries = []
       meshCharBoxes.length = 0
       lineCharBoxes.length = 0
       this._processedCharCount += finalCharCount
@@ -2688,12 +2705,11 @@ export class MTextProcessor {
 
     const shouldCollectCharBoxes = this._options.collectCharBoxes !== false
 
-    // Mesh font (filled glyphs — may be BufferGeometry after mergeVertices)
-    const meshGeoms = geometries.filter(g => isMeshGlyphGeometry(g))
-
-    if (meshGeoms.length > 0) {
-      const mergedMeshGeom =
-        meshGeoms.length > 1 ? mergeGeometries(meshGeoms) : meshGeoms[0]
+    if (this._meshBatchEntries.length > 0) {
+      const mergedMeshGeom = TextGeometryBuilder.mergeMeshGeometries(
+        this._meshBatchEntries
+      )
+      markMeshGlyphGeometry(mergedMeshGeom)
       const mesh = new THREE.Mesh(mergedMeshGeom, meshMaterial)
       mesh.userData.bboxIntersectionCheck = true
       mesh.userData.charBoxType = charBoxType

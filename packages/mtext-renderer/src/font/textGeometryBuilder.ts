@@ -144,4 +144,154 @@ export class TextGeometryBuilder {
     }
     return offset
   }
+
+  /**
+   * Merges indexed mesh glyphs into one indexed triangle geometry, applying each
+   * glyph matrix while copying vertices.
+   *
+   * One write pass replaces per-glyph `clone` + `applyMatrix4` followed by a
+   * second copy inside `mergeGeometries`.
+   *
+   * @param entries Cached glyph geometries paired with their placement matrices.
+   * @returns A single indexed mesh geometry. Empty when `entries` is empty.
+   */
+  static mergeMeshGeometries(
+    entries: TransformedLineGeometryEntry[]
+  ): THREE.BufferGeometry {
+    if (entries.length === 0) {
+      return new THREE.BufferGeometry()
+    }
+
+    let vertexCount = 0
+    let indexCount = 0
+    for (const entry of entries) {
+      const position = entry.geometry.getAttribute('position')
+      if (!position || position.count === 0) {
+        continue
+      }
+      vertexCount += position.count
+      const index = entry.geometry.getIndex()
+      indexCount += index ? index.count : position.count
+    }
+
+    if (vertexCount === 0) {
+      return new THREE.BufferGeometry()
+    }
+
+    const positions = new Float32Array(vertexCount * 3)
+    const IndexArray = vertexCount > 65535 ? Uint32Array : Uint16Array
+    const indices = new IndexArray(indexCount)
+
+    let vertexBase = 0
+    let indexWrite = 0
+    let minX = Infinity
+    let minY = Infinity
+    let minZ = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    let maxZ = -Infinity
+
+    for (const entry of entries) {
+      const position = entry.geometry.getAttribute('position')
+      if (!position || position.count === 0) {
+        continue
+      }
+
+      const written = TextGeometryBuilder.writeTransformedMeshPositions(
+        position,
+        entry.matrix,
+        positions,
+        vertexBase,
+        (x, y, z) => {
+          if (x < minX) minX = x
+          if (y < minY) minY = y
+          if (z < minZ) minZ = z
+          if (x > maxX) maxX = x
+          if (y > maxY) maxY = y
+          if (z > maxZ) maxZ = z
+        }
+      )
+
+      const index = entry.geometry.getIndex()
+      if (index) {
+        const source = index.array as ArrayLike<number>
+        for (let i = 0; i < index.count; i++) {
+          indices[indexWrite++] = source[i] + vertexBase
+        }
+      } else {
+        for (let i = 0; i < position.count; i++) {
+          indices[indexWrite++] = vertexBase + i
+        }
+      }
+
+      vertexBase += written
+    }
+
+    const merged = new THREE.BufferGeometry()
+    merged.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    merged.setIndex(new THREE.BufferAttribute(indices, 1))
+    merged.boundingBox = new THREE.Box3(
+      new THREE.Vector3(minX, minY, minZ),
+      new THREE.Vector3(maxX, maxY, maxZ)
+    )
+    return merged
+  }
+
+  /**
+   * Writes `position` transformed by `matrix` into `output` at `vertexBase`.
+   * Affine placement matrices keep `w` at 1; the perspective term matches
+   * {@link THREE.Vector3.applyMatrix4} for any other matrix.
+   */
+  private static writeTransformedMeshPositions(
+    position: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+    matrix: THREE.Matrix4,
+    output: Float32Array,
+    vertexBase: number,
+    expandBounds: (x: number, y: number, z: number) => void
+  ): number {
+    const e = matrix.elements
+    const count = position.count
+    const base = vertexBase * 3
+    const fast =
+      position instanceof THREE.BufferAttribute &&
+      position.itemSize === 3 &&
+      !position.normalized &&
+      position.array instanceof Float32Array
+
+    if (fast) {
+      const src = position.array as Float32Array
+      for (let i = 0; i < count; i++) {
+        const s = i * 3
+        const x = src[s]
+        const y = src[s + 1]
+        const z = src[s + 2]
+        const w = 1 / (e[3] * x + e[7] * y + e[11] * z + e[15])
+        const ox = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w
+        const oy = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w
+        const oz = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w
+        const d = base + s
+        output[d] = ox
+        output[d + 1] = oy
+        output[d + 2] = oz
+        expandBounds(ox, oy, oz)
+      }
+      return count
+    }
+
+    for (let i = 0; i < count; i++) {
+      const x = position.getX(i)
+      const y = position.getY(i)
+      const z = position.getZ(i)
+      const w = 1 / (e[3] * x + e[7] * y + e[11] * z + e[15])
+      const ox = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w
+      const oy = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w
+      const oz = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w
+      const d = base + i * 3
+      output[d] = ox
+      output[d + 1] = oy
+      output[d + 2] = oz
+      expandBounds(ox, oy, oz)
+    }
+    return count
+  }
 }

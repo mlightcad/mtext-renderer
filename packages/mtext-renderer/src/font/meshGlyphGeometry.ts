@@ -3,9 +3,9 @@ import type * as THREE from 'three'
 /**
  * `userData` flag marking BufferGeometry produced for mesh (TTF/OTF) glyphs.
  *
- * `mergeVertices` returns a plain {@link THREE.BufferGeometry}, so callers must
- * not rely on `instanceof ShapeGeometry` to distinguish mesh glyphs from SHX
- * stroke geometry after the first cache fill.
+ * Cached glyphs are baked to position and index buffers, so callers must not
+ * rely on `instanceof ShapeGeometry` to distinguish mesh glyphs from SHX
+ * stroke geometry.
  */
 export const MESH_GLYPH_USER_DATA_KEY = 'isMeshGlyph'
 
@@ -16,8 +16,8 @@ export const MESH_GLYPH_USER_DATA_KEY = 'isMeshGlyph'
 export const MESH_GLYPH_CACHE_SIZE = 1
 
 /**
- * Returns true when `geometry` is a mesh-font glyph (filled ShapeGeometry path),
- * including geometries that were demoted to BufferGeometry by `mergeVertices`.
+ * Returns true when `geometry` is a mesh-font glyph (filled outline),
+ * including geometries baked down to a plain {@link THREE.BufferGeometry}.
  */
 export function isMeshGlyphGeometry(
   geometry: THREE.BufferGeometry
@@ -25,7 +25,7 @@ export function isMeshGlyphGeometry(
   if (geometry.userData?.[MESH_GLYPH_USER_DATA_KEY] === true) {
     return true
   }
-  // Fresh ShapeGeometry before mergeVertices / legacy cache entries.
+  // Fresh ShapeGeometry before baking / legacy cache entries.
   return (
     (geometry as THREE.BufferGeometry & { type?: string }).type ===
     'ShapeGeometry'

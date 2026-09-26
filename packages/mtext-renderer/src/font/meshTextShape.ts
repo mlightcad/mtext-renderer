@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 import { BaseTextShape } from './baseTextShape'
 import { MeshFont } from './meshFont'
@@ -7,6 +6,28 @@ import {
   markMeshGlyphGeometry,
   MESH_GLYPH_CACHE_SIZE
 } from './meshGlyphGeometry'
+
+/**
+ * Copies position and index into a plain BufferGeometry and drops the source.
+ *
+ * {@link THREE.ShapeGeometry} also allocates normals and uvs, and keeps the
+ * source {@link THREE.Shape} graph alive. Vertex welding does not pay for
+ * itself here: outline vertices are already unique, and the hash walk dominated
+ * first-seen glyph cost.
+ */
+function bakeMeshPositions(source: THREE.BufferGeometry): THREE.BufferGeometry {
+  const baked = new THREE.BufferGeometry()
+  const position = source.getAttribute('position')
+  if (position) {
+    baked.setAttribute('position', position.clone())
+  }
+  const index = source.getIndex()
+  if (index) {
+    baked.setIndex(index.clone())
+  }
+  source.dispose()
+  return baked
+}
 
 function hasFinitePositions(geometry: THREE.BufferGeometry) {
   const position = geometry.getAttribute('position')
@@ -68,21 +89,17 @@ export class MeshTextShape extends BaseTextShape {
         geometry.dispose()
         return new THREE.BufferGeometry()
       }
-      // Remove uv and normal to save memory
+      // ShapeGeometry always builds uv and normal. Drop them before the copy
+      // so the cached glyph and later merges stay position+index only.
       if (geometry.hasAttribute('uv')) {
         geometry.deleteAttribute('uv')
       }
       if (geometry.hasAttribute('normal')) {
         geometry.deleteAttribute('normal')
       }
-      // mergeVertices returns a plain BufferGeometry — tag before caching so
-      // MTextProcessor keeps the filled-mesh path on cache hits.
-      geometry = mergeVertices(geometry, 1e-6)
+      geometry = bakeMeshPositions(geometry)
       markMeshGlyphGeometry(geometry)
       this.font.cache.setGeometry(code, MESH_GLYPH_CACHE_SIZE, geometry)
-    }
-    if (!hasFinitePositions(geometry)) {
-      return new THREE.BufferGeometry()
     }
     return geometry
   }

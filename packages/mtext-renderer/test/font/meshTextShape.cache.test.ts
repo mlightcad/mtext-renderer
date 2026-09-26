@@ -53,7 +53,10 @@ describe('MeshTextShape unit-size geometry cache', () => {
     const shape = meshFont.getCharShape('n', 5)!
     const geometry = shape.toGeometry()
     expect(isMeshGlyphGeometry(geometry)).toBe(true)
-    // Flag must survive even if mergeVertices keeps or drops the ShapeGeometry class.
     expect(geometry.userData.isMeshGlyph).toBe(true)
+    expect(geometry.hasAttribute('uv')).toBe(false)
+    expect(geometry.hasAttribute('normal')).toBe(false)
+    expect(geometry.getAttribute('position')?.count ?? 0).toBeGreaterThan(0)
+    expect(geometry.getIndex()).not.toBeNull()
   })
 })
