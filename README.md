@@ -332,7 +332,8 @@ classDiagram
 
 ```typescript
 import * as THREE from 'three';
-import { FontManager, MText, MTextColor, StyleManager } from '@mlightcad/mtext-renderer';
+import { MTextColor } from '@mlightcad/mtext-parser';
+import { FontManager, MText, StyleManager } from '@mlightcad/mtext-renderer';
 
 // Initialize core components
 const fontManager = FontManager.instance;
@@ -407,7 +408,8 @@ scene.add(mtext);
 ### Using MainThreadRenderer
 
 ```typescript
-import { MainThreadRenderer, MTextColor } from '@mlightcad/mtext-renderer';
+import { MTextColor } from '@mlightcad/mtext-parser';
+import { MainThreadRenderer } from '@mlightcad/mtext-renderer';
 
 // Create main thread renderer
 const renderer = new MainThreadRenderer();
@@ -442,7 +444,8 @@ scene.add(syncObject);
 ### Using WebWorkerRenderer
 
 ```typescript
-import { WebWorkerRenderer, MTextColor } from '@mlightcad/mtext-renderer';
+import { MTextColor } from '@mlightcad/mtext-parser';
+import { WebWorkerRenderer } from '@mlightcad/mtext-renderer';
 
 // Create worker renderer with custom pool size
 const workerRenderer = new WebWorkerRenderer({ poolSize: 4 }); // 4 workers
@@ -476,7 +479,8 @@ Note: Synchronous rendering is not supported in worker mode.
 ### Using UnifiedRenderer
 
 ```typescript
-import { UnifiedRenderer, MTextColor } from '@mlightcad/mtext-renderer';
+import { MTextColor } from '@mlightcad/mtext-parser';
+import { UnifiedRenderer } from '@mlightcad/mtext-renderer';
 
 // Create unified renderer with default mode 'main' (optional worker config as second param)
 const unifiedRenderer = new UnifiedRenderer('main');

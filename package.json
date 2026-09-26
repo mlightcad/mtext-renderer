@@ -21,6 +21,8 @@
     "lint:fix": "nx run-many -t lint:fix",
     "preview": "nx run @mlightcad/mtext-renderer-example:preview",
     "publish:renderer": "pnpm -r publish --filter mtext-renderer --no-git-checks",
+    "sync:versions": "node tools/sync-versions.mjs",
+    "sync:versions:check": "node tools/sync-versions.mjs --check",
     "release": "node tools/release.mjs",
     "test": "pnpm --filter @mlightcad/mtext-renderer test"
   },

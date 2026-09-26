@@ -1,8 +1,8 @@
+import { MTextColor } from '@mlightcad/mtext-parser'
 import {
   FontManager,
   formatMemoryUsageReport,
   MText,
-  MTextColor,
   MTextData,
   MTextObject,
   RenderMode,
