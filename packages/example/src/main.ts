@@ -55,6 +55,12 @@ class MTextRendererExample {
   /** Currently displayed root object (single MText, group, or SHAPE batch). */
   private currentMText: MTextObject | null = null
   /**
+   * Monotonic counter bumped at the start of each render. Async completions whose
+   * token no longer matches are discarded so overlapping renders cannot stack in
+   * the scene (e.g. initial default content + an Examples click).
+   */
+  private renderGeneration = 0
+  /**
    * When set, {@link renderCurrentContent} routes through large-coordinate test data
    * even if the user clicks Render without re-selecting the example button.
    */
@@ -739,10 +745,61 @@ class MTextRendererExample {
   private clearSceneContent(): void {
     if (this.currentMText) {
       this.viewport.scene.remove(this.currentMText)
+      this.disposeRenderedContent(this.currentMText)
       this.currentMText = null
     }
     this.debugOverlays.clear()
     this.boundsHelper.resetOriginOffset()
+  }
+
+  /**
+   * Releases GPU resources for a rendered root (MText, SHAPE, or group of either).
+   * Groups are walked so child {@link MText}.dispose hooks still run.
+   */
+  private disposeRenderedContent(obj: THREE.Object3D): void {
+    const disposeOne = (node: THREE.Object3D) => {
+      const disposable = node as THREE.Object3D & { dispose?: () => void }
+      if (typeof disposable.dispose === 'function') {
+        disposable.dispose()
+        return
+      }
+      ;[...node.children].forEach(disposeOne)
+    }
+    disposeOne(obj)
+  }
+
+  /**
+   * @returns Whether `token` still matches {@link renderGeneration}.
+   * Stale async renders must not add objects or update status.
+   */
+  private isCurrentRender(token: number): boolean {
+    return token === this.renderGeneration
+  }
+
+  /**
+   * Attaches a newly rendered root only if this render is still current.
+   * Otherwise disposes the orphaned object so concurrent renders cannot overlay.
+   *
+   * @remarks
+   * Does not call {@link clearSceneContent} so debug overlays already attached to
+   * `obj` keep their manager references.
+   */
+  private commitRenderedContent(
+    token: number,
+    obj: MTextObject
+  ): boolean {
+    if (!this.isCurrentRender(token)) {
+      this.disposeRenderedContent(obj)
+      return false
+    }
+    if (this.currentMText) {
+      this.viewport.scene.remove(this.currentMText)
+      this.disposeRenderedContent(this.currentMText)
+      this.currentMText = null
+    }
+    this.currentMText = obj
+    this.viewport.scene.add(this.currentMText)
+    return true
   }
 
   /** Frames {@link currentMText} in the orthographic viewport. */
@@ -786,6 +843,7 @@ class MTextRendererExample {
    * @param content - When `'shapes'`, renders shape numbers 128–132; otherwise uses panel fields.
    */
   private async renderShape(content?: string): Promise<void> {
+    const token = ++this.renderGeneration
     try {
       const startTime = performance.now()
       this.statusDiv.textContent = 'Rendering SHAPE...'
@@ -799,6 +857,9 @@ class MTextRendererExample {
           ...FontManager.instance.getFontsToLoad(),
           shapeFont
         ])
+      }
+      if (!this.isCurrentRender(token)) {
+        return
       }
 
       const isGrid = content === 'shapes'
@@ -836,6 +897,10 @@ class MTextRendererExample {
           )
         )
       )
+      if (!this.isCurrentRender(token)) {
+        shapeObjects.forEach(obj => this.disposeRenderedContent(obj))
+        return
+      }
 
       if (!isGrid) {
         const shapeObj = shapeObjects[0]
@@ -887,8 +952,10 @@ class MTextRendererExample {
       })
 
       ;(group as unknown as MTextObject).box = combinedBox ?? new THREE.Box3()
-      this.currentMText = group as unknown as MTextObject
-      this.viewport.scene.add(this.currentMText)
+      const rendered = group as unknown as MTextObject
+      if (!this.commitRenderedContent(token, rendered)) {
+        return
+      }
 
       const renderTime = performance.now() - startTime
       const label = isGrid
@@ -897,7 +964,7 @@ class MTextRendererExample {
       const modeLabel = this.fontManager.isLazyFontLoading() ? 'lazy' : 'non-lazy'
       this.statusDiv.textContent = `Rendered ${label} in ${renderTime.toFixed(2)}ms (${modeLabel}; SHAPE uses main-thread sync path)`
       this.statusDiv.style.color = '#0f0'
-      this.boundsHelper.rebaseSceneOrigin(this.currentMText)
+      this.boundsHelper.rebaseSceneOrigin(rendered)
       this.fitView()
     } catch (error) {
       console.error('Error rendering SHAPE:', error)
@@ -924,6 +991,7 @@ class MTextRendererExample {
    *   or literal MText passed to a single-entity render.
    */
   private async renderMText(content: string): Promise<void> {
+    const token = ++this.renderGeneration
     try {
       const startTime = performance.now()
       const lazy = this.fontManager.isLazyFontLoading()
@@ -960,6 +1028,9 @@ class MTextRendererExample {
         }
 
         await this.ensureFontsLoadedForMText(texts, textFont)
+        if (!this.isCurrentRender(token)) {
+          return
+        }
 
         const mtextObjects = await Promise.all(
           multiData.map(({ mtextData, textStyle }) =>
@@ -970,6 +1041,10 @@ class MTextRendererExample {
             )
           )
         )
+        if (!this.isCurrentRender(token)) {
+          mtextObjects.forEach(obj => this.disposeRenderedContent(obj))
+          return
+        }
 
         const group = new THREE.Group()
         let combinedBox: THREE.Box3 | null = null
@@ -997,14 +1072,16 @@ class MTextRendererExample {
         ;(group as unknown as MTextObject).box =
           combinedBox ?? new THREE.Box3()
 
-        this.currentMText = group as unknown as MTextObject
-        this.viewport.scene.add(this.currentMText)
+        const rendered = group as unknown as MTextObject
+        if (!this.commitRenderedContent(token, rendered)) {
+          return
+        }
 
         if (LargeCoordinatesExample.isExample(content)) {
           LargeCoordinatesExample.layoutPair(mtextObjects)
-          this.boundsHelper.refreshDrawableBounds(this.currentMText)
+          this.boundsHelper.refreshDrawableBounds(rendered)
         } else {
-          this.boundsHelper.rebaseSceneOrigin(this.currentMText)
+          this.boundsHelper.rebaseSceneOrigin(rendered)
         }
 
         this.debugOverlays.addMTextDebugOverlays(
@@ -1030,6 +1107,9 @@ class MTextRendererExample {
         )
       } else {
         await this.ensureFontsLoadedForMText([content], textFont)
+        if (!this.isCurrentRender(token)) {
+          return
+        }
 
         const mtextContent: MTextData = {
           text: content,
@@ -1038,7 +1118,7 @@ class MTextRendererExample {
           position: new THREE.Vector3(70, 530, 0)
         }
 
-        this.currentMText = await this.unifiedRenderer.asyncRenderMText(
+        const rendered = await this.unifiedRenderer.asyncRenderMText(
           mtextContent,
           {
             name: 'Standard',
@@ -1055,28 +1135,28 @@ class MTextRendererExample {
         )
 
         this.debugOverlays.attachCharBoxOverlay(
-          this.currentMText,
+          rendered,
           this.showCharBoxesCheckbox.checked
         )
         this.debugOverlays.attachLineBoxOverlay(
-          this.currentMText,
+          rendered,
           this.showLineBoxesCheckbox.checked
         )
-        this.viewport.scene.add(this.currentMText)
-        this.boundsHelper.rebaseSceneOrigin(this.currentMText)
+
+        if (!this.commitRenderedContent(token, rendered)) {
+          return
+        }
+        this.boundsHelper.rebaseSceneOrigin(rendered)
 
         if (
           this.showBoundingBoxCheckbox.checked &&
-          this.currentMText.box &&
-          !this.currentMText.box.isEmpty()
+          rendered.box &&
+          !rendered.box.isEmpty()
         ) {
           const box = this.debugOverlays.createMTextBox(
-            this.boundsHelper.getOverlayBounds(
-              this.currentMText,
-              this.currentMText.box
-            )
+            this.boundsHelper.getOverlayBounds(rendered, rendered.box)
           )
-          this.currentMText.add(box)
+          rendered.add(box)
         }
 
         const renderTime = performance.now() - startTime

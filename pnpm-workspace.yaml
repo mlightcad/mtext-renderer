@@ -4,4 +4,4 @@ allowBuilds:
   esbuild: true
   nx: true
 overrides:
-  '@mlightcad/mtext-parser': '^1.5.2'
+  '@mlightcad/mtext-parser': '^1.5.3'
