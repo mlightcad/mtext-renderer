@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { estimateGeometryBytes } from '../memory/estimateGeometryBytes'
 import { BaseTextShape } from './baseTextShape'
 import { ShxFont } from './shxFont'
+import { shxPenAdvanceStrategy } from './shxLayoutAdvance'
 
 /**
  * Represents a text shape for SHX fonts.
@@ -32,7 +33,7 @@ export class ShxTextShape extends BaseTextShape {
     this.shape = shape
     this.font = font
     this.code = code
-    this.width = resolveAdvanceWidth(shape, font.data, fontSize)
+    this.width = resolveAdvanceWidth(shape, font.data, fontSize, shxPenAdvanceStrategy)
   }
 
   /**

@@ -14,6 +14,7 @@ import {
   SHX_PARSED_FONT_OVERHEAD} from '../memory/types'
 import { BaseFont } from './baseFont'
 import { FontData } from './font'
+import { shxPenAdvanceStrategy } from './shxLayoutAdvance'
 import { ShxTextShape } from './shxTextShape'
 
 /** Scaled SHX font layout metrics (cap height, cell width, etc.) from `@mlightcad/shx-parser`. */
@@ -167,7 +168,11 @@ export class ShxFont extends BaseFont {
       return cached
     }
 
-    const layout = this.font.getLayoutCharShape(code, quantizedSize)
+    const layout = this.font.getLayoutCharShape(
+      code,
+      quantizedSize,
+      shxPenAdvanceStrategy
+    )
     if (!layout || !ShxFont.hasRenderableStrokes(layout)) {
       return undefined
     }

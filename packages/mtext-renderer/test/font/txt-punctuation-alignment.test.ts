@@ -1,9 +1,10 @@
-import { InkWidthAdvanceStrategy, Point } from '@mlightcad/shx-parser'
+import { Point, ShxFont as ShxFontInternal } from '@mlightcad/shx-parser'
 import { describe, expect, it } from 'vitest'
 
 import { FontData } from '../../src/font/font'
 import { FontFactory } from '../../src/font/fontFactory'
 import { ShxFont } from '../../src/font/shxFont'
+import { shxPenAdvanceStrategy } from '../../src/font/shxLayoutAdvance'
 
 const FONT_BASE = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
 
@@ -27,13 +28,14 @@ describe('txt.shx punctuation alignment in renderer', () => {
       const size = 16
       const metrics = font.getFontMetrics(size)
 
+      const rawFont = new ShxFontInternal(font.data)
       const hyphen = font.getCharShape('-', size)!
       const hyphenGeometry = hyphen.toGeometry()
       hyphenGeometry.computeBoundingBox()
       expect(hyphenGeometry.boundingBox!.min.y).toBeCloseTo(metrics.capHeight / 2, 0)
       expect(hyphenGeometry.boundingBox!.max.y).toBeCloseTo(metrics.capHeight / 2, 0)
       expect(hyphen.width).toBeCloseTo(
-        InkWidthAdvanceStrategy.computeAdvance(hyphen.shape, metrics.cellWidth)
+        shxPenAdvanceStrategy.resolve(rawFont.getCharShape('-'.charCodeAt(0), size)!, metrics.cellWidth)
       )
 
       const comma = font.getCharShape(',', size)!
@@ -41,8 +43,9 @@ describe('txt.shx punctuation alignment in renderer', () => {
       commaGeometry.computeBoundingBox()
       expect(commaGeometry.boundingBox!.max.y).toBeLessThanOrEqual(metrics.descenderHeight)
       expect(comma.width).toBeCloseTo(
-        InkWidthAdvanceStrategy.computeAdvance(comma.shape, metrics.cellWidth)
+        shxPenAdvanceStrategy.resolve(rawFont.getCharShape(','.charCodeAt(0), size)!, metrics.cellWidth)
       )
+      rawFont.release()
 
       const letterG = font.getCharShape('G', size)!
       const placedG = letterG.offset(new Point(comma.width, 0))

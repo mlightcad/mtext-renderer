@@ -1,9 +1,10 @@
-import { InkWidthAdvanceStrategy } from '@mlightcad/shx-parser'
+import { ShxFont as ShxFontInternal } from '@mlightcad/shx-parser'
 import { describe, expect, it } from 'vitest'
 
 import { FontData } from '../../src/font/font'
 import { FontFactory } from '../../src/font/fontFactory'
 import { ShxFont } from '../../src/font/shxFont'
+import { shxPenAdvanceStrategy } from '../../src/font/shxLayoutAdvance'
 
 const FONT_BASE = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
 
@@ -21,7 +22,7 @@ async function loadTssdeng(): Promise<ShxFont> {
 
 describe('tssdeng.shx digit spacing in renderer', () => {
   it(
-    'uses center-origin ink advance for each digit in 1024',
+    'uses SHX pen advance for each digit in 1024',
     async () => {
       const font = await loadTssdeng()
       const size = 30
@@ -34,12 +35,13 @@ describe('tssdeng.shx digit spacing in renderer', () => {
         expect(gap).toBeGreaterThanOrEqual(0)
       }
 
+      const rawFont = new ShxFontInternal(font.data)
       for (const ch of '1024') {
         const glyph = font.getCharShape(ch, size)!
-        expect(glyph.width).toBeCloseTo(
-          InkWidthAdvanceStrategy.computeAdvance(glyph.shape, cellWidth)
-        )
+        const raw = rawFont.getCharShape(ch.charCodeAt(0), size)!
+        expect(glyph.width).toBeCloseTo(shxPenAdvanceStrategy.resolve(raw, cellWidth))
       }
+      rawFont.release()
     },
     120_000
   )

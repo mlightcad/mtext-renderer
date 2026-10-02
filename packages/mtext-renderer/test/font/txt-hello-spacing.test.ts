@@ -1,9 +1,10 @@
-import { InkWidthAdvanceStrategy, Point } from '@mlightcad/shx-parser'
+import { Point, ShxFont as ShxFontInternal } from '@mlightcad/shx-parser'
 import { describe, expect, it } from 'vitest'
 
 import { FontData } from '../../src/font/font'
 import { FontFactory } from '../../src/font/fontFactory'
 import { ShxFont } from '../../src/font/shxFont'
+import { shxPenAdvanceStrategy } from '../../src/font/shxLayoutAdvance'
 
 const FONT_BASE = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
 
@@ -29,10 +30,11 @@ describe('txt.shx Latin spacing in renderer', () => {
       const secondL = letterL.offset(new Point(letterL.width, 0))
       const gap = secondL.shape.bbox.minX - letterL.shape.bbox.maxX
 
+      const rawFont = new ShxFontInternal(font.data)
+      const rawL = rawFont.getCharShape('l'.charCodeAt(0), size)!
       const cellWidth = font.getFontMetrics(size).cellWidth
-      expect(letterL.width).toBeCloseTo(
-        InkWidthAdvanceStrategy.computeAdvance(letterL.shape, cellWidth)
-      )
+      expect(letterL.width).toBeCloseTo(shxPenAdvanceStrategy.resolve(rawL, cellWidth))
+      rawFont.release()
       expect(gap).toBeGreaterThanOrEqual(0)
     },
     120_000
