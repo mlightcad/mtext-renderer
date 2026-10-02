@@ -953,4 +953,79 @@ describe('FontManager', () => {
     expect(stats.totalEstimatedBytes).toBe(2500)
     expect(stats.materials.estimatedBytes).toBe(0)
   })
+
+  it('reads mesh font programs from IndexedDB via getCachedMeshFontProgram', async () => {
+    const buffer = new ArrayBuffer(24)
+    vi.mocked(FontCacheManager.instance.find).mockResolvedValue({
+      name: 'simkai',
+      alias: ['simkai', '楷体'],
+      type: 'mesh',
+      encoding: undefined,
+      data: buffer
+    })
+
+    const program =
+      await FontManager.instance.getCachedMeshFontProgram('楷体')
+
+    expect(FontCacheManager.instance.find).toHaveBeenCalledWith('楷体')
+    expect(program).toBe(buffer)
+  })
+
+  it('persists mesh font programs to IndexedDB without loading for rendering', async () => {
+    const buffer = new ArrayBuffer(16)
+
+    await FontManager.instance.persistMeshFontProgram(
+      buffer,
+      'arial.ttf',
+      ['Arial']
+    )
+
+    expect(FontCacheManager.instance.set).toHaveBeenCalledWith('arial', {
+      name: 'arial',
+      alias: ['arial', 'Arial'],
+      type: 'mesh',
+      data: buffer
+    })
+    expect(FontManager.instance.isFontLoaded('arial')).toBe(false)
+  })
+
+  it('clears cache-miss bookkeeping after persistMeshFontProgram', async () => {
+    const buffer = new ArrayBuffer(16)
+    const cachedFontData = {
+      name: 'arial',
+      alias: ['arial', 'Arial'],
+      type: 'mesh' as const,
+      encoding: undefined,
+      data: buffer
+    }
+    const font = createFakeFont({
+      names: new Set(['arial', 'Arial']),
+      type: 'mesh'
+    })
+
+    vi.mocked(FontCacheManager.instance.find).mockResolvedValueOnce(undefined)
+    expect(await FontManager.instance.loadFontFromCache('Arial')).toBe(false)
+    expect(FontCacheManager.instance.find).toHaveBeenCalledTimes(1)
+
+    await FontManager.instance.persistMeshFontProgram(buffer, 'arial.ttf', [
+      'Arial'
+    ])
+
+    vi.mocked(FontCacheManager.instance.find).mockResolvedValue(cachedFontData)
+    vi.mocked(FontFactory.instance.createFont).mockReturnValue(font as any)
+
+    expect(await FontManager.instance.loadFontFromCache('Arial')).toBe(true)
+    expect(FontCacheManager.instance.find).toHaveBeenCalledTimes(2)
+    expect(FontManager.instance.isFontLoaded('arial')).toBe(true)
+  })
+
+  it('skips IndexedDB mesh program lookup when font caching is disabled', async () => {
+    FontManager.instance.enableFontCache = false
+
+    const program =
+      await FontManager.instance.getCachedMeshFontProgram('simsun')
+
+    expect(FontCacheManager.instance.find).not.toHaveBeenCalled()
+    expect(program).toBeUndefined()
+  })
 })
