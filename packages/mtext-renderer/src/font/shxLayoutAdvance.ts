@@ -24,7 +24,9 @@ export class ShxPenAdvanceStrategy extends ShxAdvanceWidthStrategy {
 
     const hasInk = shape.polylines.some(line => line.length >= 2)
     if (!hasInk) {
-      return Math.abs(advanceX) > LAYOUT_EPSILON ? advanceX : cellWidth
+      // Blank glyphs (e.g. space) step by the pen x. Zero/negative pen is not a
+      // usable horizontal advance — fall back to the font cell width.
+      return advanceX > LAYOUT_EPSILON ? advanceX : cellWidth
     }
 
     const { maxX } = shape.bbox
