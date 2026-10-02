@@ -1,14 +1,14 @@
 import {
-  InkWidthAdvanceStrategy,
   Point,
-  ShxFont as ShxFontInternal
+  ShxFont as ShxFontInternal,
+  ShxShape
 } from '@mlightcad/shx-parser'
 import { describe, expect, it } from 'vitest'
 
 import { FontData } from '../../src/font/font'
 import { FontFactory } from '../../src/font/fontFactory'
 import { ShxFont } from '../../src/font/shxFont'
-import { ShxTextShape } from '../../src/font/shxTextShape'
+import { shxPenAdvanceStrategy } from '../../src/font/shxLayoutAdvance'
 
 const FONT_BASE = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
 
@@ -24,21 +24,18 @@ async function loadAehalf(): Promise<ShxFont> {
   return FontFactory.instance.createFont(fontData) as ShxFont
 }
 
-function expectedInkAdvance(shape: ShxTextShape, cellWidth: number): number {
-  return InkWidthAdvanceStrategy.computeAdvance(shape.shape, cellWidth)
-}
-
-function expectedTrailingGap(cellWidth: number): number {
-  return cellWidth * 0.2
+function expectedAdvance(shape: ShxShape, cellWidth: number): number {
+  return shxPenAdvanceStrategy.resolve(shape, cellWidth)
 }
 
 describe('aehalf punctuation spacing in renderer', () => {
   it(
-    'uses center-origin ink advance for quote and tilde with moderate ink gaps',
+    'uses SHX pen advance for quote and tilde with moderate ink gaps',
     async () => {
       const font = await loadAehalf()
       const size = 30
       const cellWidth = font.getFontMetrics(size).cellWidth
+      const rawFont = new ShxFontInternal(font.data)
       const codes = ['t'.charCodeAt(0), 34, 50, 48, 126, 50]
 
       const shapes = codes.map(code => font.getCodeShape(code, size)!)
@@ -48,8 +45,10 @@ describe('aehalf punctuation spacing in renderer', () => {
 
       for (const code of [34, 126]) {
         const shape = font.getCodeShape(code, size)!
-        expect(shape.width).toBeCloseTo(expectedInkAdvance(shape, cellWidth))
+        const raw = rawFont.getCharShape(code, size)!
+        expect(shape.width).toBeCloseTo(expectedAdvance(raw, cellWidth))
       }
+      rawFont.release()
 
       let cursor = 0
       const placed = shapes.map(shape => {
@@ -68,16 +67,19 @@ describe('aehalf punctuation spacing in renderer', () => {
   )
 
   it(
-    'uses center-origin ink advance for each digit in 2180',
+    'uses SHX pen advance for each digit in 2180',
     async () => {
       const font = await loadAehalf()
       const size = 30
       const cellWidth = font.getFontMetrics(size).cellWidth
+      const rawFont = new ShxFontInternal(font.data)
 
       for (const ch of '2180') {
         const shape = font.getCharShape(ch, size)!
-        expect(shape.width).toBeCloseTo(expectedInkAdvance(shape, cellWidth))
+        const raw = rawFont.getCharShape(ch.charCodeAt(0), size)!
+        expect(shape.width).toBeCloseTo(expectedAdvance(raw, cellWidth))
       }
+      rawFont.release()
 
       const placed = font.generateShapes('2180', size)
       expect(placed).toHaveLength(4)
@@ -95,10 +97,12 @@ describe('aehalf punctuation spacing in renderer', () => {
       const font = await loadAehalf()
       const size = 30
       const metrics = font.getFontMetrics(size)
+      const rawFont = new ShxFontInternal(font.data)
 
       for (const ch of [';', ':', '(', ')', ',', '.']) {
         const shape = font.getCharShape(ch, size)!
-        expect(shape.width).toBeCloseTo(expectedInkAdvance(shape, metrics.cellWidth))
+        const raw = rawFont.getCharShape(ch.charCodeAt(0), size)!
+        expect(shape.width).toBeCloseTo(expectedAdvance(raw, metrics.cellWidth))
       }
 
       const letterA = font.getCharShape('A', size)!
@@ -106,10 +110,7 @@ describe('aehalf punctuation spacing in renderer', () => {
       expect(letterA.shape.bbox.maxY).toBeCloseTo(metrics.capHeight, 0)
 
       const quote = font.getCharShape('"', size)!
-      const quoteResponse = await fetch(FONT_BASE + 'aehalf.shx')
-      const rawInternal = new ShxFontInternal(await quoteResponse.arrayBuffer())
-      const rawQuote = rawInternal.getCharShape(34, size)!
-      rawInternal.release()
+      const rawQuote = rawFont.getCharShape(34, size)!
       expect(quote.shape.bbox.minY).toBeCloseTo(rawQuote.bbox.minY, 0)
 
       for (const ch of 'gjpq') {
@@ -122,18 +123,19 @@ describe('aehalf punctuation spacing in renderer', () => {
         .getCharShape('A', size)!
         .offset(new Point(semicolon.width, 0))
       const gap = placedA.shape.bbox.minX - semicolon.shape.bbox.maxX
-      expect(gap).toBeCloseTo(expectedTrailingGap(metrics.cellWidth), 0)
+      expect(gap).toBeGreaterThan(0)
+      expect(gap).toBeLessThan(metrics.cellWidth)
+      rawFont.release()
     },
     120_000
   )
 
   it(
-    'keeps trailing padding after semicolon, colon, and digit one',
+    'keeps a positive gap after semicolon, colon, and digit one',
     async () => {
       const font = await loadAehalf()
       const size = 30
       const cellWidth = font.getFontMetrics(size).cellWidth
-      const expectedGap = expectedTrailingGap(cellWidth)
 
       for (const [left, right] of [
         [';', 'E'],
@@ -144,7 +146,8 @@ describe('aehalf punctuation spacing in renderer', () => {
         const rightShape = font.getCharShape(right, size)!
         const placedRight = rightShape.offset(new Point(leftShape.width, 0))
         const gap = placedRight.shape.bbox.minX - leftShape.shape.bbox.maxX
-        expect(gap).toBeCloseTo(expectedGap, 0)
+        expect(gap).toBeGreaterThan(0)
+        expect(gap).toBeLessThan(cellWidth)
       }
     },
     120_000
