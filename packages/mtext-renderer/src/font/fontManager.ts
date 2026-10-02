@@ -405,6 +405,79 @@ export class FontManager {
   }
 
   /**
+   * Returns raw mesh font program bytes from IndexedDB when available.
+   *
+   * Used by PDF text-mode embedding so a face already cached for rendering
+   * does not need a second network fetch. No-op when {@link enableFontCache}
+   * is false.
+   */
+  async getCachedMeshFontProgram(
+    fontName: string
+  ): Promise<ArrayBuffer | undefined> {
+    if (!this.enableFontCache || !fontName) {
+      return undefined
+    }
+    const fontData = await FontCacheManager.instance.find(fontName)
+    if (!fontData || fontData.type !== 'mesh') {
+      return undefined
+    }
+    const data = fontData.data
+    if (data instanceof ArrayBuffer && data.byteLength > 0) {
+      return data
+    }
+    return undefined
+  }
+
+  /**
+   * Persists a mesh font program in IndexedDB without loading it for rendering.
+   *
+   * Used after a PDF resolver network fetch so later exports hit the cache.
+   * No-op when {@link enableFontCache} is false.
+   */
+  async persistMeshFontProgram(
+    data: ArrayBuffer,
+    fileName: string,
+    aliases?: readonly string[]
+  ): Promise<void> {
+    if (
+      !this.enableFontCache ||
+      !(data instanceof ArrayBuffer) ||
+      data.byteLength <= 0 ||
+      !fileName
+    ) {
+      return
+    }
+    const fontType = this.resolveUploadedFontType(fileName)
+    if (fontType !== 'mesh') {
+      return
+    }
+    const fontName = getFileNameWithoutExtension(fileName).toLowerCase()
+    if (!fontName) {
+      return
+    }
+    const aliasList = this.buildUploadedFontAliases(
+      fontName,
+      fileName,
+      aliases ? [...aliases] : undefined
+    )
+    await FontCacheManager.instance.set(fontName, {
+      name: fontName,
+      alias: aliasList,
+      type: 'mesh',
+      data
+    })
+    // IndexedDB now has this face; drop sticky cache-miss / request-fail
+    // bookkeeping so later loadFontFromCache / network retries can succeed.
+    for (const name of aliasList) {
+      const key = name.toLowerCase()
+      if (key) {
+        this.fontCacheLookupMisses.delete(key)
+      }
+    }
+    this.clearRequestStateForNames(aliasList)
+  }
+
+  /**
    * Parses a user-uploaded font file, registers it for rendering, and stores
    * it in IndexedDB when {@link enableFontCache} is true.
    *
