@@ -2,6 +2,7 @@ import { MTextColor } from '@mlightcad/mtext-parser'
 import {
   FontManager,
   formatMemoryUsageReport,
+  MeshFontRenderMode,
   MText,
   MTextData,
   MTextObject,
@@ -108,6 +109,8 @@ class MTextRendererExample {
   private readonly showLineBoxesCheckbox: HTMLInputElement
   /** `#render-mode` — main thread vs Web Worker rendering. */
   private readonly renderModeSelect: HTMLSelectElement
+  /** `#mesh-font-render-mode` — filled triangulation vs contour lines for TTF/OTF. */
+  private readonly meshFontRenderModeSelect: HTMLSelectElement
   /** `#by-layer-color` — RGB hex for ByLayer (256) color resolution. */
   private readonly byLayerColorInput: HTMLInputElement
   /** `#by-block-color` — RGB hex for ByBlock (0) color resolution. */
@@ -190,6 +193,9 @@ class MTextRendererExample {
     ) as HTMLInputElement
     this.renderModeSelect = document.getElementById(
       'render-mode'
+    ) as HTMLSelectElement
+    this.meshFontRenderModeSelect = document.getElementById(
+      'mesh-font-render-mode'
     ) as HTMLSelectElement
     this.byLayerColorInput = document.getElementById(
       'by-layer-color'
@@ -503,6 +509,17 @@ class MTextRendererExample {
       await this.renderCurrentContent()
     })
 
+    this.meshFontRenderModeSelect.addEventListener('change', async () => {
+      const mode = this.getMeshFontRenderMode()
+      this.statusDiv.textContent =
+        mode === 'line'
+          ? 'Mesh fonts: contour lines (no triangulation)'
+          : 'Mesh fonts: filled mesh'
+      this.statusDiv.style.color = '#0f0'
+      this.beginUserRender()
+      await this.renderCurrentContent()
+    })
+
     this.byLayerColorInput.addEventListener('change', async () => {
       this.beginUserRender()
       await this.renderCurrentContent()
@@ -539,6 +556,19 @@ class MTextRendererExample {
     if (this.lazyRedrawTimer != null) {
       clearTimeout(this.lazyRedrawTimer)
       this.lazyRedrawTimer = null
+    }
+  }
+
+  /** Current UI choice for TrueType/OTF filled mesh vs contour lines. */
+  private getMeshFontRenderMode(): MeshFontRenderMode {
+    return this.meshFontRenderModeSelect.value === 'line' ? 'line' : 'mesh'
+  }
+
+  /** Stamps {@link MTextData.meshFontRenderMode} from the example control. */
+  private withMeshFontRenderMode(mtextData: MTextData): MTextData {
+    return {
+      ...mtextData,
+      meshFontRenderMode: this.getMeshFontRenderMode()
     }
   }
 
@@ -1035,7 +1065,7 @@ class MTextRendererExample {
         const mtextObjects = await Promise.all(
           multiData.map(({ mtextData, textStyle }) =>
             this.unifiedRenderer.asyncRenderMText(
-              mtextData,
+              this.withMeshFontRenderMode(mtextData),
               textStyle,
               colorSettings
             )
@@ -1111,12 +1141,12 @@ class MTextRendererExample {
           return
         }
 
-        const mtextContent: MTextData = {
+        const mtextContent: MTextData = this.withMeshFontRenderMode({
           text: content,
           height: 24,
           width: 820,
           position: new THREE.Vector3(70, 530, 0)
-        }
+        })
 
         const rendered = await this.unifiedRenderer.asyncRenderMText(
           mtextContent,

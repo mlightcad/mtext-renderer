@@ -138,4 +138,48 @@ describe('mesh glyph placement', () => {
     },
     120_000
   )
+
+  it(
+    'draws mesh glyphs as LineSegments when meshFontRenderMode is line',
+    async () => {
+      FontManager.instance.release()
+      FontManager.instance.enableFontCache = false
+      await loadAigdt()
+
+      const mtext = new MText(
+        {
+          text: 'nnn',
+          height: 5,
+          width: 10_000,
+          collectCharBoxes: true,
+          meshFontRenderMode: 'line'
+        },
+        textStyle(),
+        styleManager as never,
+        FontManager.instance,
+        createDefaultColorSettings()
+      )
+      mtext.syncDraw()
+
+      let meshCount = 0
+      let lineCount = 0
+      let positionCount = 0
+      mtext.traverse(node => {
+        if (node instanceof THREE.Mesh) {
+          meshCount++
+        }
+        if (node instanceof THREE.LineSegments) {
+          lineCount++
+          positionCount +=
+            node.geometry.getAttribute('position')?.count ?? 0
+        }
+      })
+
+      expect(meshCount).toBe(0)
+      expect(lineCount).toBeGreaterThan(0)
+      expect(positionCount).toBeGreaterThan(0)
+      mtext.dispose()
+    },
+    120_000
+  )
 })

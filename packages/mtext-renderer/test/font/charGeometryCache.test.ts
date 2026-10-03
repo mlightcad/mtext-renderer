@@ -49,6 +49,20 @@ describe('CharGeometryCache', () => {
     expect(cache.hasGeometry(65, 16)).toBe(false)
   })
 
+  it('keeps fill and stroke variants in separate cache keys', () => {
+    const cache = new CharGeometryCache()
+    const fill = makeLineGeometry()
+    const stroke = makeLineGeometry()
+
+    cache.setGeometry(65, 1, fill)
+    cache.setGeometry(65, 1, stroke, 'stroke')
+
+    expect(cache.getGeometry(65, 1)).toBe(fill)
+    expect(cache.getGeometry(65, 1, 'stroke')).toBe(stroke)
+    expect(cache.hasGeometry(65, 1)).toBe(true)
+    expect(cache.hasGeometry(65, 1, 'stroke')).toBe(true)
+  })
+
   it('reports entry counts and estimated buffer bytes via getStats()', () => {
     const cache = new CharGeometryCache()
     const geometry = makeLineGeometry()

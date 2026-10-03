@@ -59,4 +59,27 @@ describe('MeshTextShape unit-size geometry cache', () => {
     expect(geometry.getAttribute('position')?.count ?? 0).toBeGreaterThan(0)
     expect(geometry.getIndex()).not.toBeNull()
   })
+
+  it('caches stroke contours separately from filled mesh glyphs', () => {
+    meshFont.cache.dispose()
+    const shape = meshFont.getCharShape('n', 5)!
+    const fill = shape.toGeometry()
+    const stroke = shape.toStrokeGeometry()
+    const strokeAgain = shape.toStrokeGeometry()
+
+    expect(stroke).toBe(strokeAgain)
+    expect(stroke).not.toBe(fill)
+    expect(isMeshGlyphGeometry(stroke)).toBe(false)
+    expect(stroke.getAttribute('position')?.count ?? 0).toBeGreaterThan(0)
+    const index = stroke.getIndex()
+    expect(index).not.toBeNull()
+    expect(index!.count % 2).toBe(0)
+    expect(
+      meshFont.cache.hasGeometry(
+        'n'.codePointAt(0)!,
+        MESH_GLYPH_CACHE_SIZE,
+        'stroke'
+      )
+    ).toBe(true)
+  })
 })

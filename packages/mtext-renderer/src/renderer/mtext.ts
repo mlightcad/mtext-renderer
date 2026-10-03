@@ -703,7 +703,8 @@ export class MText extends THREE.Object3D {
       byBlockColor: this._colorSettings.byBlockColor,
       byLayerColor: this._colorSettings.byLayerColor,
       removeFontExtension: true,
-      collectCharBoxes: mtextData.collectCharBoxes ?? true
+      collectCharBoxes: mtextData.collectCharBoxes ?? true,
+      meshFontRenderMode: mtextData.meshFontRenderMode ?? 'mesh'
     }
 
     const context = new MTextContext()

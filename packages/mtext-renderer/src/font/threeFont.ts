@@ -1,7 +1,9 @@
 import {
+  BufferGeometry,
   CubicBezierCurve,
   Curve,
   EllipseCurve,
+  Float32BufferAttribute,
   LineCurve,
   Path,
   QuadraticBezierCurve,
@@ -11,6 +13,8 @@ import {
   Vector2
 } from 'three'
 import { Font, FontData } from 'three/examples/jsm/loaders/FontLoader.js'
+
+import { MESH_GLYPH_CURVE_SEGMENTS } from './meshGlyphGeometry'
 
 type Direction = 'ltr' | 'rtl' | 'tb' // text layout direction
 
@@ -81,6 +85,71 @@ export class ThreeFont extends Font {
     // Step 3: Return the final list of shapes
     return shapes
   }
+
+  /**
+   * Samples glyph contours into line-segment geometry without hole detection
+   * or triangulation.
+   *
+   * @param text - input string to convert to strokes
+   * @param size - font size in units (default 100)
+   * @param direction - text direction ('ltr', 'rtl', 'tb')
+   * @param curveSegments - samples per curve (same meaning as ShapeGeometry)
+   * @returns a BufferGeometry of indexed line pairs suitable for LineSegments
+   */
+  generateStrokeGeometry(
+    text: string,
+    size = 100,
+    direction: Direction = 'ltr',
+    curveSegments = MESH_GLYPH_CURVE_SEGMENTS
+  ): BufferGeometry {
+    const paths = createPaths(text, size, this.data, direction)
+    return shapePathsToLineGeometry(paths, curveSegments)
+  }
+}
+
+/**
+ * Converts ShapePath contours into indexed line-segment geometry.
+ * Each sub-path is sampled and closed if the first and last points differ.
+ */
+function shapePathsToLineGeometry(
+  paths: ShapePath[],
+  curveSegments: number
+): BufferGeometry {
+  const positions: number[] = []
+  const indices: number[] = []
+  let vertex = 0
+  const closeEps = 1e-8
+
+  for (const path of paths) {
+    for (const subPath of path.subPaths) {
+      const pts = subPath.getPoints(curveSegments)
+      if (pts.length < 2) continue
+      const start = vertex
+      for (const p of pts) {
+        positions.push(p.x, p.y, 0)
+        vertex++
+      }
+      const first = pts[0]
+      const last = pts[pts.length - 1]
+      const alreadyClosed =
+        Math.abs(first.x - last.x) <= closeEps &&
+        Math.abs(first.y - last.y) <= closeEps
+      for (let i = 0; i < pts.length - 1; i++) {
+        indices.push(start + i, start + i + 1)
+      }
+      if (!alreadyClosed) {
+        indices.push(vertex - 1, start)
+      }
+    }
+  }
+
+  const geometry = new BufferGeometry()
+  if (positions.length === 0) {
+    return geometry
+  }
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  return geometry
 }
 
 /**
