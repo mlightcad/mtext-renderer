@@ -100,9 +100,15 @@ export interface MTextBaseRenderer {
    * Implementations should load and cache missing fonts; repeated calls should be cheap.
    *
    * @param fonts Font names to load (without extension for built-ins).
-   * @returns A Promise with the list of fonts that were processed.
+   * @param options.scope - Worker pool only: `one` warms a single isolate
+   *   (default); `all` loads into every worker.
+   * @returns Fonts confirmed loaded in the target isolate(s). With
+   *   `scope: 'all'`, only faces present in every worker.
    */
-  loadFonts(fonts: readonly string[]): Promise<{ loaded: string[] }>
+  loadFonts(
+    fonts: readonly string[],
+    options?: { scope?: 'one' | 'all' }
+  ): Promise<{ loaded: string[] }>
 
   /**
    * Retrieve the list of fonts that can be used by the renderer.

@@ -140,7 +140,10 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   /**
    * Load fonts in the main thread
    */
-  async loadFonts(fonts: readonly string[]): Promise<{ loaded: string[] }> {
+  async loadFonts(
+    fonts: readonly string[],
+    _options?: { scope?: 'one' | 'all' }
+  ): Promise<{ loaded: string[] }> {
     await this.fontManager.loadFontsByNames(fonts)
     return {
       loaded: fonts.filter(name => this.fontManager.isFontLoaded(name))

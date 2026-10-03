@@ -302,12 +302,14 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   private isInitialized: boolean
   private defaultStyleManager: StyleManager
   /**
-   * Fonts known to be present in every worker after an explicit loadFonts or
-   * after a lazy fontLoaded was fan-out to the full pool.
+   * Fonts known to be present in a given worker isolate after an explicit
+   * {@link loadFonts} or a lazy `fontLoaded` notification from that worker.
+   *
+   * Intentionally per-worker: fanning a mesh face (e.g. simsun) into every
+   * isolate re-parses tens of MB of opentype data N times and makes worker
+   * mode slower than main-thread rendering.
    */
-  private poolSyncedFonts = new Set<string>()
-  /** In-flight pool-wide font syncs keyed by normalized font name. */
-  private poolFontSyncInFlight = new Map<string, Promise<void>>()
+  private fontsPerWorker: Array<Set<string>> = []
   /** Fonts already forwarded as main-thread fontLoaded for this pool lifetime. */
   private poolFontLoadedDispatched = new Set<string>()
 
@@ -332,6 +334,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       this.attachWorkerHandlers(worker, i)
       this.workers.push(worker)
       this.inFlightPerWorker.push(0)
+      this.fontsPerWorker.push(new Set())
     }
 
     this.isInitialized = false
@@ -366,24 +369,20 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     workerIndex: number
   ) {
     // Lazy font loads complete after the render request has already resolved.
-    // Sync the face into the full pool before notifying main-thread listeners,
-    // so a redraw routed to another worker already has the font.
+    // Record the face on the notifying worker only — do not re-parse into the
+    // rest of the pool (N× mesh-font cost). Other workers load on demand when
+    // they first draw text that needs the face; pickLeastLoadedWorker prefers
+    // already-warm isolates.
     if (response.type === 'fontLoaded') {
       const fontName = response.data?.fontName
       if (fontName) {
-        void this.syncFontToWorkerPool(fontName)
-          .then(shouldDispatch => {
-            if (shouldDispatch) {
-              FontManager.instance.applyRemoteFontLoaded(fontName)
-              FontManager.instance.events.fontLoaded.dispatch({ fontName })
-            }
-          })
-          .catch(error => {
-            console.warn(
-              `Failed to sync lazy-loaded font "${fontName}" across worker pool:`,
-              error
-            )
-          })
+        const key = fontName.toLowerCase()
+        this.fontsPerWorker[workerIndex]?.add(key)
+        if (key && !this.poolFontLoadedDispatched.has(key)) {
+          this.poolFontLoadedDispatched.add(key)
+          FontManager.instance.applyRemoteFontLoaded(fontName)
+          FontManager.instance.events.fontLoaded.dispatch({ fontName })
+        }
       }
       return
     }
@@ -410,6 +409,17 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       )
 
       if (success) {
+        if (response.type === 'loadFonts') {
+          const loaded =
+            (data as LoadFontsResponse['data'] | undefined)?.loaded ?? []
+          const set = this.fontsPerWorker[workerIndex]
+          if (set) {
+            for (const name of loaded) {
+              const key = name.toLowerCase()
+              if (key) set.add(key)
+            }
+          }
+        }
         pendingRequest.resolve(data)
       } else {
         pendingRequest.reject(new Error(error || 'Unknown worker error'))
@@ -417,58 +427,6 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     } else {
       console.warn(`No pending request found for worker response id=${id}`)
     }
-  }
-
-  /**
-   * Ensures every worker has `fontName`, then returns whether the main thread
-   * should emit {@link FontManager.events.fontLoaded} for this name.
-   */
-  private syncFontToWorkerPool(fontName: string): Promise<boolean> {
-    const key = fontName.toLowerCase()
-    if (!key || this.workers.length === 0) {
-      return Promise.resolve(false)
-    }
-    if (this.poolFontLoadedDispatched.has(key)) {
-      return Promise.resolve(false)
-    }
-
-    const existing = this.poolFontSyncInFlight.get(key)
-    const sync =
-      existing ??
-      (async () => {
-        if (!this.poolSyncedFonts.has(key)) {
-          const results = await this.sendMessageToAllWorkers<
-            LoadFontsMessage,
-            LoadFontsResponse
-          >({
-            type: 'loadFonts',
-            data: { fonts: [fontName] }
-          })
-          const loadedInAll = results.every(r =>
-            r?.loaded?.some(name => name.toLowerCase() === key)
-          )
-          if (loadedInAll) {
-            this.poolSyncedFonts.add(key)
-          }
-        }
-      })().finally(() => {
-        this.poolFontSyncInFlight.delete(key)
-      })
-
-    if (!existing) {
-      this.poolFontSyncInFlight.set(key, sync)
-    }
-
-    return sync.then(() => {
-      if (!this.poolSyncedFonts.has(key)) {
-        return false
-      }
-      if (this.poolFontLoadedDispatched.has(key)) {
-        return false
-      }
-      this.poolFontLoadedDispatched.add(key)
-      return true
-    })
   }
 
   /**
@@ -501,11 +459,19 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   }
   private pickLeastLoadedWorker(): number {
     let minIndex = 0
-    let minValue = this.inFlightPerWorker[0] ?? 0
+    let minInFlight = this.inFlightPerWorker[0] ?? 0
+    let minFonts = this.fontsPerWorker[0]?.size ?? 0
     for (let i = 1; i < this.inFlightPerWorker.length; i++) {
-      const value = this.inFlightPerWorker[i] ?? 0
-      if (value < minValue) {
-        minValue = value
+      const inFlight = this.inFlightPerWorker[i] ?? 0
+      const fontCount = this.fontsPerWorker[i]?.size ?? 0
+      // Prefer fewer in-flight tasks; break ties toward warmer isolates so
+      // cold workers are not forced to re-parse large mesh fonts.
+      if (
+        inFlight < minInFlight ||
+        (inFlight === minInFlight && fontCount > minFonts)
+      ) {
+        minInFlight = inFlight
+        minFonts = fontCount
         minIndex = i
       }
     }
@@ -749,8 +715,50 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     )
   }
 
-  async loadFonts(fonts: readonly string[]): Promise<{ loaded: string[] }> {
+  /**
+   * Loads fonts into the worker pool.
+   *
+   * @param fonts - Logical font names (extensions stripped by workers).
+   * @param options.scope - `one` (default) warms a single least-loaded /
+   *   already-warm worker so open-time preload does not re-parse large mesh
+   *   fonts into every isolate. Pass `all` only when every worker must have
+   *   the faces before the first draw (rare; expensive for mesh fonts).
+   * @returns Fonts confirmed loaded in the target isolate(s). With
+   *   `scope: 'all'`, only faces present in every worker.
+   */
+  async loadFonts(
+    fonts: readonly string[],
+    options?: { scope?: 'one' | 'all' }
+  ): Promise<{ loaded: string[] }> {
     await this.ensureTasksFinished()
+
+    const scope = options?.scope ?? 'one'
+    if (scope === 'one') {
+      const index = this.pickLeastLoadedWorker()
+      const result = await this.sendMessageToOneWorker<
+        LoadFontsMessage,
+        LoadFontsResponse
+      >(
+        {
+          type: 'loadFonts',
+          data: { fonts: [...fonts] }
+        },
+        index
+      )
+      const loaded = result?.loaded ?? []
+      const set = this.fontsPerWorker[index]
+      if (set) {
+        for (const name of loaded) {
+          const key = name.toLowerCase()
+          if (key) set.add(key)
+        }
+      }
+      for (const name of loaded) {
+        const key = name.toLowerCase()
+        if (key) this.poolFontLoadedDispatched.add(key)
+      }
+      return { loaded: [...loaded] }
+    }
 
     const results = await this.sendMessageToAllWorkers<
       LoadFontsMessage,
@@ -760,24 +768,27 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       data: { fonts: [...fonts] }
     })
 
-    const aggregated = new Set<string>()
-    results.forEach(r => r?.loaded?.forEach(f => aggregated.add(f)))
-
-    for (const name of fonts) {
-      const key = name.toLowerCase()
-      if (!key) {
-        continue
-      }
-      const loadedInAll = results.every(r =>
-        r?.loaded?.some(loadedName => loadedName.toLowerCase() === key)
-      )
-      if (loadedInAll) {
-        this.poolSyncedFonts.add(key)
-        this.poolFontLoadedDispatched.add(key)
+    // Intersection, not union: a partial pool load must not be reported as
+    // preloaded everywhere. `[].every(...)` is true, so require results.
+    const loadedInAll: string[] = []
+    const firstLoaded = results[0]?.loaded ?? []
+    if (results.length > 0) {
+      for (const name of firstLoaded) {
+        const key = name.toLowerCase()
+        if (!key) {
+          continue
+        }
+        const presentEverywhere = results.every(r =>
+          r?.loaded?.some(loadedName => loadedName.toLowerCase() === key)
+        )
+        if (presentEverywhere) {
+          this.poolFontLoadedDispatched.add(key)
+          loadedInAll.push(name)
+        }
       }
     }
 
-    return { loaded: Array.from(aggregated) }
+    return { loaded: loadedInAll }
   }
 
   async getAvailableFonts(): Promise<{ fonts: Array<{ name: string[] }> }> {
@@ -1101,9 +1112,8 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     this.workers.forEach(w => w.terminate())
     this.workers = []
     this.inFlightPerWorker = []
+    this.fontsPerWorker = []
     this.readyPromise = null
-    this.poolSyncedFonts.clear()
-    this.poolFontSyncInFlight.clear()
     this.poolFontLoadedDispatched.clear()
     // Reject any remaining pending requests
     this.pendingRequests.forEach(({ reject }) => {

@@ -473,47 +473,6 @@ describe('render remote font loading', () => {
     renderer.destroy()
   })
 
-  it('WebWorkerRenderer does not dispatch fontLoaded when pool sync reports empty loaded', async () => {
-    const renderer = new WebWorkerRenderer({ poolSize: 1, timeOut: 5000 })
-    const listener = vi.fn()
-    FontManager.instance.events.fontLoaded.addEventListener(listener)
-
-    // Override MockWorker so loadFonts returns no successfully loaded faces.
-    workerInstances[0].postMessage = vi.fn(
-      (message: Record<string, unknown>) => {
-        queueMicrotask(() => {
-          const { type, id } = message
-          if (type === 'loadFonts') {
-            workerInstances[0].onmessage?.({
-              data: {
-                id,
-                type,
-                success: true,
-                data: { loaded: [] }
-              }
-            } as MessageEvent)
-            return
-          }
-        })
-      }
-    )
-
-    workerInstances[0].onmessage?.({
-      data: {
-        id: '',
-        type: 'fontLoaded',
-        success: true,
-        data: { fontName: 'missing-face' }
-      }
-    } as MessageEvent)
-
-    await new Promise(resolve => setTimeout(resolve, 30))
-    expect(listener).not.toHaveBeenCalled()
-
-    FontManager.instance.events.fontLoaded.removeEventListener(listener)
-    renderer.destroy()
-  })
-
   it('WebWorkerRenderer forwards worker fontLoaded to main FontManager', async () => {
     const renderer = new WebWorkerRenderer({ poolSize: 1, timeOut: 5000 })
     const listener = vi.fn()
@@ -539,6 +498,30 @@ describe('render remote font loading', () => {
       expect(listener).toHaveBeenCalledWith({ fontName: 'hztxt' })
     })
     expect(FontManager.instance.missedFonts.hztxt).toBeUndefined()
+    FontManager.instance.events.fontLoaded.removeEventListener(listener)
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer dedupes fontLoaded dispatch for the same face', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 1, timeOut: 5000 })
+    const listener = vi.fn()
+    FontManager.instance.events.fontLoaded.addEventListener(listener)
+
+    for (let i = 0; i < 2; i++) {
+      workerInstances[0].onmessage?.({
+        data: {
+          id: '',
+          type: 'fontLoaded',
+          success: true,
+          data: { fontName: 'hztxt' }
+        }
+      } as MessageEvent)
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledWith({ fontName: 'hztxt' })
+
     FontManager.instance.events.fontLoaded.removeEventListener(listener)
     renderer.destroy()
   })
@@ -582,10 +565,14 @@ describe('render remote font loading', () => {
     renderer.destroy()
   })
 
-  it('WebWorkerRenderer syncs lazy fontLoaded into every worker before dispatch', async () => {
+  it('WebWorkerRenderer does not fan-out lazy fontLoaded into every worker', async () => {
     const renderer = new WebWorkerRenderer({ poolSize: 2, timeOut: 5000 })
     const listener = vi.fn()
     FontManager.instance.events.fontLoaded.addEventListener(listener)
+
+    for (const worker of workerInstances) {
+      worker.postMessage.mockClear()
+    }
 
     workerInstances[0].onmessage?.({
       data: {
@@ -601,7 +588,7 @@ describe('render remote font loading', () => {
     })
 
     for (const worker of workerInstances) {
-      expect(worker.postMessage).toHaveBeenCalledWith(
+      expect(worker.postMessage).not.toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'loadFonts',
           data: { fonts: ['simkai'] }
@@ -610,6 +597,92 @@ describe('render remote font loading', () => {
     }
 
     FontManager.instance.events.fontLoaded.removeEventListener(listener)
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer.loadFonts defaults to warming a single worker', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 2, timeOut: 5000 })
+
+    for (const worker of workerInstances) {
+      worker.postMessage.mockClear()
+    }
+
+    await renderer.loadFonts(['simkai'])
+
+    const loadFontsCallCounts = workerInstances.map(
+      worker =>
+        worker.postMessage.mock.calls.filter(
+          ([message]) => (message as { type?: string }).type === 'loadFonts'
+        ).length
+    )
+    expect(loadFontsCallCounts.reduce((a, b) => a + b, 0)).toBe(1)
+    expect(loadFontsCallCounts.some(count => count === 1)).toBe(true)
+
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer.loadFonts scope=all still warms every worker', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 2, timeOut: 5000 })
+
+    for (const worker of workerInstances) {
+      worker.postMessage.mockClear()
+    }
+
+    const { loaded } = await renderer.loadFonts(['simkai'], { scope: 'all' })
+
+    expect(loaded).toEqual(['simkai'])
+    for (const worker of workerInstances) {
+      expect(worker.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'loadFonts',
+          data: { fonts: ['simkai'] }
+        })
+      )
+    }
+
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer.loadFonts scope=all returns only fonts loaded in every worker', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 2, timeOut: 5000 })
+
+    for (const worker of workerInstances) {
+      worker.postMessage.mockClear()
+    }
+
+    workerInstances[1].postMessage = vi.fn(
+      (message: Record<string, unknown>) => {
+        queueMicrotask(() => {
+          const { type, id } = message
+          if (type === 'getAvailableFonts') {
+            workerInstances[1].onmessage?.({
+              data: {
+                id,
+                type,
+                success: true,
+                data: { fonts: [] }
+              }
+            } as MessageEvent)
+            return
+          }
+          if (type === 'loadFonts') {
+            workerInstances[1].onmessage?.({
+              data: {
+                id,
+                type,
+                success: true,
+                data: { loaded: [] }
+              }
+            } as MessageEvent)
+          }
+        })
+      }
+    )
+
+    const { loaded } = await renderer.loadFonts(['simkai'], { scope: 'all' })
+
+    expect(loaded).toEqual([])
+
     renderer.destroy()
   })
 
@@ -651,19 +724,29 @@ describe('render remote font loading', () => {
     renderer.destroy()
   })
 
-  it('WebWorkerRenderer loadFonts delegates font names to all workers', async () => {
+  it('WebWorkerRenderer loadFonts delegates font names to one worker by default', async () => {
     const renderer = new WebWorkerRenderer({ poolSize: 2, timeOut: 5000 })
+
+    for (const worker of workerInstances) {
+      worker.postMessage.mockClear()
+    }
 
     await renderer.loadFonts(['txt', 'hztxt'])
 
-    for (const worker of workerInstances) {
-      expect(worker.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'loadFonts',
-          data: { fonts: ['txt', 'hztxt'] }
-        })
-      )
-    }
+    const loadFontsCallCounts = workerInstances.map(
+      worker =>
+        worker.postMessage.mock.calls.filter(
+          ([message]) => (message as { type?: string }).type === 'loadFonts'
+        ).length
+    )
+    expect(loadFontsCallCounts.reduce((a, b) => a + b, 0)).toBe(1)
+    const warmed = workerInstances.find((_, i) => loadFontsCallCounts[i] === 1)
+    expect(warmed?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'loadFonts',
+        data: { fonts: ['txt', 'hztxt'] }
+      })
+    )
 
     renderer.destroy()
   })

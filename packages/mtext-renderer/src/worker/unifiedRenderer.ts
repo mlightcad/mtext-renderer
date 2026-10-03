@@ -283,10 +283,17 @@ export class UnifiedRenderer {
   }
 
   /**
-   * Load fonts using the current mode
+   * Load fonts using the current mode.
+   *
+   * In worker mode, `options.scope` defaults to `one` (warm a single isolate).
+   * Pass `{ scope: 'all' }` only when every worker must have the faces;
+   * `loaded` then lists only faces confirmed in every isolate.
    */
-  async loadFonts(fonts: readonly string[]): Promise<{ loaded: string[] }> {
-    return this.renderer.loadFonts(fonts)
+  async loadFonts(
+    fonts: readonly string[],
+    options?: { scope?: 'one' | 'all' }
+  ): Promise<{ loaded: string[] }> {
+    return this.renderer.loadFonts(fonts, options)
   }
 
   /**
