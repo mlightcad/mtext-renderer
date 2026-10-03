@@ -723,6 +723,8 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
    *   already-warm worker so open-time preload does not re-parse large mesh
    *   fonts into every isolate. Pass `all` only when every worker must have
    *   the faces before the first draw (rare; expensive for mesh fonts).
+   * @returns Fonts confirmed loaded in the target isolate(s). With
+   *   `scope: 'all'`, only faces present in every worker.
    */
   async loadFonts(
     fonts: readonly string[],
@@ -766,23 +768,27 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       data: { fonts: [...fonts] }
     })
 
-    const aggregated = new Set<string>()
-    results.forEach(r => r?.loaded?.forEach(f => aggregated.add(f)))
-
-    for (const name of fonts) {
-      const key = name.toLowerCase()
-      if (!key) {
-        continue
-      }
-      const loadedInAll = results.every(r =>
-        r?.loaded?.some(loadedName => loadedName.toLowerCase() === key)
-      )
-      if (loadedInAll) {
-        this.poolFontLoadedDispatched.add(key)
+    // Intersection, not union: a partial pool load must not be reported as
+    // preloaded everywhere. `[].every(...)` is true, so require results.
+    const loadedInAll: string[] = []
+    const firstLoaded = results[0]?.loaded ?? []
+    if (results.length > 0) {
+      for (const name of firstLoaded) {
+        const key = name.toLowerCase()
+        if (!key) {
+          continue
+        }
+        const presentEverywhere = results.every(r =>
+          r?.loaded?.some(loadedName => loadedName.toLowerCase() === key)
+        )
+        if (presentEverywhere) {
+          this.poolFontLoadedDispatched.add(key)
+          loadedInAll.push(name)
+        }
       }
     }
 
-    return { loaded: Array.from(aggregated) }
+    return { loaded: loadedInAll }
   }
 
   async getAvailableFonts(): Promise<{ fonts: Array<{ name: string[] }> }> {

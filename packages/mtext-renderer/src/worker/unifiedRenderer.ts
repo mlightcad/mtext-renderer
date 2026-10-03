@@ -286,7 +286,8 @@ export class UnifiedRenderer {
    * Load fonts using the current mode.
    *
    * In worker mode, `options.scope` defaults to `one` (warm a single isolate).
-   * Pass `{ scope: 'all' }` only when every worker must have the faces.
+   * Pass `{ scope: 'all' }` only when every worker must have the faces;
+   * `loaded` then lists only faces confirmed in every isolate.
    */
   async loadFonts(
     fonts: readonly string[],

@@ -628,8 +628,9 @@ describe('render remote font loading', () => {
       worker.postMessage.mockClear()
     }
 
-    await renderer.loadFonts(['simkai'], { scope: 'all' })
+    const { loaded } = await renderer.loadFonts(['simkai'], { scope: 'all' })
 
+    expect(loaded).toEqual(['simkai'])
     for (const worker of workerInstances) {
       expect(worker.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -638,6 +639,49 @@ describe('render remote font loading', () => {
         })
       )
     }
+
+    renderer.destroy()
+  })
+
+  it('WebWorkerRenderer.loadFonts scope=all returns only fonts loaded in every worker', async () => {
+    const renderer = new WebWorkerRenderer({ poolSize: 2, timeOut: 5000 })
+
+    for (const worker of workerInstances) {
+      worker.postMessage.mockClear()
+    }
+
+    workerInstances[1].postMessage = vi.fn(
+      (message: Record<string, unknown>) => {
+        queueMicrotask(() => {
+          const { type, id } = message
+          if (type === 'getAvailableFonts') {
+            workerInstances[1].onmessage?.({
+              data: {
+                id,
+                type,
+                success: true,
+                data: { fonts: [] }
+              }
+            } as MessageEvent)
+            return
+          }
+          if (type === 'loadFonts') {
+            workerInstances[1].onmessage?.({
+              data: {
+                id,
+                type,
+                success: true,
+                data: { loaded: [] }
+              }
+            } as MessageEvent)
+          }
+        })
+      }
+    )
+
+    const { loaded } = await renderer.loadFonts(['simkai'], { scope: 'all' })
+
+    expect(loaded).toEqual([])
 
     renderer.destroy()
   })

@@ -102,7 +102,8 @@ export interface MTextBaseRenderer {
    * @param fonts Font names to load (without extension for built-ins).
    * @param options.scope - Worker pool only: `one` warms a single isolate
    *   (default); `all` loads into every worker.
-   * @returns A Promise with the list of fonts that were processed.
+   * @returns Fonts confirmed loaded in the target isolate(s). With
+   *   `scope: 'all'`, only faces present in every worker.
    */
   loadFonts(
     fonts: readonly string[],
