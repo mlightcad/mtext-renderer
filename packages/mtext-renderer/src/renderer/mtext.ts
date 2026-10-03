@@ -8,9 +8,13 @@ import {
 import { ShxFontType } from '@mlightcad/shx-parser'
 import * as THREE from 'three'
 
+import { awaitRenderWork, checkRenderSignal } from '../common/renderRequest'
 import { FontManager } from '../font'
 import { buildCharBoxesFromObject } from './charBoxUtils'
-import { DEFAULT_LINE_SPACE_FACTOR, DEFAULT_LINE_SPACE_STYLE } from './constants'
+import {
+  DEFAULT_LINE_SPACE_FACTOR,
+  DEFAULT_LINE_SPACE_STYLE
+} from './constants'
 import { resolveMTextWrapWidth } from './mtextDataUtils'
 import { MTextFormatOptions, MTextProcessor } from './mtextProcessor'
 import { expandPercentControlCodes } from './percentControlCodes'
@@ -52,6 +56,8 @@ export interface MTextDrawOptions {
    * scheduled in the background and the first draw may use fallbacks.
    */
   awaitFonts?: boolean
+  /** Stop before material/geometry construction if this request is cancelled. */
+  signal?: AbortSignal
 }
 
 /**
@@ -225,6 +231,8 @@ export class MText extends THREE.Object3D {
    * {@link FontManager.awaitFontsBeforeDraw} to wait for referenced fonts first.
    */
   async asyncDraw(options?: MTextDrawOptions) {
+    const signal = options?.signal
+    checkRenderSignal(signal)
     // Determine fonts used in the mtext string (without extensions)
     const fonts = Array.from(MText.getFonts(this._mtextData.text || '', true))
 
@@ -269,7 +277,10 @@ export class MText extends THREE.Object3D {
           void this._fontManager.requestFonts(fallbackFonts)
         }
         if (awaitFonts) {
-          await this._fontManager.requestFonts(fontsToRequest)
+          await awaitRenderWork(
+            this._fontManager.requestFonts(fontsToRequest),
+            signal
+          )
         } else {
           void this._fontManager.requestFonts(fontsToRequest)
         }
@@ -277,11 +288,16 @@ export class MText extends THREE.Object3D {
     } else if (fontsToRequest.length > 0 || fallbackFonts.length > 0) {
       // Non-lazy mode still needs the configured fallbacks available before
       // syncDraw; keep awaiting the full set when not using on-demand loads.
-      await this._fontManager.loadFontsByNames([
-        ...fontsToRequest,
-        ...fallbackFonts
-      ])
+      await awaitRenderWork(
+        this._fontManager.loadFontsByNames([
+          ...fontsToRequest,
+          ...fallbackFonts
+        ]),
+        signal
+      )
     }
+
+    checkRenderSignal(signal)
 
     // Only mark style fonts handled once they are actually registered.
     // Otherwise a FailedToLoad / NotFound on first open (CDN race, stale
@@ -289,9 +305,7 @@ export class MText extends THREE.Object3D {
     if (fonts.length > 0) {
       const styleNames = [
         this._style.font ? this.getFontName(this._style.font) : undefined,
-        this._style.bigFont
-          ? this.getFontName(this._style.bigFont)
-          : undefined,
+        this._style.bigFont ? this.getFontName(this._style.bigFont) : undefined,
         this._style.extendedFont
           ? this.getFontName(this._style.extendedFont)
           : undefined

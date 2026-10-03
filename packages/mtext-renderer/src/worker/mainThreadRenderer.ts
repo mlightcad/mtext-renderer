@@ -1,8 +1,10 @@
-import { FontManager } from '../font'
 import {
-  collectIsolateMemoryStats,
-  type IsolateMemoryStats
-} from '../memory'
+  awaitRenderWork,
+  checkRenderSignal,
+  disposeRenderGeometry
+} from '../common/renderRequest'
+import { FontManager } from '../font'
+import { collectIsolateMemoryStats, type IsolateMemoryStats } from '../memory'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
 import { MText } from '../renderer/mtext'
 import { Shape } from '../renderer/shape'
@@ -14,7 +16,11 @@ import {
   ShapeData,
   TextStyle
 } from '../renderer/types'
-import { MTextBaseRenderer, MTextObject } from './baseRenderer'
+import {
+  MTextBaseRenderer,
+  MTextObject,
+  TextRenderOptions
+} from './baseRenderer'
 
 /**
  * Main thread renderer for MText objects
@@ -23,12 +29,11 @@ import { MTextBaseRenderer, MTextObject } from './baseRenderer'
 export class MainThreadRenderer implements MTextBaseRenderer {
   private fontManager: FontManager
   private defaultStyleManager: StyleManager
-  private isInitialized: boolean
+  private initialization: Promise<void> | null = null
 
   constructor() {
     this.fontManager = FontManager.instance
     this.defaultStyleManager = new DefaultStyleManager()
-    this.isInitialized = false
   }
 
   /**
@@ -66,19 +71,30 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   async asyncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = createDefaultColorSettings()
+    colorSettings: ColorSettings = createDefaultColorSettings(),
+    options: TextRenderOptions = {}
   ): Promise<MTextObject> {
-    await this.ensureInitialized()
+    const styleManager = options.styleManager ?? this.defaultStyleManager
+    const signal = options.signal
+    checkRenderSignal(signal)
+    await awaitRenderWork(this.ensureInitialized(), signal)
+    checkRenderSignal(signal)
     const mtext = new MText(
       mtextContent,
       textStyle,
-      this.defaultStyleManager,
+      styleManager,
       this.fontManager,
       colorSettings
     )
-    await mtext.asyncDraw()
-    mtext.updateMatrixWorld(true)
-    return mtext as MTextObject
+    try {
+      await mtext.asyncDraw({ signal })
+      checkRenderSignal(signal)
+      mtext.updateMatrixWorld(true)
+      return mtext as MTextObject
+    } catch (error) {
+      disposeRenderGeometry(mtext)
+      throw error
+    }
   }
 
   /**
@@ -88,12 +104,15 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   syncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = createDefaultColorSettings()
+    colorSettings: ColorSettings = createDefaultColorSettings(),
+    options: TextRenderOptions = {}
   ): MTextObject {
+    checkRenderSignal(options.signal)
+    const styleManager = options.styleManager ?? this.defaultStyleManager
     const mtext = new MText(
       mtextContent,
       textStyle,
-      this.defaultStyleManager,
+      styleManager,
       this.fontManager,
       colorSettings
     )
@@ -105,30 +124,44 @@ export class MainThreadRenderer implements MTextBaseRenderer {
   async asyncRenderShape(
     shapeContent: ShapeData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = createDefaultColorSettings()
+    colorSettings: ColorSettings = createDefaultColorSettings(),
+    options: TextRenderOptions = {}
   ): Promise<MTextObject> {
-    await this.ensureInitialized()
+    const styleManager = options.styleManager ?? this.defaultStyleManager
+    const signal = options.signal
+    checkRenderSignal(signal)
+    await awaitRenderWork(this.ensureInitialized(), signal)
+    checkRenderSignal(signal)
     const shape = new Shape(
       shapeContent,
       textStyle,
-      this.defaultStyleManager,
+      styleManager,
       this.fontManager,
       colorSettings
     )
-    await shape.asyncDraw()
-    shape.updateMatrixWorld(true)
-    return shape as unknown as MTextObject
+    try {
+      await shape.asyncDraw({ signal })
+      checkRenderSignal(signal)
+      shape.updateMatrixWorld(true)
+      return shape as unknown as MTextObject
+    } catch (error) {
+      disposeRenderGeometry(shape)
+      throw error
+    }
   }
 
   syncRenderShape(
     shapeContent: ShapeData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = createDefaultColorSettings()
+    colorSettings: ColorSettings = createDefaultColorSettings(),
+    options: TextRenderOptions = {}
   ): MTextObject {
+    checkRenderSignal(options.signal)
+    const styleManager = options.styleManager ?? this.defaultStyleManager
     const shape = new Shape(
       shapeContent,
       textStyle,
-      this.defaultStyleManager,
+      styleManager,
       this.fontManager,
       colorSettings
     )
@@ -144,9 +177,10 @@ export class MainThreadRenderer implements MTextBaseRenderer {
     fonts: readonly string[],
     _options?: { scope?: 'one' | 'all' }
   ): Promise<{ loaded: string[] }> {
-    await this.fontManager.loadFontsByNames(fonts)
+    const requestedFonts = [...fonts]
+    await this.fontManager.loadFontsByNames(requestedFonts)
     return {
-      loaded: fonts.filter(name => this.fontManager.isFontLoaded(name))
+      loaded: requestedFonts.filter(name => this.fontManager.isFontLoaded(name))
     }
   }
 
@@ -172,20 +206,24 @@ export class MainThreadRenderer implements MTextBaseRenderer {
     // nothing to cleanup for main thread renderer currently
   }
 
-  private async ensureInitialized() {
-    if (!this.isInitialized) {
-      // Ensure fonts.json is ready before the first on-demand style request.
-      try {
-        await this.fontManager.getAvailableFonts()
-      } catch {
-        // Per-face loads still report NotFound/FailedToLoad.
-      }
-      // Non-lazy mode still needs default/symbol fonts before the first draw.
-      // Lazy mode schedules them on demand via requestFont / glyph fallbacks.
-      if (!this.fontManager.lazyFontLoading) {
-        await this.loadFonts(this.fontManager.getFontsToLoad())
-      }
-      this.isInitialized = true
+  private ensureInitialized(): Promise<void> {
+    if (!this.initialization) {
+      this.initialization = (async () => {
+        // Share catalog/default preload across overlapping requests.
+        try {
+          await this.fontManager.getAvailableFonts()
+        } catch {
+          // Per-face loads still report NotFound/FailedToLoad.
+        }
+        if (!this.fontManager.lazyFontLoading) {
+          await this.loadFonts(this.fontManager.getFontsToLoad())
+        }
+      })()
+      const initialization = this.initialization
+      void initialization.catch(() => {
+        if (this.initialization === initialization) this.initialization = null
+      })
     }
+    return this.initialization
   }
 }

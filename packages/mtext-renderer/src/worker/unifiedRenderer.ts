@@ -1,4 +1,5 @@
 import { FontCacheManager } from '../cache'
+import { awaitRenderWork, checkRenderSignal } from '../common/renderRequest'
 import { DefaultFontsPreset, FontLoadStatus, FontManager } from '../font'
 import {
   collectIsolateMemoryStats,
@@ -13,7 +14,11 @@ import {
   ShapeData,
   TextStyle
 } from '../renderer/types'
-import { MTextBaseRenderer, MTextObject } from './baseRenderer'
+import {
+  MTextBaseRenderer,
+  MTextObject,
+  TextRenderOptions
+} from './baseRenderer'
 import { MainThreadRenderer } from './mainThreadRenderer'
 import { WebWorkerRenderer, WebWorkerRendererConfig } from './webWorkerRenderer'
 
@@ -29,6 +34,8 @@ export class UnifiedRenderer {
   private defaultMode: RenderMode
   private workerConfig: WebWorkerRendererConfig
   private webWorkerConfigured = false
+  private workerActivation: Promise<WebWorkerRenderer> | null = null
+  private workerGeneration = 0
   /** Last lazyFontLoading value pushed to the worker pool, if any. */
   private workerLazyFontLoading: boolean | null = null
   /** Last awaitFontsBeforeDraw value pushed to the worker pool, if any. */
@@ -64,31 +71,54 @@ export class UnifiedRenderer {
     return this.webWorkerRenderer
   }
 
-  private async activateWebWorkerRenderer(): Promise<WebWorkerRenderer> {
+  private activateWebWorkerRenderer(): Promise<WebWorkerRenderer> {
+    if (this.workerActivation) return this.workerActivation
     const renderer = this.ensureWebWorkerRenderer()
-    if (!this.webWorkerConfigured) {
-      await renderer.setDefaultFonts(
-        [...FontManager.instance.defaultFonts],
-        [...FontManager.instance.symbolFonts]
-      )
-      this.webWorkerConfigured = true
+    const generation = this.workerGeneration
+    const check = () => {
+      if (
+        this.workerGeneration !== generation ||
+        this.webWorkerRenderer !== renderer
+      ) {
+        throw new Error('Text worker pool was terminated')
+      }
     }
-    const fontUrl = FontManager.instance.baseUrl
-    if (fontUrl && this.workerFontUrl !== fontUrl) {
-      await renderer.setFontUrl(fontUrl)
-      this.workerFontUrl = fontUrl
+    const activation = (async () => {
+      if (!this.webWorkerConfigured) {
+        await renderer.setDefaultFonts(
+          [...FontManager.instance.defaultFonts],
+          [...FontManager.instance.symbolFonts]
+        )
+        check()
+        this.webWorkerConfigured = true
+      }
+      const fontUrl = FontManager.instance.baseUrl
+      if (fontUrl && this.workerFontUrl !== fontUrl) {
+        await renderer.setFontUrl(fontUrl)
+        check()
+        this.workerFontUrl = fontUrl
+      }
+      const lazy = FontManager.instance.lazyFontLoading
+      if (this.workerLazyFontLoading !== lazy) {
+        await renderer.setLazyFontLoading(lazy)
+        check()
+        this.workerLazyFontLoading = lazy
+      }
+      const awaitFonts = FontManager.instance.awaitFontsBeforeDraw
+      if (this.workerAwaitFontsBeforeDraw !== awaitFonts) {
+        await renderer.setAwaitFontsBeforeDraw(awaitFonts)
+        check()
+        this.workerAwaitFontsBeforeDraw = awaitFonts
+      }
+      check()
+      return renderer
+    })()
+    this.workerActivation = activation
+    const clear = () => {
+      if (this.workerActivation === activation) this.workerActivation = null
     }
-    const lazy = FontManager.instance.lazyFontLoading
-    if (this.workerLazyFontLoading !== lazy) {
-      await renderer.setLazyFontLoading(lazy)
-      this.workerLazyFontLoading = lazy
-    }
-    const awaitFonts = FontManager.instance.awaitFontsBeforeDraw
-    if (this.workerAwaitFontsBeforeDraw !== awaitFonts) {
-      await renderer.setAwaitFontsBeforeDraw(awaitFonts)
-      this.workerAwaitFontsBeforeDraw = awaitFonts
-    }
-    return renderer
+    void activation.then(clear, clear)
+    return activation
   }
 
   /**
@@ -154,17 +184,41 @@ export class UnifiedRenderer {
     mtextContent: MTextData,
     textStyle: TextStyle,
     colorSettings: ColorSettings = createDefaultColorSettings(),
-    mode?: RenderMode
+    mode?: RenderMode,
+    options: TextRenderOptions = {}
   ): Promise<MTextObject> {
+    const request = {
+      styleManager:
+        options.styleManager ?? this.mainThreadRenderer.styleManager,
+      signal: options.signal
+    }
+    checkRenderSignal(request.signal)
     const effectiveMode = mode ?? this.defaultMode
     if (effectiveMode === 'worker') {
-      const renderer = await this.activateWebWorkerRenderer()
-      return renderer.asyncRenderMText(mtextContent, textStyle, colorSettings)
+      const generation = this.workerGeneration
+      const renderer = await awaitRenderWork(
+        this.activateWebWorkerRenderer(),
+        request.signal
+      )
+      checkRenderSignal(request.signal)
+      if (
+        generation !== this.workerGeneration ||
+        renderer !== this.webWorkerRenderer
+      ) {
+        throw new Error('Text worker pool was terminated')
+      }
+      return renderer.asyncRenderMText(
+        mtextContent,
+        textStyle,
+        colorSettings,
+        request
+      )
     }
     return this.mainThreadRenderer.asyncRenderMText(
       mtextContent,
       textStyle,
-      colorSettings
+      colorSettings,
+      request
     )
   }
 
@@ -176,12 +230,14 @@ export class UnifiedRenderer {
   syncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = createDefaultColorSettings()
+    colorSettings: ColorSettings = createDefaultColorSettings(),
+    options: TextRenderOptions = {}
   ): MTextObject {
     return this.mainThreadRenderer.syncRenderMText(
       mtextContent,
       textStyle,
-      colorSettings
+      colorSettings,
+      options
     )
   }
 
@@ -189,24 +245,28 @@ export class UnifiedRenderer {
     shapeContent: ShapeData,
     textStyle: TextStyle,
     colorSettings: ColorSettings = createDefaultColorSettings(),
-    _mode?: RenderMode
+    _mode?: RenderMode,
+    options: TextRenderOptions = {}
   ): Promise<MTextObject> {
     return this.mainThreadRenderer.asyncRenderShape(
       shapeContent,
       textStyle,
-      colorSettings
+      colorSettings,
+      options
     )
   }
 
   syncRenderShape(
     shapeContent: ShapeData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = createDefaultColorSettings()
+    colorSettings: ColorSettings = createDefaultColorSettings(),
+    options: TextRenderOptions = {}
   ): MTextObject {
     return this.mainThreadRenderer.syncRenderShape(
       shapeContent,
       textStyle,
-      colorSettings
+      colorSettings,
+      options
     )
   }
 
@@ -293,7 +353,20 @@ export class UnifiedRenderer {
     fonts: readonly string[],
     options?: { scope?: 'one' | 'all' }
   ): Promise<{ loaded: string[] }> {
-    return this.renderer.loadFonts(fonts, options)
+    const requestedFonts = [...fonts]
+    const requestedScope = { scope: options?.scope }
+    if (this.defaultMode === 'worker') {
+      const generation = this.workerGeneration
+      const renderer = await this.activateWebWorkerRenderer()
+      if (
+        generation !== this.workerGeneration ||
+        renderer !== this.webWorkerRenderer
+      ) {
+        throw new Error('Text worker pool was terminated')
+      }
+      return renderer.loadFonts(requestedFonts, requestedScope)
+    }
+    return this.mainThreadRenderer.loadFonts(requestedFonts, requestedScope)
   }
 
   /**
@@ -372,6 +445,8 @@ export class UnifiedRenderer {
    * Safe to call when no workers were created.
    */
   terminateWorkers(): void {
+    this.workerGeneration++
+    this.workerActivation = null
     this.webWorkerRenderer?.terminate()
     this.webWorkerRenderer = null
     this.webWorkerConfigured = false

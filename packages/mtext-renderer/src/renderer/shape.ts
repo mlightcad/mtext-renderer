@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+import { awaitRenderWork, checkRenderSignal } from '../common/renderRequest'
 import { FontManager } from '../font'
 import { MText, MTextDrawOptions } from './mtext'
 import { StyleManager } from './styleManager'
@@ -63,6 +64,8 @@ export class Shape extends THREE.Object3D {
   }
 
   async asyncDraw(options?: MTextDrawOptions) {
+    const signal = options?.signal
+    checkRenderSignal(signal)
     const fonts: string[] = []
     if (!this._fontsInStyleLoaded) {
       for (const key of ['font', 'bigFont', 'extendedFont'] as const) {
@@ -90,17 +93,25 @@ export class Shape extends THREE.Object3D {
           void this._fontManager.requestFonts(fallbackFonts)
         }
         if (awaitFonts) {
-          await this._fontManager.requestFonts(fontsToRequest)
+          await awaitRenderWork(
+            this._fontManager.requestFonts(fontsToRequest),
+            signal
+          )
         } else {
           void this._fontManager.requestFonts(fontsToRequest)
         }
       }
     } else if (fontsToRequest.length > 0 || fallbackFonts.length > 0) {
-      await this._fontManager.loadFontsByNames([
-        ...fontsToRequest,
-        ...fallbackFonts
-      ])
+      await awaitRenderWork(
+        this._fontManager.loadFontsByNames([
+          ...fontsToRequest,
+          ...fallbackFonts
+        ]),
+        signal
+      )
     }
+
+    checkRenderSignal(signal)
 
     // Only mark style fonts handled once they are actually registered.
     // Same sticky-skip trap as MText.asyncDraw when the first attempt fails.

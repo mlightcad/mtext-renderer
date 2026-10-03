@@ -9,6 +9,14 @@ import {
   TextStyle
 } from '../renderer/types'
 
+/** Per-request scene ownership. Neither the signal nor the manager is sent to workers. */
+export interface TextRenderOptions {
+  /** Material owner captured when dispatching this request. */
+  styleManager?: StyleManager
+  /** Cancels this request, without terminating shared workers or font loads. */
+  signal?: AbortSignal
+}
+
 /**
  * Represents a rendered MText object that extends THREE.Object3D with additional MText-specific properties.
  * This interface defines the contract for objects returned by MText renderers.
@@ -56,7 +64,8 @@ export interface MTextBaseRenderer {
   asyncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings?: ColorSettings
+    colorSettings?: ColorSettings,
+    options?: TextRenderOptions
   ): Promise<MTextObject>
 
   /**
@@ -73,7 +82,8 @@ export interface MTextBaseRenderer {
   syncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings?: ColorSettings
+    colorSettings?: ColorSettings,
+    options?: TextRenderOptions
   ): MTextObject
 
   /**
@@ -82,7 +92,8 @@ export interface MTextBaseRenderer {
   syncRenderShape(
     shapeContent: ShapeData,
     textStyle: TextStyle,
-    colorSettings?: ColorSettings
+    colorSettings?: ColorSettings,
+    options?: TextRenderOptions
   ): MTextObject
 
   /**
@@ -91,7 +102,8 @@ export interface MTextBaseRenderer {
   asyncRenderShape(
     shapeContent: ShapeData,
     textStyle: TextStyle,
-    colorSettings?: ColorSettings
+    colorSettings?: ColorSettings,
+    options?: TextRenderOptions
   ): Promise<MTextObject>
 
   /**

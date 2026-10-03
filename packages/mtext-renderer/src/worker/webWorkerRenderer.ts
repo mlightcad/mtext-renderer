@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+import { awaitRenderWork, checkRenderSignal } from '../common/renderRequest'
 import { FontManager } from '../font'
 import type { IsolateMemoryStats } from '../memory/types'
 import { buildCharBoxesFromObject } from '../renderer/charBoxUtils'
@@ -17,7 +18,11 @@ import {
   ShapeData,
   TextStyle
 } from '../renderer/types'
-import { MTextBaseRenderer, MTextObject } from './baseRenderer'
+import {
+  MTextBaseRenderer,
+  MTextObject,
+  TextRenderOptions
+} from './baseRenderer'
 
 /**
  * Configuration options for WebWorkerRenderer
@@ -292,14 +297,24 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     {
       resolve: (value: unknown) => void
       reject: (error: Error) => void
-      workerIndex: number
+      cleanup: () => void
     }
   > = new Map()
+  // Cancelled callers no longer own results, but their dispatched work still
+  // occupies its worker until a reply, error or the transport deadline.
+  private workerRequests = new Map<
+    string,
+    {
+      workerIndex: number
+      timer: ReturnType<typeof setTimeout>
+    }
+  >()
+  private terminated = false
   private requestId = 0
   private poolSize: number
   private timeOut: number
   private readyPromise: Promise<void> | null = null
-  private isInitialized: boolean
+  private initialization: Promise<void> | null = null
   private defaultStyleManager: StyleManager
   /**
    * Fonts known to be present in a given worker isolate after an explicit
@@ -336,8 +351,6 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       this.inFlightPerWorker.push(0)
       this.fontsPerWorker.push(new Set())
     }
-
-    this.isInitialized = false
   }
 
   /**
@@ -350,15 +363,19 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     this.defaultStyleManager = value
   }
 
-  private async ensureInitialized() {
-    if (!this.isInitialized) {
-      // Non-lazy mode still needs default/symbol fonts before the first draw.
-      // Lazy mode schedules them on demand inside each worker.
-      if (!FontManager.instance.lazyFontLoading) {
-        await this.loadFonts(FontManager.instance.getFontsToLoad())
-      }
-      this.isInitialized = true
+  private ensureInitialized(): Promise<void> {
+    if (!this.initialization) {
+      this.initialization = (async () => {
+        if (!FontManager.instance.lazyFontLoading) {
+          await this.loadFonts(FontManager.instance.getFontsToLoad())
+        }
+      })()
+      const initialization = this.initialization
+      void initialization.catch(() => {
+        if (this.initialization === initialization) this.initialization = null
+      })
     }
+    return this.initialization
   }
 
   /**
@@ -399,15 +416,10 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     }
 
     const { id, success, data, error } = response
-    const pendingRequest = this.pendingRequests.get(id)
+    if (this.workerRequests.get(id)?.workerIndex !== workerIndex) return
+    const pendingRequest = this.finishRequest(id)
 
     if (pendingRequest) {
-      this.pendingRequests.delete(id)
-      this.inFlightPerWorker[workerIndex] = Math.max(
-        0,
-        this.inFlightPerWorker[workerIndex] - 1
-      )
-
       if (success) {
         if (response.type === 'loadFonts') {
           const loaded =
@@ -424,8 +436,6 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       } else {
         pendingRequest.reject(new Error(error || 'Unknown worker error'))
       }
-    } else {
-      console.warn(`No pending request found for worker response id=${id}`)
     }
   }
 
@@ -442,16 +452,12 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
 
       // Reject all pending requests for this worker
       const idsToReject: string[] = []
-      this.pendingRequests.forEach((pending, key) => {
+      this.workerRequests.forEach((pending, key) => {
         if (pending.workerIndex === index) idsToReject.push(key)
       })
 
       idsToReject.forEach(id => {
-        const pending = this.pendingRequests.get(id)
-        if (pending) {
-          pending.reject(new Error('Worker error occurred'))
-          this.pendingRequests.delete(id)
-        }
+        this.finishRequest(id)?.reject(new Error('Worker error occurred'))
       })
 
       this.inFlightPerWorker[index] = 0
@@ -481,6 +487,8 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     TMessage extends WorkerMessageTyped,
     TResponse extends WorkerResponseTyped
   >(message: Omit<TMessage, 'id'>): Promise<NonNullable<TResponse['data']>[]> {
+    if (this.terminated)
+      return Promise.reject(new Error('Text worker pool is unavailable'))
     return Promise.all(
       this.workers.map((_, index) =>
         this.sendMessageToOneWorker<TMessage, TResponse>(message, index)
@@ -488,76 +496,84 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     )
   }
 
+  /** Release a transport slot and, if still present, its caller ownership. */
+  private finishRequest(id: string) {
+    const transport = this.workerRequests.get(id)
+    if (transport) {
+      clearTimeout(transport.timer)
+      this.workerRequests.delete(id)
+      const index = transport.workerIndex
+      this.inFlightPerWorker[index] = Math.max(
+        0,
+        (this.inFlightPerWorker[index] ?? 0) - 1
+      )
+    }
+    const pending = this.pendingRequests.get(id)
+    if (pending) {
+      this.pendingRequests.delete(id)
+      pending.cleanup()
+    }
+    return pending
+  }
+
   private sendMessageToOneWorker<
     TMessage extends WorkerMessageTyped,
     TResponse extends WorkerResponseTyped
   >(
     message: Omit<TMessage, 'id'>,
-    workerIndex?: number
+    workerIndex?: number,
+    signal?: AbortSignal
   ): Promise<NonNullable<TResponse['data']>> {
     const index = workerIndex ?? this.pickLeastLoadedWorker()
     const worker = this.workers[index]
 
     return new Promise((resolve, reject) => {
+      checkRenderSignal(signal)
+      if (this.terminated || !worker)
+        throw new Error('Text worker pool is unavailable')
       const id = `req_${++this.requestId}`
       const fullMessage = { ...message, id } as TMessage
-
+      const abort = () => {
+        const owner = this.pendingRequests.get(id)
+        if (!owner) return
+        this.pendingRequests.delete(id)
+        owner.cleanup()
+        owner.reject(
+          new DOMException('Text rendering was cancelled', 'AbortError')
+        )
+      }
       this.pendingRequests.set(id, {
         resolve: (value: unknown) =>
           resolve(value as NonNullable<TResponse['data']>),
         reject,
-        workerIndex: index
+        cleanup: () => signal?.removeEventListener('abort', abort)
       })
-
-      this.inFlightPerWorker[index] = (this.inFlightPerWorker[index] ?? 0) + 1
-      worker.postMessage(fullMessage)
-
-      setTimeout(() => {
-        const pending = this.pendingRequests.get(id)
-        if (pending) {
-          this.pendingRequests.delete(id)
-          this.inFlightPerWorker[index] = Math.max(
-            0,
-            this.inFlightPerWorker[index] - 1
-          )
-          reject(new Error('Worker request timeout'))
-        }
+      const timer = setTimeout(() => {
+        this.finishRequest(id)?.reject(new Error('Worker request timeout'))
       }, this.timeOut)
+      this.workerRequests.set(id, { workerIndex: index, timer })
+      this.inFlightPerWorker[index] = (this.inFlightPerWorker[index] ?? 0) + 1
+      signal?.addEventListener('abort', abort, { once: true })
+      try {
+        worker.postMessage(fullMessage)
+      } catch (error) {
+        this.finishRequest(id)?.reject(
+          error instanceof Error ? error : new Error(String(error))
+        )
+      }
     })
   }
 
   private ensureTasksFinished(): Promise<void> {
     if (this.readyPromise) return this.readyPromise
-    if (this.workers.length === 0) return Promise.resolve()
-
-    this.readyPromise = Promise.all(
-      this.workers.map(
-        (worker, index) =>
-          new Promise<void>((resolve, reject) => {
-            const id = `req_${++this.requestId}`
-            this.pendingRequests.set(id, {
-              resolve: () => resolve(),
-              reject,
-              workerIndex: index
-            })
-            this.inFlightPerWorker[index] =
-              (this.inFlightPerWorker[index] ?? 0) + 1
-            worker.postMessage({ type: 'getAvailableFonts', id })
-            setTimeout(() => {
-              const pending = this.pendingRequests.get(id)
-              if (pending) {
-                this.pendingRequests.delete(id)
-                this.inFlightPerWorker[index] = Math.max(
-                  0,
-                  this.inFlightPerWorker[index] - 1
-                )
-                reject(new Error('Worker init timeout'))
-              }
-            }, this.timeOut)
-          })
-      )
-    ).then(() => undefined)
-
+    if (this.terminated)
+      return Promise.reject(new Error('Text worker pool is unavailable'))
+    this.readyPromise = this.sendMessageToAllWorkers<
+      GetAvailableFontsMessage,
+      GetAvailableFontsResponse
+    >({
+      type: 'getAvailableFonts'
+    }).then(() => undefined)
     return this.readyPromise
   }
 
@@ -666,19 +682,32 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   async asyncRenderMText(
     mtextContent: MTextData,
     textStyle: TextStyle,
-    colorSettings: ColorSettings = createDefaultColorSettings()
+    colorSettings: ColorSettings = createDefaultColorSettings(),
+    options: TextRenderOptions = {}
   ): Promise<MTextObject> {
-    await this.ensureInitialized()
+    const request = {
+      styleManager: options.styleManager ?? this.defaultStyleManager,
+      signal: options.signal
+    }
+    checkRenderSignal(request.signal)
+    await awaitRenderWork(this.ensureInitialized(), request.signal)
+    checkRenderSignal(request.signal)
 
     const serialized = await this.sendMessageToOneWorker<
       RenderMessage,
       RenderResponse
-    >({
-      type: 'render',
-      data: { mtextContent, textStyle, colorSettings }
-    })
+    >(
+      {
+        type: 'render',
+        data: { mtextContent, textStyle, colorSettings }
+      },
+      undefined,
+      request.signal
+    )
 
-    return this.reconstructMText(serialized, colorSettings)
+    checkRenderSignal(request.signal)
+    if (this.terminated) throw new Error('Text worker pool was terminated')
+    return this.reconstructMText(serialized, colorSettings, request)
   }
 
   /**
@@ -688,7 +717,8 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   syncRenderMText(
     _mtextContent: MTextData,
     _textStyle: TextStyle,
-    _colorSettings: ColorSettings = createDefaultColorSettings()
+    _colorSettings: ColorSettings = createDefaultColorSettings(),
+    _options?: TextRenderOptions
   ): MTextObject {
     throw new Error(
       'Fuction \'syncRenderMText\' isn\'t supported in \'WebWorkerRenderer\'!'
@@ -698,7 +728,8 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   async asyncRenderShape(
     _shapeContent: ShapeData,
     _textStyle: TextStyle,
-    _colorSettings: ColorSettings = createDefaultColorSettings()
+    _colorSettings: ColorSettings = createDefaultColorSettings(),
+    _options?: TextRenderOptions
   ): Promise<MTextObject> {
     throw new Error(
       'Function \'asyncRenderShape\' isn\'t supported in \'WebWorkerRenderer\'!'
@@ -708,7 +739,8 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   syncRenderShape(
     _shapeContent: ShapeData,
     _textStyle: TextStyle,
-    _colorSettings: ColorSettings = createDefaultColorSettings()
+    _colorSettings: ColorSettings = createDefaultColorSettings(),
+    _options?: TextRenderOptions
   ): MTextObject {
     throw new Error(
       'Function \'syncRenderShape\' isn\'t supported in \'WebWorkerRenderer\'!'
@@ -730,9 +762,10 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
     fonts: readonly string[],
     options?: { scope?: 'one' | 'all' }
   ): Promise<{ loaded: string[] }> {
+    const requestedFonts = [...fonts]
+    const scope = options?.scope ?? 'one'
     await this.ensureTasksFinished()
 
-    const scope = options?.scope ?? 'one'
     if (scope === 'one') {
       const index = this.pickLeastLoadedWorker()
       const result = await this.sendMessageToOneWorker<
@@ -741,7 +774,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       >(
         {
           type: 'loadFonts',
-          data: { fonts: [...fonts] }
+          data: { fonts: requestedFonts }
         },
         index
       )
@@ -765,7 +798,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       LoadFontsResponse
     >({
       type: 'loadFonts',
-      data: { fonts: [...fonts] }
+      data: { fonts: requestedFonts }
     })
 
     // Intersection, not union: a partial pool load must not be reported as
@@ -833,8 +866,11 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
    */
   reconstructMText(
     serializedData: SerializedMText,
-    colorSettings: ColorSettings
+    colorSettings: ColorSettings,
+    options: TextRenderOptions = {}
   ): MTextObject {
+    checkRenderSignal(options.signal)
+    const styleManager = options.styleManager ?? this.defaultStyleManager
     const baseByLayer = colorSettings.color.aci === 256
     const group = new THREE.Group()
 
@@ -856,144 +892,162 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       serializedData.scale.z
     )
 
-    // Reconstruct all child objects
-    serializedData.children.forEach(childData => {
-      const geometry = new THREE.BufferGeometry()
+    // Reconstruct all child objects. Materials stay owned by the supplied manager.
+    const geometries: THREE.BufferGeometry[] = []
+    try {
+      serializedData.children.forEach(childData => {
+        checkRenderSignal(options.signal)
+        const geometry = new THREE.BufferGeometry()
+        geometries.push(geometry)
 
-      // Reconstruct geometry attributes from ArrayBuffers
-      Object.keys(childData.geometry.attributes).forEach(key => {
-        const attr = childData.geometry.attributes[key]
-        // Create a new TypedArray view from the transferred ArrayBuffer
-        const typedArray = new Float32Array(
-          attr.arrayBuffer,
-          attr.byteOffset,
-          attr.length
-        )
-
-        const bufferAttribute = new THREE.BufferAttribute(
-          typedArray,
-          attr.itemSize,
-          attr.normalized
-        )
-        geometry.setAttribute(key, bufferAttribute)
-      })
-
-      // Reconstruct index if present from ArrayBuffer
-      if (childData.geometry.index) {
-        const useUint32 = childData.geometry.index.componentType === 'uint32'
-        if (useUint32) {
-          const indexTypedArray = new Uint32Array(
-            childData.geometry.index.arrayBuffer,
-            childData.geometry.index.byteOffset,
-            childData.geometry.index.length
+        // Reconstruct geometry attributes from ArrayBuffers
+        Object.keys(childData.geometry.attributes).forEach(key => {
+          const attr = childData.geometry.attributes[key]
+          // Create a new TypedArray view from the transferred ArrayBuffer
+          const typedArray = new Float32Array(
+            attr.arrayBuffer,
+            attr.byteOffset,
+            attr.length
           )
-          geometry.setIndex(new THREE.Uint32BufferAttribute(indexTypedArray, 1))
+
+          const bufferAttribute = new THREE.BufferAttribute(
+            typedArray,
+            attr.itemSize,
+            attr.normalized
+          )
+          geometry.setAttribute(key, bufferAttribute)
+        })
+
+        // Reconstruct index if present from ArrayBuffer
+        if (childData.geometry.index) {
+          const useUint32 = childData.geometry.index.componentType === 'uint32'
+          if (useUint32) {
+            const indexTypedArray = new Uint32Array(
+              childData.geometry.index.arrayBuffer,
+              childData.geometry.index.byteOffset,
+              childData.geometry.index.length
+            )
+            geometry.setIndex(
+              new THREE.Uint32BufferAttribute(indexTypedArray, 1)
+            )
+          } else {
+            const indexTypedArray = new Uint16Array(
+              childData.geometry.index.arrayBuffer,
+              childData.geometry.index.byteOffset,
+              childData.geometry.index.length
+            )
+            geometry.setIndex(
+              new THREE.Uint16BufferAttribute(indexTypedArray, 1)
+            )
+          }
+        }
+
+        // Create material using StyleManager for proper material reuse
+        const materialColorSettings = buildWorkerMaterialColorSettings(
+          colorSettings,
+          childData.material.color,
+          baseByLayer,
+          childData.material.mtextColor
+        )
+        let material: THREE.Material
+        if (childData.type === 'mesh') {
+          material = styleManager.getMeshBasicMaterial({
+            ...materialColorSettings
+          })
+          // Apply additional properties if they differ from defaults
+          if (childData.material.transparent !== undefined) {
+            material.transparent = childData.material.transparent
+          }
+          if (childData.material.opacity !== undefined) {
+            material.opacity = childData.material.opacity
+          }
+          if (childData.material.side !== undefined) {
+            material.side = childData.material.side as THREE.Side
+          }
         } else {
-          const indexTypedArray = new Uint16Array(
-            childData.geometry.index.arrayBuffer,
-            childData.geometry.index.byteOffset,
-            childData.geometry.index.length
+          material = styleManager.getLineBasicMaterial({
+            ...materialColorSettings
+          })
+          // Apply additional properties if they differ from defaults
+          if (childData.material.transparent !== undefined) {
+            material.transparent = childData.material.transparent
+          }
+          if (childData.material.opacity !== undefined) {
+            material.opacity = childData.material.opacity
+          }
+          if (childData.material.linewidth !== undefined) {
+            ;(material as THREE.LineBasicMaterial).linewidth =
+              childData.material.linewidth
+          }
+        }
+
+        // Create mesh or line
+        let object: THREE.Object3D
+        if (childData.type === 'mesh') {
+          object = new THREE.Mesh(geometry, material as THREE.MeshBasicMaterial)
+        } else {
+          object = new THREE.LineSegments(
+            geometry,
+            material as THREE.LineBasicMaterial
           )
-          geometry.setIndex(new THREE.Uint16BufferAttribute(indexTypedArray, 1))
         }
-      }
 
-      // Create material using StyleManager for proper material reuse
-      const materialColorSettings = buildWorkerMaterialColorSettings(
-        colorSettings,
-        childData.material.color,
-        baseByLayer,
-        childData.material.mtextColor
-      )
-      let material: THREE.Material
-      if (childData.type === 'mesh') {
-        material = this.defaultStyleManager.getMeshBasicMaterial({
-          ...materialColorSettings
-        })
-        // Apply additional properties if they differ from defaults
-        if (childData.material.transparent !== undefined) {
-          material.transparent = childData.material.transparent
+        // Ensure geometry has bounding volumes for correct frustum culling
+        // This helps prevent objects from being culled as invisible
+        if (!geometry.boundingBox) {
+          geometry.computeBoundingBox()
         }
-        if (childData.material.opacity !== undefined) {
-          material.opacity = childData.material.opacity
+        if (!geometry.boundingSphere) {
+          geometry.computeBoundingSphere()
         }
-        if (childData.material.side !== undefined) {
-          material.side = childData.material.side as THREE.Side
-        }
-      } else {
-        material = this.defaultStyleManager.getLineBasicMaterial({
-          ...materialColorSettings
-        })
-        // Apply additional properties if they differ from defaults
-        if (childData.material.transparent !== undefined) {
-          material.transparent = childData.material.transparent
-        }
-        if (childData.material.opacity !== undefined) {
-          material.opacity = childData.material.opacity
-        }
-        if (childData.material.linewidth !== undefined) {
-          ;(material as THREE.LineBasicMaterial).linewidth =
-            childData.material.linewidth
-        }
-      }
 
-      // Create mesh or line
-      let object: THREE.Object3D
-      if (childData.type === 'mesh') {
-        object = new THREE.Mesh(geometry, material as THREE.MeshBasicMaterial)
-      } else {
-        object = new THREE.LineSegments(
-          geometry,
-          material as THREE.LineBasicMaterial
+        // Child transforms are local to the MText root group.
+        object.position.set(
+          childData.position.x,
+          childData.position.y,
+          childData.position.z
         )
-      }
 
-      // Ensure geometry has bounding volumes for correct frustum culling
-      // This helps prevent objects from being culled as invisible
-      if (!geometry.boundingBox) {
-        geometry.computeBoundingBox()
-      }
-      if (!geometry.boundingSphere) {
-        geometry.computeBoundingSphere()
-      }
+        object.quaternion.set(
+          childData.rotation.x,
+          childData.rotation.y,
+          childData.rotation.z,
+          childData.rotation.w
+        )
 
-      // Child transforms are local to the MText root group.
-      object.position.set(
-        childData.position.x,
-        childData.position.y,
-        childData.position.z
-      )
+        object.scale.set(
+          childData.scale.x,
+          childData.scale.y,
+          childData.scale.z
+        )
 
-      object.quaternion.set(
-        childData.rotation.x,
-        childData.rotation.y,
-        childData.rotation.z,
-        childData.rotation.w
-      )
-
-      object.scale.set(childData.scale.x, childData.scale.y, childData.scale.z)
-
-      if (childData.charBoxType) {
-        object.userData.charBoxType = childData.charBoxType
-      }
-      if (childData.lineLayouts && childData.lineLayouts.length > 0) {
-        object.userData.lineLayouts = childData.lineLayouts.map(line => ({
-          y: line.y,
-          height: line.height,
-          breakIndex: line.breakIndex
-        }))
-      }
-      if (childData.charBoxes && childData.charBoxes.length > 0) {
-        object.userData.layout = {
-          chars: this.deserializeCharBoxes(childData.charBoxes)
+        if (childData.charBoxType) {
+          object.userData.charBoxType = childData.charBoxType
         }
-      }
-      // Keep segment colour on the reconstructed leaf so cad-viewer can
-      // rematerialize entity ACI 7 without wiping true inline `\C` overrides.
-      object.userData.mtextColor = materialColorSettings.color
+        if (childData.lineLayouts && childData.lineLayouts.length > 0) {
+          object.userData.lineLayouts = childData.lineLayouts.map(line => ({
+            y: line.y,
+            height: line.height,
+            breakIndex: line.breakIndex
+          }))
+        }
+        if (childData.charBoxes && childData.charBoxes.length > 0) {
+          object.userData.layout = {
+            chars: this.deserializeCharBoxes(childData.charBoxes)
+          }
+        }
+        // Keep segment colour on the reconstructed leaf so cad-viewer can
+        // rematerialize entity ACI 7 without wiping true inline `\C` overrides.
+        object.userData.mtextColor = materialColorSettings.color
 
-      group.add(object)
-    })
+        group.add(object)
+      })
+      checkRenderSignal(options.signal)
+    } catch (error) {
+      for (const geometry of geometries) geometry.dispose()
+      group.clear()
+      throw error
+    }
 
     // Add transformed bounding box property (already in world coordinates)
     ;(group as unknown as MTextObject).box = new THREE.Box3(
@@ -1079,10 +1133,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       return
     }
 
-    if (
-      object instanceof THREE.LineSegments ||
-      object instanceof THREE.Mesh
-    ) {
+    if (object instanceof THREE.LineSegments || object instanceof THREE.Mesh) {
       const geometry = object.geometry
       if (!geometry.userData?.isDecoration) {
         if (geometry.boundingBox === null) {
@@ -1109,17 +1160,20 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
    * Terminate the worker
    */
   terminate() {
-    this.workers.forEach(w => w.terminate())
+    this.terminated = true
+    this.workers.forEach(worker => {
+      worker.onmessage = null
+      worker.onerror = null
+      worker.terminate()
+    })
+    for (const id of this.workerRequests.keys()) {
+      this.finishRequest(id)?.reject(new Error('Renderer terminated'))
+    }
     this.workers = []
     this.inFlightPerWorker = []
     this.fontsPerWorker = []
     this.readyPromise = null
     this.poolFontLoadedDispatched.clear()
-    // Reject any remaining pending requests
-    this.pendingRequests.forEach(({ reject }) => {
-      reject(new Error('Renderer terminated'))
-    })
-    this.pendingRequests.clear()
   }
 
   destroy(): void {

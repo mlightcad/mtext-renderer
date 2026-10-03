@@ -521,6 +521,42 @@ unifiedRenderer.destroy();
 
 `syncRenderMText` always renders on the main thread (fonts must be preloaded). This method is not available in the worker renderer, so the unified renderer routes it to the main-thread implementation regardless of the current default mode.
 
+### Sharing computation across drawings
+
+A single `UnifiedRenderer` can serve several drawings while each drawing owns its
+materials. Pass `TextRenderOptions` per request; the renderer captures the material
+manager before asynchronous setup or font loading begins. The existing global
+`setStyleManager` remains a default for calls without a request manager.
+
+```typescript
+const controller = new AbortController();
+const object = await unifiedRenderer.asyncRenderMText(
+  mtextContent,
+  textStyle,
+  colorSettings,
+  'worker',
+  { styleManager: drawingStyleManager, signal: controller.signal }
+);
+
+// Stop this drawing's unfinished requests without terminating the shared pool.
+controller.abort();
+```
+
+`UnifiedRenderer` asynchronous text/shape methods accept options after the existing
+mode argument. Its synchronous methods and the underlying main/worker asynchronous
+methods accept options as the fourth argument. SHAPE retains its existing main-thread
+implementation. Synchronous drawing only checks cancellation before starting; it
+cannot be interrupted midway through JavaScript execution.
+
+Cancellation rejects with `AbortError`. Shared font loads and already-dispatched
+worker computation may finish, but cancelled requests cannot reconstruct or publish
+late geometry. A cancelled worker job remains accounted for until its response,
+worker failure, termination, or transport timeout. Completed jobs release their
+request timers and listeners. Unpublished cancelled geometry is released without
+disposing the supplied manager's reusable materials. The application still owns
+published scene geometry and material managers; only the shared computation owner
+should call `destroy()` or `terminateWorkers()`.
+
 ### Performance Considerations
 
 **When to use MainThreadRenderer:**
