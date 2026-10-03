@@ -27,6 +27,7 @@ import {
 import { getPercentSymbolLookupCodes } from './shxSymbolControlCodes'
 import { StyleManager } from './styleManager'
 import {
+  type MeshFontRenderMode,
   CharBox,
   CharBoxType,
   ColorSettings,
@@ -123,6 +124,10 @@ export interface MTextFormatOptions {
    * Whether to collect per-character bounding boxes for picking.
    */
   collectCharBoxes?: boolean
+  /**
+   * How TrueType/OTF (mesh) glyphs are drawn. Default is `'mesh'`.
+   */
+  meshFontRenderMode?: MeshFontRenderMode
 }
 
 /**
@@ -1101,7 +1106,7 @@ export class MTextProcessor {
       this.currentLayoutFontSize,
       shape.geometryScale
     )
-    const canonical = shape.toGeometry()
+    const canonical = this.getGlyphGeometry(shape)
     this.appendCharGeometry(
       shape,
       label,
@@ -1116,6 +1121,16 @@ export class MTextProcessor {
       shape.width * this.currentWidthFactor +
       obliqueExtraAdvance * this.currentWidthFactor
     )
+  }
+
+  /**
+   * Filled mesh glyphs or sampled contour strokes, depending on
+   * {@link MTextFormatOptions.meshFontRenderMode}.
+   */
+  private getGlyphGeometry(shape: BaseTextShape): THREE.BufferGeometry {
+    return this._options.meshFontRenderMode === 'line'
+      ? shape.toStrokeGeometry()
+      : shape.toGeometry()
   }
 
   /**
@@ -2123,7 +2138,7 @@ export class MTextProcessor {
       charHeight,
       shape.geometryScale
     )
-    const canonical = shape.toGeometry()
+    const canonical = this.getGlyphGeometry(shape)
     this.appendCharGeometry(
       shape,
       char,

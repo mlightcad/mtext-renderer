@@ -269,6 +269,19 @@ export class MeshFont extends BaseFont {
   }
 
   /**
+   * Generates line-segment geometry for a text string (glyph contours only).
+   * @param text - The text to generate strokes for
+   * @param size - The size of the text
+   * @returns Indexed line-pair BufferGeometry suitable for LineSegments
+   */
+  generateStrokeGeometry(text: string, size: number) {
+    for (const char of text) {
+      this._loadGlyphIfNeeded(char)
+    }
+    return this.font.generateStrokeGeometry(text, size)
+  }
+
+  /**
    * Gets the shape data for a specific character at a given size.
    * @param char - The character to get the shape for
    * @param size - The desired size of the character

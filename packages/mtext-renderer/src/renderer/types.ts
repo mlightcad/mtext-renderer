@@ -184,6 +184,13 @@ export const createDefaultColorSettings = (): ColorSettings => ({
 })
 
 /**
+ * How TrueType/OTF (mesh) glyphs are converted to drawable geometry.
+ * - `mesh`: triangulate filled outlines (default)
+ * - `line`: sample glyph contours as line segments (no triangulation)
+ */
+export type MeshFontRenderMode = 'mesh' | 'line'
+
+/**
  * Represents the data structure for multiline text (MText) entities.
  * Contains all necessary properties to define the appearance and positioning of text.
  */
@@ -219,6 +226,12 @@ export interface MTextData {
   widthFactor?: number
   /** Whether to collect per-character bounding boxes for picking. Default is true */
   collectCharBoxes?: boolean
+  /**
+   * How TrueType/OTF (mesh) glyphs are drawn.
+   * `mesh` triangulates filled outlines (default).
+   * `line` draws sampled contours only, skipping triangulation.
+   */
+  meshFontRenderMode?: MeshFontRenderMode
 }
 
 /**

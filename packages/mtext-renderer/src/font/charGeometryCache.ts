@@ -29,8 +29,8 @@ export class CharGeometryCache {
    * @returns True if the geometry of the specified character code exists in the cache.
    * Otherwise, returns false.
    */
-  hasGeometry(code: number, size: number) {
-    const key = this.generateKey(code, size)
+  hasGeometry(code: number, size: number, variant = 'fill') {
+    const key = this.generateKey(code, size, variant)
     return this.cache.has(key)
   }
 
@@ -42,8 +42,12 @@ export class CharGeometryCache {
    * @returns The geometry for a single character from cache if avaiable.
    * Return undefined if the character not found in cache.
    */
-  getGeometry(code: number, size: number): THREE.BufferGeometry | undefined {
-    const key = this.generateKey(code, size)
+  getGeometry(
+    code: number,
+    size: number,
+    variant = 'fill'
+  ): THREE.BufferGeometry | undefined {
+    const key = this.generateKey(code, size, variant)
     return this.cache.get(key)
   }
 
@@ -53,8 +57,13 @@ export class CharGeometryCache {
    * @param size The font size.
    * @param geometry The geometry to set.
    */
-  setGeometry(code: number, size: number, geometry: THREE.BufferGeometry) {
-    const key = this.generateKey(code, size)
+  setGeometry(
+    code: number,
+    size: number,
+    geometry: THREE.BufferGeometry,
+    variant = 'fill'
+  ) {
+    const key = this.generateKey(code, size, variant)
     this.cache.set(key, geometry)
   }
 
@@ -85,7 +94,7 @@ export class CharGeometryCache {
    * @param char One character code.
    * @param size The font size.
    */
-  private generateKey(char: number, size: number) {
-    return `${char}_${size}`
+  private generateKey(char: number, size: number, variant = 'fill') {
+    return variant === 'fill' ? `${char}_${size}` : `${char}_${size}_${variant}`
   }
 }

@@ -4,7 +4,9 @@ import { BaseTextShape } from './baseTextShape'
 import { MeshFont } from './meshFont'
 import {
   markMeshGlyphGeometry,
-  MESH_GLYPH_CACHE_SIZE
+  MESH_GLYPH_CACHE_SIZE,
+  MESH_GLYPH_CURVE_SEGMENTS,
+  MESH_GLYPH_STROKE_CACHE_VARIANT
 } from './meshGlyphGeometry'
 
 /**
@@ -84,7 +86,7 @@ export class MeshTextShape extends BaseTextShape {
     let geometry = this.font.cache.getGeometry(code, MESH_GLYPH_CACHE_SIZE)
     if (geometry == null) {
       const shapes = this.font.generateShapes(this.char, MESH_GLYPH_CACHE_SIZE)
-      geometry = new THREE.ShapeGeometry(shapes, 4)
+      geometry = new THREE.ShapeGeometry(shapes, MESH_GLYPH_CURVE_SEGMENTS)
       if (!hasFinitePositions(geometry)) {
         geometry.dispose()
         return new THREE.BufferGeometry()
@@ -100,6 +102,37 @@ export class MeshTextShape extends BaseTextShape {
       geometry = bakeMeshPositions(geometry)
       markMeshGlyphGeometry(geometry)
       this.font.cache.setGeometry(code, MESH_GLYPH_CACHE_SIZE, geometry)
+    }
+    return geometry
+  }
+
+  /**
+   * Samples glyph contours into line segments without triangulating.
+   * Cached separately from {@link toGeometry} at {@link MESH_GLYPH_CACHE_SIZE}.
+   */
+  override toStrokeGeometry(): THREE.BufferGeometry {
+    const code = this.char.codePointAt(0) ?? this.char.charCodeAt(0)
+    let geometry = this.font.cache.getGeometry(
+      code,
+      MESH_GLYPH_CACHE_SIZE,
+      MESH_GLYPH_STROKE_CACHE_VARIANT
+    )
+    if (geometry == null) {
+      geometry = this.font.generateStrokeGeometry(
+        this.char,
+        MESH_GLYPH_CACHE_SIZE
+      )
+      if (!hasFinitePositions(geometry)) {
+        geometry.dispose()
+        return new THREE.BufferGeometry()
+      }
+      geometry = bakeMeshPositions(geometry)
+      this.font.cache.setGeometry(
+        code,
+        MESH_GLYPH_CACHE_SIZE,
+        geometry,
+        MESH_GLYPH_STROKE_CACHE_VARIANT
+      )
     }
     return geometry
   }

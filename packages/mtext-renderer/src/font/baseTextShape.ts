@@ -18,6 +18,14 @@ export abstract class BaseTextShape extends THREE.Shape {
   abstract toGeometry(): THREE.BufferGeometry
 
   /**
+   * Converts the text shape to line-segment geometry (no filled triangulation).
+   * Mesh fonts sample glyph contours; SHX fonts reuse {@link toGeometry}.
+   */
+  toStrokeGeometry(): THREE.BufferGeometry {
+    return this.toGeometry()
+  }
+
+  /**
    * Uniform XY scale applied to {@link toGeometry} when placing the glyph.
    *
    * Mesh fonts cache unit-size outlines and report the requested font size here

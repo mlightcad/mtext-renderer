@@ -16,6 +16,18 @@ export const MESH_GLYPH_USER_DATA_KEY = 'isMeshGlyph'
 export const MESH_GLYPH_CACHE_SIZE = 1
 
 /**
+ * {@link CharGeometryCache} variant for contour line-segment glyphs.
+ * Fill geometry uses the default `'fill'` variant so the two caches do not collide.
+ */
+export const MESH_GLYPH_STROKE_CACHE_VARIANT = 'stroke'
+
+/**
+ * Curve samples per path segment when triangulating or stroking mesh glyphs.
+ * Matches {@link THREE.ShapeGeometry}’s `curveSegments` argument.
+ */
+export const MESH_GLYPH_CURVE_SEGMENTS = 4
+
+/**
  * Returns true when `geometry` is a mesh-font glyph (filled outline),
  * including geometries baked down to a plain {@link THREE.BufferGeometry}.
  */
