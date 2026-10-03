@@ -27,11 +27,11 @@ import {
 import { getPercentSymbolLookupCodes } from './shxSymbolControlCodes'
 import { StyleManager } from './styleManager'
 import {
-  type MeshFontRenderMode,
   CharBox,
   CharBoxType,
   ColorSettings,
   LineLayout,
+  type MeshFontRenderMode,
   MTextFlowDirection,
   MTextLineSpacingStyle,
   STACK_DIVIDER_CHAR,

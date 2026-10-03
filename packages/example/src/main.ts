@@ -2,10 +2,10 @@ import { MTextColor } from '@mlightcad/mtext-parser'
 import {
   FontManager,
   formatMemoryUsageReport,
+  MeshFontRenderMode,
   MText,
   MTextData,
   MTextObject,
-  MeshFontRenderMode,
   RenderMode,
   UnifiedRenderer
 } from '@mlightcad/mtext-renderer'
