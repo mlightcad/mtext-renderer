@@ -30,13 +30,31 @@ export const AUTOCAD_PERCENT_SYMBOL_CONTROL_CODES: Readonly<
 /**
  * Unicode code points to try in GDT / symbol SHX fonts when legacy control codes
  * are absent (e.g. `amgdt.shx` stores diameter at U+2205, not at byte 129/130).
+ * Byte 130 is a common alternate diameter slot in Autodesk GDT fonts.
  */
 const PERCENT_SYMBOL_FONT_UNICODE_ALTERNATES: Readonly<
   Record<AutoCadPercentSymbolCode, readonly number[]>
 > = {
-  c: [0x2205], // ∅ — AutoCAD .NET diameter; present in amgdt.shx
+  c: [0x2205, 130], // ∅ — AutoCAD .NET diameter; 130 — legacy GDT slot
   d: [],
   p: []
+}
+
+/**
+ * Unicode characters that DWG converters / editors often store in place of
+ * AutoCAD `%%c` / `%%d` / `%%p` control codes (cad-viewer#724).
+ */
+const LITERAL_PERCENT_SYMBOL_BY_CHAR: Readonly<
+  Record<string, AutoCadPercentSymbolCode>
+> = {
+  Ø: 'c', // U+00D8 — parser expansion of %%c
+  ø: 'c', // U+00F8
+  '∅': 'c', // U+2205 — AutoCAD .NET / many DWG exporters
+  '⌀': 'c', // U+2300 — diameter sign
+  Φ: 'c', // U+03A6 — common in Chinese mechanical drawings
+  φ: 'c', // U+03C6
+  '°': 'd', // U+00B0 — parser expansion of %%d
+  '±': 'p' // U+00B1 — parser expansion of %%p
 }
 
 /**
@@ -60,4 +78,21 @@ export function getPercentSymbolLookupCodes(
       return exhaustiveCheck
     }
   }
+}
+
+/**
+ * Maps a literal Unicode dimension symbol to a named AutoCAD percent-symbol
+ * token when converters have already expanded `%%c` / `%%d` / `%%p`.
+ *
+ * @returns Named percent-symbol data, or `undefined` when `char` is not a
+ *   known dimension-symbol substitute.
+ */
+export function getLiteralPercentSymbolData(
+  char: string
+): PercentSymbolData | undefined {
+  const code = LITERAL_PERCENT_SYMBOL_BY_CHAR[char]
+  if (!code) {
+    return undefined
+  }
+  return { kind: 'named', code, char }
 }

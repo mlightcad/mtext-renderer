@@ -43,5 +43,30 @@ export class ShxPenAdvanceStrategy extends ShxAdvanceWidthStrategy {
   }
 }
 
+/**
+ * Horizontal advance for BIGFONT (CJK) glyphs.
+ *
+ * AutoCAD advances double-byte BIGFONT text by the font cell width. Falling back
+ * to ink width (as western SHX sometimes needs) shifts wrap points and drifts
+ * mixed Latin/CJK runs (cad-viewer#724). Prefer the pen when the shape encodes
+ * an explicit advance; otherwise use the full cell.
+ */
+export class ShxBigfontAdvanceStrategy extends ShxAdvanceWidthStrategy {
+  resolve(shape: ShxShape, cellWidth: number): number {
+    const advanceX = shape.lastPoint?.x ?? 0
+    if (shape.hasExplicitAdvance && advanceX > LAYOUT_EPSILON) {
+      return advanceX
+    }
+    return cellWidth
+  }
+
+  markAlignedAdvanceExplicit(_shape: ShxShape): boolean {
+    return true
+  }
+}
+
 /** Shared strategy passed to `ShxFont.getLayoutCharShape` and {@link resolveAdvanceWidth}. */
 export const shxPenAdvanceStrategy = new ShxPenAdvanceStrategy()
+
+/** Shared BIGFONT strategy — cell width instead of ink-width fallback. */
+export const shxBigfontAdvanceStrategy = new ShxBigfontAdvanceStrategy()
