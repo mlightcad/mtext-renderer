@@ -117,7 +117,9 @@ describe('PC_TEXTSTYLE isocp + hztxt mixed baseline', () => {
       const rendered = boxes.map(entry => entry.char).join('')
       expect(rendered.replace(/\s/g, '')).toBe('1.调质:HB250～280;')
 
-      expect(spreadMinY(boxes, /[0-9A-Za-z.:;]/)).toBeLessThan(2)
+      // isocp uses height/baseUp = 52/40; semicolon descenders push absolute
+      // min.y spread to ~2.25 once TEXT.height is treated as cap-height.
+      expect(spreadMinY(boxes, /[0-9A-Za-z.:;]/)).toBeLessThan(3)
       expect(spreadMinY(boxes, /[\u4e00-\u9fff～]/)).toBeLessThan(25)
 
       const asciiMinY = boxes
