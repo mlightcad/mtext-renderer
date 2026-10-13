@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   AUTOCAD_PERCENT_SYMBOL_CONTROL_CODES,
+  getLiteralPercentSymbolData,
   getPercentSymbolLookupCodes
 } from '../../src/renderer/shxSymbolControlCodes'
 
@@ -19,9 +20,33 @@ describe('shxSymbolControlCodes', () => {
     const degree: PercentSymbolData = { kind: 'named', code: 'd', char: '°' }
     const plusMinus: PercentSymbolData = { kind: 'named', code: 'p', char: '±' }
 
-    expect(getPercentSymbolLookupCodes(diameter)).toEqual([129, 0x2205])
+    expect(getPercentSymbolLookupCodes(diameter)).toEqual([129, 0x2205, 130])
     expect(getPercentSymbolLookupCodes(degree)).toEqual([126, 176])
     expect(getPercentSymbolLookupCodes(plusMinus)).toEqual([177])
+  })
+
+  it('maps literal converter-expanded dimension symbols to named percent codes', () => {
+    expect(getLiteralPercentSymbolData('∅')).toEqual({
+      kind: 'named',
+      code: 'c',
+      char: '∅'
+    })
+    expect(getLiteralPercentSymbolData('Φ')).toEqual({
+      kind: 'named',
+      code: 'c',
+      char: 'Φ'
+    })
+    expect(getLiteralPercentSymbolData('°')).toEqual({
+      kind: 'named',
+      code: 'd',
+      char: '°'
+    })
+    expect(getLiteralPercentSymbolData('±')).toEqual({
+      kind: 'named',
+      code: 'p',
+      char: '±'
+    })
+    expect(getLiteralPercentSymbolData('A')).toBeUndefined()
   })
 
   it('returns lookup code for numeric percent-symbol tokens', () => {

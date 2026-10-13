@@ -14,7 +14,10 @@ import {
   SHX_PARSED_FONT_OVERHEAD} from '../memory/types'
 import { BaseFont } from './baseFont'
 import { FontData } from './font'
-import { shxPenAdvanceStrategy } from './shxLayoutAdvance'
+import {
+  shxBigfontAdvanceStrategy,
+  shxPenAdvanceStrategy
+} from './shxLayoutAdvance'
 import { ShxTextShape } from './shxTextShape'
 
 /** Scaled SHX font layout metrics (cap height, cell width, etc.) from `@mlightcad/shx-parser`. */
@@ -124,10 +127,26 @@ export class ShxFont extends BaseFont {
   }
 
   /**
-   * Returns the scale factor used by the SHX font implementation.
-   * @returns Always returns 1 for SHX fonts.
+   * Scale factor that converts AutoCAD's `TEXT.height` (cap-height) into the
+   * em-box size expected by {@link getCharShape} / `shx-parser`.
+   *
+   * SHX glyphs are defined with `baseUp` units of cap-height and `height` units
+   * of total em-box (`baseUp + baseDown`). AutoCAD's DXF group 40 is the
+   * cap-height, so the correct scale is `size / baseUp`. The parser still
+   * divides by `content.height`; returning `height / baseUp` here makes the
+   * effective scale `size / baseUp` (cad-viewer#724).
+   *
+   * Validated against Autodesk stock metrics: `gbenor` 60/48, `tssdeng` 33/26,
+   * `romans`/`complex` 28/21. Extended BIGFONT faces often set `baseUp == height`,
+   * so the factor stays `1` and CJK cell size is unchanged.
+   *
+   * @returns `height / baseUp` when both are positive; otherwise `1`.
    */
   getScaleFactor(): number {
+    const { height, baseUp } = this.data.content
+    if (baseUp > 0 && height > 0) {
+      return height / baseUp
+    }
     return 1
   }
 
@@ -168,10 +187,14 @@ export class ShxFont extends BaseFont {
       return cached
     }
 
+    const advanceStrategy =
+      this.data.header.fontType === ShxFontType.BIGFONT
+        ? shxBigfontAdvanceStrategy
+        : shxPenAdvanceStrategy
     const layout = this.font.getLayoutCharShape(
       code,
       quantizedSize,
-      shxPenAdvanceStrategy
+      advanceStrategy
     )
     if (!layout || !ShxFont.hasRenderableStrokes(layout)) {
       return undefined

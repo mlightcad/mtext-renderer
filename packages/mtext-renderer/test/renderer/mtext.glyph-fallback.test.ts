@@ -286,7 +286,7 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
       label: '%%c diameter',
       symbolData: { kind: 'named', code: 'c', char: 'Ø' },
       char: 'Ø',
-      lookupCodes: [129, 0x2205],
+      lookupCodes: [129, 0x2205, 130],
       primaryWidth: 10,
       symbolWidth: 6.78
     },
@@ -470,6 +470,61 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
     expect(shape).toBe(symbolShape)
     expect(getCodeShapeFromSymbolFonts).toHaveBeenCalledWith(132, 10)
     expect(getCharShape).not.toHaveBeenCalled()
+  })
+
+  it('prefers symbol-font diameter for literal ∅ before default mesh fonts (#724)', () => {
+    const diameter = '∅'
+    const defaultShape = createShape(9)
+    const symbolShape = createShape(6.78)
+    const charGlyphs: Record<string, Record<string, GlyphShape | undefined>> = {
+      txt: {},
+      simsun: { [diameter]: defaultShape }
+    }
+    const codeGlyphs: Record<string, Record<number, GlyphShape | undefined>> = {
+      amgdt: { 0x2205: symbolShape }
+    }
+
+    const getCharShape = vi.fn((lookupChar: string, fontName: string) =>
+      resolveCharShape(lookupChar, fontName, charGlyphs)
+    )
+    const getCharShapeFromDefaults = vi.fn((lookupChar: string) => {
+      for (const fontName of ['txt', 'simsun']) {
+        const shape = resolveCharShape(lookupChar, fontName, charGlyphs)
+        if (shape) return shape
+      }
+      return undefined
+    })
+    const getCodeShapeFromSymbolFonts = vi.fn((lookupCode: number) => {
+      for (const fontName of ['amgdt']) {
+        const shape = resolveCodeShape(lookupCode, fontName, codeGlyphs)
+        if (shape) return shape
+      }
+      return undefined
+    })
+
+    const processor = createGlyphFallbackProcessor(
+      { font: 'txt', bigFont: 'gbcbig' },
+      {
+        getFontScaleFactor: () => 1,
+        getFontType: () => 'shx' as const,
+        findAndReplaceFont: (name: string) => name,
+        getCharShape,
+        getCharShapeFromDefaults,
+        getCodeShapeFromSymbolFonts,
+        getNotFoundTextShape: () => undefined
+      }
+    )
+
+    getCharShape.mockClear()
+    getCharShapeFromDefaults.mockClear()
+    getCodeShapeFromSymbolFonts.mockClear()
+
+    const shape = (processor as any).getCharShape(diameter)
+
+    expect(shape).toBe(symbolShape)
+    expect(getCodeShapeFromSymbolFonts).toHaveBeenCalledWith(129, 10)
+    expect(getCodeShapeFromSymbolFonts).toHaveBeenCalledWith(0x2205, 10)
+    expect(getCharShapeFromDefaults).not.toHaveBeenCalled()
   })
 
   it('prefers primary font for superscript ² instead of amgdt symbol fallback', () => {

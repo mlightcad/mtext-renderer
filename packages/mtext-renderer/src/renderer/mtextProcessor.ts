@@ -24,7 +24,10 @@ import {
   LINE_SPACING_SCALE_FACTOR,
   STACK_VERTICAL_SHIFT_FACTOR
 } from './constants'
-import { getPercentSymbolLookupCodes } from './shxSymbolControlCodes'
+import {
+  getLiteralPercentSymbolData,
+  getPercentSymbolLookupCodes
+} from './shxSymbolControlCodes'
 import { StyleManager } from './styleManager'
 import {
   CharBox,
@@ -2267,14 +2270,12 @@ export class MTextProcessor {
   }
 
   /**
-   * Resolves the best available shape for a percent-control-code symbol.
-   *
-   * Tries symbol-font lookup codes first, then falls back to the primary font glyph.
+   * Tries GDT / symbol SHX fonts for a percent-control-code symbol.
    *
    * @param data Parser percent-symbol payload.
-   * @returns A renderable text shape for the symbol.
+   * @returns A symbol-font shape when one is available; otherwise `undefined`.
    */
-  private resolvePercentSymbolShape(
+  private trySymbolFontPercentShape(
     data: PercentSymbolData
   ): BaseTextShape | undefined {
     for (const lookupCode of getPercentSymbolLookupCodes(data)) {
@@ -2292,7 +2293,21 @@ export class MTextProcessor {
         return symbolShape
       }
     }
-    return this.getCharShape(data.char)
+    return undefined
+  }
+
+  /**
+   * Resolves the best available shape for a percent-control-code symbol.
+   *
+   * Tries symbol-font lookup codes first, then falls back to the primary font glyph.
+   *
+   * @param data Parser percent-symbol payload.
+   * @returns A renderable text shape for the symbol.
+   */
+  private resolvePercentSymbolShape(
+    data: PercentSymbolData
+  ): BaseTextShape | undefined {
+    return this.trySymbolFontPercentShape(data) ?? this.getCharShape(data.char)
   }
 
   /**
@@ -2340,6 +2355,16 @@ export class MTextProcessor {
       )
       if (shape) {
         sourceFont = bigFont
+      }
+    }
+
+    // Prefer GDT / symbol SHX for dimension symbols that converters already
+    // expanded from %%c / %%d / %%p (e.g. literal U+2205), before mesh
+    // default fonts supply a mismatched glyph (cad-viewer#724).
+    if (!shape) {
+      const literalSymbol = getLiteralPercentSymbolData(char)
+      if (literalSymbol) {
+        shape = this.trySymbolFontPercentShape(literalSymbol)
       }
     }
 
