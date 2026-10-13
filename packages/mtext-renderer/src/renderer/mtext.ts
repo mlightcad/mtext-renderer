@@ -616,15 +616,14 @@ export class MText extends THREE.Object3D {
     }
 
     const maxWidth = resolveMTextWrapWidth(mtextData) || 0
-    // Internal paragraph alignment: only meaningful for multi-line MText
-    // with a declared FINITE `width`. For unconstrained text (Infinity,
-    // used by AcDbText/AcDbAttribute), forcing LEFT avoids generating
-    // `Infinity - size.x` in the CENTER/RIGHT/DISTRIBUTED branches of the
-    // layout pass — which translates to `geometry.translate(Infinity,…)`
-    // and contaminates every vertex with NaN.
-    const widthIsFinite = Number.isFinite(maxWidth) && maxWidth > 0
+    // Attachment point drives default paragraph alignment even when MTEXT
+    // `width` is 0 (no wrap column). AutoCAD still centers/rights each line
+    // within the content block so a short first line sits over a longer
+    // second line under MiddleCenter/TopCenter. Unconstrained Infinity width
+    // (AcDbText/AcDbAttribute) stays safe: `processAlignment` falls back to
+    // left when `maxLineWidth` is non-finite, avoiding `Infinity - size.x`.
     let horizontalAlignment = MTextParagraphAlignment.LEFT
-    if (widthIsFinite && mtextData.attachmentPoint) {
+    if (mtextData.attachmentPoint) {
       // Left column: TopLeft, MiddleLeft, BottomLeft, BaselineLeft
       if (
         [
@@ -739,7 +738,10 @@ export class MText extends THREE.Object3D {
       expandUnicodeEscapes(expandPercentControlCodes(mtextData.text)),
       context,
       {
-        resetParagraphParameters: true,
+        // AutoCAD keeps `\pxq*` / `\pi` / `\pl` until the next `\p` command.
+        // Resetting on `\P` made TopCenter+`\pxql` notes jump to the insertion
+        // point after the first line (handle 1B7A).
+        resetParagraphParameters: false,
         yieldPropertyCommands: true,
         yieldPercentSymbols: true
       }

@@ -23,6 +23,8 @@ import {
   createMultipleMTextData,
   createShapeTestData,
   createShapeTextStyle,
+  createWindowsPathTestData,
+  isWindowsPathExample,
   LargeCoordinatesExample,
   validateShapeInputs
 } from './exampleTestData'
@@ -460,6 +462,7 @@ class MTextRendererExample {
         } else if (
           content === 'multiple' ||
           content === 'attachmentGrid' ||
+          isWindowsPathExample(content) ||
           LargeCoordinatesExample.isExample(content)
         ) {
           this.contentTypeSelect.value = 'mtext'
@@ -1038,12 +1041,14 @@ class MTextRendererExample {
           ? createMultipleMTextData(textFont)
           : content === 'attachmentGrid'
             ? createAttachmentPointTestData(textFont)
-            : LargeCoordinatesExample.isExample(content)
-              ? LargeCoordinatesExample.createTestData(
-                  this.mtextInput.value,
-                  textFont
-                )
-              : null
+            : isWindowsPathExample(content)
+              ? createWindowsPathTestData(textFont)
+              : LargeCoordinatesExample.isExample(content)
+                ? LargeCoordinatesExample.createTestData(
+                    this.mtextInput.value,
+                    textFont
+                  )
+                : null
 
       if (multiData) {
         const texts = LargeCoordinatesExample.isExample(content)
@@ -1128,9 +1133,11 @@ class MTextRendererExample {
         const label =
           content === 'attachmentGrid'
             ? 'attachment-point grid'
-            : content === 'largeCoordinates'
-              ? 'large-coordinates MText (fonts via \\F)'
-              : 'MText batch'
+            : isWindowsPathExample(content)
+              ? 'Windows path (bare + font-wrapped B7B/DBD)'
+              : content === 'largeCoordinates'
+                ? 'large-coordinates MText (fonts via \\F)'
+                : 'MText batch'
         this.statusDiv.textContent = this.formatRenderStatus(
           `Rendered ${mtextObjects.length}/${multiData.length} (${label}) in ${renderTime.toFixed(2)}ms`,
           lazy

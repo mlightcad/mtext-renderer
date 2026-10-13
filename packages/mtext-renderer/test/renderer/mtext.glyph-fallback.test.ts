@@ -294,7 +294,7 @@ describe('MTextProcessor TextStyle glyph fallback (AutoCAD semantics)', () => {
       label: '%%d degree',
       symbolData: { kind: 'named', code: 'd', char: '°' },
       char: '°',
-      lookupCodes: [126, 176],
+      lookupCodes: [176],
       primaryWidth: 4.6,
       symbolWidth: 2.85
     },

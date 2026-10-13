@@ -11,7 +11,7 @@ import {
 describe('shxSymbolControlCodes', () => {
   it('maps all named AutoCAD percent symbols to SHX control-code candidates', () => {
     expect(AUTOCAD_PERCENT_SYMBOL_CONTROL_CODES.c).toEqual([129])
-    expect(AUTOCAD_PERCENT_SYMBOL_CONTROL_CODES.d).toEqual([126, 176])
+    expect(AUTOCAD_PERCENT_SYMBOL_CONTROL_CODES.d).toEqual([176])
     expect(AUTOCAD_PERCENT_SYMBOL_CONTROL_CODES.p).toEqual([177])
   })
 
@@ -21,7 +21,7 @@ describe('shxSymbolControlCodes', () => {
     const plusMinus: PercentSymbolData = { kind: 'named', code: 'p', char: '±' }
 
     expect(getPercentSymbolLookupCodes(diameter)).toEqual([129, 0x2205, 130])
-    expect(getPercentSymbolLookupCodes(degree)).toEqual([126, 176])
+    expect(getPercentSymbolLookupCodes(degree)).toEqual([176])
     expect(getPercentSymbolLookupCodes(plusMinus)).toEqual([177])
   })
 

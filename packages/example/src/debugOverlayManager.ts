@@ -173,7 +173,8 @@ export class DebugOverlayManager {
 
     if (
       multiData &&
-      (content === 'attachmentGrid' || LargeCoordinatesExample.isExample(content))
+      (content === 'attachmentGrid' ||
+        LargeCoordinatesExample.isExample(content))
     ) {
       multiData.forEach((_, index) => {
         const { mtextData } = multiData[index]
