@@ -316,8 +316,9 @@ export class MTextProcessor {
   private _currentRightMargin: number = 0
   /**
    * When true, {@link processChar} will not soft-wrap even if the pen is past the
-   * defined width. Used while finishing a short word that AutoCAD keeps on the
-   * current line with a slight overhang.
+   * defined width. Used for Latin/ASCII word tokens (AutoCAD does not hyphenate
+   * them) and for a short Latin run that AutoCAD keeps on the current line with
+   * a slight overhang after CJK.
    */
   private _suppressSoftWrap: boolean = false
 
@@ -756,6 +757,15 @@ export class MTextProcessor {
     this.applyCapHeightChange(changes.capHeight)
     this.applyCharTrackingChange(changes.charTrackingFactor)
     this.applyParagraphMarginsOnly(changes.paragraph)
+    if (
+      changes.paragraph &&
+      'align' in changes.paragraph &&
+      changes.paragraph.align != null &&
+      changes.paragraph.align !== MTextParagraphAlignment.DEFAULT
+    ) {
+      this._currentHorizontalAlignment = changes.paragraph
+        .align as MTextParagraphAlignment
+    }
 
     if (typeof changes.underline === 'boolean') {
       this._currentContext.underline = changes.underline
@@ -956,18 +966,12 @@ export class MTextProcessor {
   }
 
   /**
-   * Reset paragraph properties to their default values from options.
-   */
-  private resetParagraphProperties() {
-    this._currentIndent = 0
-    this._currentLeftMargin = 0
-    this._currentRightMargin = 0
-    this._currentHorizontalAlignment = this._options.horizontalAlignment
-  }
-
-  /**
-   * Start a new paragraph by processing current geometries, resetting paragraph properties,
-   * and starting a new line with indent applied.
+   * Start a new paragraph by flushing the current line and applying the
+   * persisted first-line indent.
+   *
+   * AutoCAD keeps `\p` paragraph properties (alignment, indent, margins)
+   * until the next `\p` command. `\P` only ends the current paragraph.
+   *
    * @param geometries Current text geometries to process
    * @param lineGeometries Current line geometries to process
    * @param meshCharBoxes Mesh char boxes to flush with the current line
@@ -989,10 +993,8 @@ export class MTextProcessor {
       lineCharBoxes,
       group
     )
-    this.advanceToNextLine(false) // Mark as first line of paragraph, apply indent
-
-    // Reset paragraph properties to defaults at the start of a new paragraph
-    this.resetParagraphProperties()
+    this.advanceToNextLine(false)
+    this._hOffset = this._currentIndent
   }
 
   /**
@@ -1524,9 +1526,11 @@ export class MTextProcessor {
    *
    * - CJK / non-Latin: no whole-word wrap — {@link processChar} breaks between
    *   characters when the next glyph would not fit in the defined width.
-   * - Latin/ASCII: keep Western word wrapping, except a short run that only
-   *   slightly overshoots after CJK (e.g. `秘密-FJP-898E-G`) may stay on the
-   *   current line with a small overhang (AutoCAD).
+   * - Latin/ASCII: wrap only at word boundaries (spaces). AutoCAD/GstarCAD do
+   *   not hyphenate: a token wider than the column stays on one visual line and
+   *   overflows the box (e.g. part numbers like `1157*25*1.5`). A short run that
+   *   only slightly overshoots after CJK (e.g. `秘密-FJP-898E-G`) may stay on
+   *   the current line with a small overhang.
    *
    * @param word Character sequence for a single word token.
    * @param geometries Mesh geometry accumulator for the active style segment.
@@ -1566,7 +1570,6 @@ export class MTextProcessor {
     }
 
     const maxWidth = this.maxLineWidth || Infinity
-    let keepOnLineWithOverhang = false
     if (
       isLatinRun &&
       this.hOffset + wordWidth > maxWidth &&
@@ -1575,22 +1578,18 @@ export class MTextProcessor {
       const overflow = this.hOffset + wordWidth - maxWidth
       const allowOverflow =
         this.currentLayoutFontSize * this.currentWidthFactor * 2
-      if (
-        overflow > 0 &&
-        overflow <= allowOverflow &&
-        wordWidth <= maxWidth
-      ) {
-        // Short Latin run after CJK: keep on this line (slight overhang OK).
-        keepOnLineWithOverhang = true
-      } else if (wordWidth <= maxWidth) {
-        // Western word wrap: move the whole token to the next line.
+      const keepOnLineWithOverhang =
+        overflow > 0 && overflow <= allowOverflow && wordWidth <= maxWidth
+      if (!keepOnLineWithOverhang) {
+        // Western word wrap: move the whole token to the next line. AutoCAD
+        // does not then hyphenate; a token wider than the column overflows.
         this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
         this.advanceToNextLine(false)
       }
-      // Word wider than the full line: fall through to per-character breaks.
     }
 
-    if (keepOnLineWithOverhang) {
+    // Latin/ASCII: never soft-wrap between characters inside one word token.
+    if (isLatinRun) {
       this._suppressSoftWrap = true
     }
     try {
@@ -1604,7 +1603,7 @@ export class MTextProcessor {
         )
       }
     } finally {
-      if (keepOnLineWithOverhang) {
+      if (isLatinRun) {
         this._suppressSoftWrap = false
       }
     }
@@ -2077,7 +2076,8 @@ export class MTextProcessor {
    *
    * Missing glyphs are treated as spaces. Soft wrap is decided before placement:
    * if the glyph's advance would not fit in the remaining defined width, break
-   * first (CJK may break between any two characters). The first glyph on an
+   * first (CJK may break between any two characters). Latin/ASCII word tokens
+   * suppress this so they overflow instead of hyphenating. The first glyph on an
    * empty line is always placed even when wider than the box.
    *
    * @param char Character to render.
@@ -2619,7 +2619,12 @@ export class MTextProcessor {
       })
     }
 
-    switch (this.currentHorizontalAlignment) {
+    const alignment =
+      this.currentHorizontalAlignment === MTextParagraphAlignment.DEFAULT
+        ? this._options.horizontalAlignment
+        : this.currentHorizontalAlignment
+
+    switch (alignment) {
       case MTextParagraphAlignment.LEFT:
       case MTextParagraphAlignment.JUSTIFIED: {
         applyLeftAlignment()

@@ -191,6 +191,91 @@ export function createAttachmentPointTestData(textFont: string): MTextTestCase[]
   })
 }
 
+/** Bare title-block path (INSERT 58E / handle 176D). */
+export const WINDOWS_PATH_BARE =
+  'C:\\Users\\admin\\Desktop\\PLMWEB浏览器问题\\PLMWEB浏览器问题'
+
+/**
+ * Font-wrapped title-block path from INSERT B7B / CAD_TITLE MTEXT handle DBD.
+ * Single backslashes must stay literal (`\\P` must not become a paragraph break).
+ */
+export const WINDOWS_PATH_FONT_WRAPPED =
+  '{\\fSimSun|b0|i0|c134|p2;C:\\Users\\admin\\Desktop\\PLMWEB浏览器问题\\PLMWEB浏览器问题}'
+
+/**
+ * Side-by-side regression for Windows paths with single backslashes.
+ *
+ * @remarks
+ * Left: bare path (handle 176D). Right: the same path inside `{\\fSimSun|...;...}`
+ * (handle DBD / INSERT B7B). Both must render as **one** line showing the full
+ * `...\\PLMWEB...\\PLMWEB...` path — never split on `\\P`.
+ *
+ * @param textFont - Font applied to caption / fallback style.
+ */
+export function createWindowsPathTestData(textFont: string): MTextTestCase[] {
+  const height = 12
+  const captionHeight = 10
+  const y = 200
+  const leftX = 40
+  const rightX = 40
+  const topY = y + 80
+  const bottomY = y - 40
+
+  const captionStyle = createStandardTextStyle(textFont, captionHeight)
+  const bodyStyle = createStandardTextStyle(textFont, height)
+
+  return [
+    {
+      mtextData: {
+        text: '{\\C1;A) Bare path (INSERT 58E / handle 176D)}\\P{\\C3;must stay one line with \\P literal}',
+        height: captionHeight,
+        width: 700,
+        position: new THREE.Vector3(leftX, topY, 0),
+        attachmentPoint: MTextAttachmentPoint.BottomLeft
+      },
+      textStyle: captionStyle
+    },
+    {
+      mtextData: {
+        text: WINDOWS_PATH_BARE,
+        height,
+        width: 0,
+        position: new THREE.Vector3(leftX, topY - 24, 0),
+        attachmentPoint: MTextAttachmentPoint.TopLeft
+      },
+      textStyle: bodyStyle
+    },
+    {
+      mtextData: {
+        text: '{\\C1;B) Font-wrapped path (INSERT B7B / handle DBD)}\\P{\\C3;\\\\fSimSun group around C:\\\\Users\\\\...\\\\PLMWEB — must stay one line}',
+        height: captionHeight,
+        width: 700,
+        position: new THREE.Vector3(rightX, bottomY + 40, 0),
+        attachmentPoint: MTextAttachmentPoint.BottomLeft
+      },
+      textStyle: captionStyle
+    },
+    {
+      mtextData: {
+        text: WINDOWS_PATH_FONT_WRAPPED,
+        height,
+        width: 0,
+        position: new THREE.Vector3(rightX, bottomY, 0),
+        attachmentPoint: MTextAttachmentPoint.TopLeft
+      },
+      textStyle: bodyStyle
+    }
+  ]
+}
+
+/**
+ * @param content - Example marker from {@link EXAMPLE_TEXTS}.
+ * @returns Whether `content` is the Windows-path regression demo.
+ */
+export function isWindowsPathExample(content: string): boolean {
+  return content === 'windowsPath'
+}
+
 /**
  * Creates ten MText entities arranged in a 3-column grid for batch-render demos.
  *

@@ -40,6 +40,11 @@ export const EXAMPLE_TEXTS = {
   /** Paragraph indent and margin control codes. */
   paragraph:
     '{\\pql;\\P{\\pqi;\\pxi2;\\pxl5;\\pxr5;This paragraph has an indent of 2 units, left margin of 5 units, and right margin of 5 units. The first line is indented.}\\P{\\pqi;\\pxi2;\\pxl5;\\pxr5;This is the second line of the same paragraph, showing the effect of margins.}}',
+  /**
+   * Marker: side-by-side Windows-path regression (bare + font-wrapped).
+   * See {@link createWindowsPathTestData}.
+   */
+  windowsPath: 'windowsPath',
   /** Marker: render ten MText entities in a 3×4 grid (see {@link createMultipleMTextData}). */
   multiple: 'multiple',
   /** Marker: render SHX shape numbers 128–132 from `complex.shx` (see {@link createShapeTestData}). */

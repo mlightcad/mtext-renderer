@@ -34,6 +34,31 @@ function registerFont(name: string, font: ShxFont | MeshFont) {
 
 describe('AutoCAD percent symbols with isocp primary font (integration)', () => {
   it(
+    'does not resolve %%d to simplex ASCII tilde at code 126',
+    async () => {
+      FontManager.instance.release()
+      FontManager.instance.enableFontCache = false
+      FontManager.instance.setSymbolFonts(['simplex', 'amgdt'])
+
+      const simplex = await loadFont('simplex', 'simplex.shx')
+      const amgdt = await loadFont('amgdt', 'amgdt.shx')
+      registerFont('simplex', simplex)
+      registerFont('amgdt', amgdt)
+
+      const tilde = simplex.getCodeShape(126, 10)
+      const degree = amgdt.getCodeShape(176, 10)
+      const resolved = FontManager.instance.getCodeShapeFromSymbolFonts(176, 10)
+
+      expect(tilde).toBeDefined()
+      expect(degree).toBeDefined()
+      expect(resolved).toBeDefined()
+      expect(resolved!.width).toBeCloseTo(degree!.width, 5)
+      expect(resolved!.width).not.toBeCloseTo(tilde!.width, 1)
+    },
+    60_000
+  )
+
+  it(
     'resolves %%c, %%d, and %%p through amgdt control codes instead of isocp Unicode glyphs',
     async () => {
       FontManager.instance.release()

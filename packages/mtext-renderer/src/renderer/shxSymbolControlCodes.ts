@@ -21,8 +21,14 @@ export const AUTOCAD_PERCENT_SYMBOL_CONTROL_CODES: Readonly<
 > = {
   /** %%c — circle diameter dimensioning symbol (legacy SHX position) */
   c: [129],
-  /** %%d — degree symbol (126/176 in amgdt.shx; avoid legacy 127) */
-  d: [126, 176],
+  /**
+   * %%d — degree symbol at U+00B0 (176).
+   * Do not prefer byte 126: in text SHX fonts such as `simplex.shx` (first in
+   * {@link FontManager.symbolFonts}) code 126 is ASCII `~`, while `amgdt.shx`
+   * stores degree at both 126 and 176. Preferring 126 therefore renders `~`
+   * instead of `°`. Avoid legacy 127 (CJK mesh fonts expose unrelated glyphs).
+   */
+  d: [176],
   /** %%p — plus/minus tolerance symbol (177 in amgdt.shx; avoid legacy 128) */
   p: [177]
 }

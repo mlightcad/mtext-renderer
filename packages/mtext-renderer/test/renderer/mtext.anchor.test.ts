@@ -136,6 +136,68 @@ function createTextFixture(
 }
 
 describe('MText attachment anchoring', () => {
+  it('keeps \\pxql across \\P inside a TopCenter defined-width frame', () => {
+    const mtext = createTextFixture({
+      text: '\\pxql;AA\\PBB',
+      height: 24,
+      width: 100,
+      attachmentPoint: MTextAttachmentPoint.TopCenter
+    })
+
+    mtext.syncDraw()
+    const box = createGeometryBox(mtext)
+
+    // TopCenter pins the 100-wide frame at [-50, 50]; `\pxql` left-aligns
+    // every paragraph inside that frame, including after `\P`.
+    expect(box.min.x).toBeCloseTo(-50, 4)
+    expect(box.max.x).toBeCloseTo(-30, 4)
+  })
+
+  it('centers each line when width is 0 and attachment is MiddleCenter', () => {
+    // Fake font: every glyph is 10 wide, so "AA" = 20 and "AAAA" = 40.
+    // With width=0 AutoCAD still centers shorter lines over longer ones.
+    const mtext = createTextFixture({
+      text: 'AA\\PAAAA',
+      height: 24,
+      width: 0,
+      attachmentPoint: MTextAttachmentPoint.MiddleCenter
+    })
+
+    mtext.syncDraw()
+    const box = createGeometryBox(mtext)
+
+    // Longest line spans [-20, 20] after MiddleCenter anchoring.
+    expect(box.min.x).toBeCloseTo(-20, 4)
+    expect(box.max.x).toBeCloseTo(20, 4)
+
+    // Regression: left-only layout then center-anchoring put the short line
+    // at [-20, 0]. Centered paragraph alignment puts it at [-10, 10].
+    const childBoxes: Array<{ minX: number; maxX: number }> = []
+    mtext.traverse(child => {
+      if (!('geometry' in child)) return
+      const geometry = child.geometry as THREE.BufferGeometry
+      if (!geometry.boundingBox) {
+        geometry.computeBoundingBox()
+      }
+      if (!geometry.boundingBox) return
+      child.updateWorldMatrix(true, false)
+      const world = geometry.boundingBox.clone().applyMatrix4(child.matrixWorld)
+      childBoxes.push({ minX: world.min.x, maxX: world.max.x })
+    })
+    expect(
+      childBoxes.some(
+        child =>
+          Math.abs(child.minX - -10) < 1e-3 && Math.abs(child.maxX - 10) < 1e-3
+      )
+    ).toBe(true)
+    expect(
+      childBoxes.some(
+        child =>
+          Math.abs(child.minX - -20) < 1e-3 && Math.abs(child.maxX - 20) < 1e-3
+      )
+    ).toBe(true)
+  })
+
   it('centers visible glyph geometry instead of line-layout leading', () => {
     const fontScaleFactor = 2
     const textHeight = 24

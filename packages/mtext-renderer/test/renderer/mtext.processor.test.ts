@@ -874,6 +874,43 @@ describe('MTextProcessor format state', () => {
     expect(lines[2].breakIndex).toBeUndefined()
   })
 
+  it('does not hyphenate a Latin part-number that is wider than the MTEXT box', () => {
+    // Handle 148B/148C: "1157*25*1.5" / "900*25*1.5" with defined width
+    // smaller than the unwrapped line. AutoCAD/GstarCAD keep one visual line.
+    const { processor } = createProcessor('mesh', { maxWidth: 5 })
+
+    processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: '1157*25*1.5' }
+    ] as any)
+
+    expect(getInternalLineCount(processor)).toBe(1)
+  })
+
+  it('moves a Latin token that cannot fit the remaining width onto the next line', () => {
+    // Fake glyphs are 1 wide while fontSize is 24, so the short-overhang
+    // exception (2× font size) must not apply: second token is wider than
+    // the column and starts after existing content.
+    const { processor } = createProcessor('mesh', { maxWidth: 5 })
+
+    processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: 'aa' },
+      { type: TOKEN_SPACE, ctx: null, data: null },
+      { type: TOKEN_WORD, ctx: null, data: '1234567890' }
+    ] as any)
+
+    expect(getInternalLineCount(processor)).toBe(2)
+  })
+
+  it('still soft-wraps CJK between characters inside the defined width', () => {
+    const { processor } = createProcessor('mesh', { maxWidth: 3 })
+
+    processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: '强制下料斗' }
+    ] as any)
+
+    expect(getInternalLineCount(processor)).toBeGreaterThan(1)
+  })
+
   it('resolves supplementary-plane characters as one glyph, not surrogate halves', () => {
     const { processor, fontManager } = createProcessor('mesh')
     const getCharShape = vi.spyOn(fontManager, 'getCharShape')
