@@ -29,10 +29,10 @@
   "dependencies": {
     "@mlightcad/mtext-parser": "^1.5.5",
     "@mlightcad/mtext-renderer": "workspace:*",
-    "three": "^0.172.0"
+    "three": "^0.186.1"
   },
   "devDependencies": {
-    "@types/three": "^0.172.0",
+    "@types/three": "^0.186.0",
     "vite-plugin-static-copy": "^3.1.1"
   }
 }
