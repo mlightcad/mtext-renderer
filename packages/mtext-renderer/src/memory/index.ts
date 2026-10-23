@@ -10,6 +10,8 @@ export {
   getSourceByteLength
 } from './estimateGeometryBytes'
 export { formatMemoryUsageReport } from './formatMemoryUsageReport'
+export { TextRenderProfiler } from './textRenderProfiler'
+export type { TextRenderProfileSnapshot } from './textRenderProfiler'
 export {
   emptyMaterialStats,
   estimateMaterialBytes,

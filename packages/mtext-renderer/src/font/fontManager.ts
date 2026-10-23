@@ -110,10 +110,17 @@ export class FontManager {
   /**
    * Fonts whose latest {@link requestFont} failed to fetch or parse the face.
    * Prevents per-glyph retry storms until {@link release} clears state.
-   * Catalog misses (`NotFound`) are not sticky — a later `fonts.json` refresh
-   * must still be able to resolve the name.
    */
   private fontRequestFailed = new Set<string>()
+  /**
+   * Session-sticky catalog misses (`NotFound` / empty load result).
+   * Open paths draw tens of thousands of MTEXT entities; re-entering the
+   * loader for the same absent face every draw dominates `requestFontsMs`.
+   * Cleared when the face is registered or on {@link release}. Soft misses
+   * stay recoverable via those paths — they are not retried automatically
+   * mid-open (unlike the previous per-draw NotFound retry behavior).
+   */
+  private fontRequestAbsent = new Set<string>()
   /**
    * Names already confirmed absent from IndexedDB during this session.
    * Repeated open-time MTEXT loads must not re-enter IndexedDB for the same miss.
@@ -320,6 +327,7 @@ export class FontManager {
     }
     if (this.isFontLoaded(key)) {
       this.fontRequestFailed.delete(key)
+      this.fontRequestAbsent.delete(key)
       return Promise.resolve([])
     }
     if (this.fontRequestFailed.has(key)) {
@@ -328,6 +336,15 @@ export class FontManager {
           fontName: key,
           url: '',
           status: 'FailedToLoad'
+        }
+      ])
+    }
+    if (this.fontRequestAbsent.has(key)) {
+      return Promise.resolve([
+        {
+          fontName: key,
+          url: '',
+          status: 'NotFound'
         }
       ])
     }
@@ -344,13 +361,16 @@ export class FontManager {
         }
         if (this.isFontLoaded(key)) {
           this.fontRequestFailed.delete(key)
+          this.fontRequestAbsent.delete(key)
         } else {
-          // Sticky-fail only after a real fetch/parse failure. NotFound can
-          // recover after fonts.json is refreshed (e.g. new CDN aliases).
-          // IndexedDB misses are cached separately so a retry stays cheap.
+          // Sticky-fail after fetch/parse failure. Catalog misses are also
+          // sticky for this session so open-time draws do not re-await the
+          // same absent face tens of thousands of times.
           const hardFail = statuses.some(s => s.status === 'FailedToLoad')
           if (hardFail) {
             this.fontRequestFailed.add(key)
+          } else {
+            this.fontRequestAbsent.add(key)
           }
         }
         return statuses
@@ -382,11 +402,47 @@ export class FontManager {
    * Requests each font name via {@link requestFont} (deduped per name).
    * Callers may ignore the returned promise for fire-and-forget loads, or
    * await it when they need fonts before drawing.
+   *
+   * When every name is already loaded, failed, or session-absent (or the
+   * list is empty), returns a resolved promise without scheduling
+   * `Promise.all` — open-time paths call this per entity.
    */
   requestFonts(fontNames: readonly string[]): Promise<FontLoadStatus[]> {
+    if (fontNames.length === 0) {
+      return Promise.resolve([])
+    }
+    let needsLoad = false
+    for (const name of fontNames) {
+      if (this.needsFontLoad(name)) {
+        needsLoad = true
+        break
+      }
+    }
+    if (!needsLoad) {
+      return Promise.resolve([])
+    }
     return Promise.all(fontNames.map(name => this.requestFont(name))).then(
       results => results.flat()
     )
+  }
+
+  /**
+   * True when a face still needs an awaitable load attempt (not loaded and
+   * not session-settled as failed/absent). Used by open-time `asyncDraw` to
+   * skip `await requestFonts` once the manager has finished trying.
+   */
+  needsFontLoad(fontName: string): boolean {
+    const key = this.normalizeFontName(fontName)
+    if (!key) {
+      return false
+    }
+    if (this.isFontLoaded(key)) {
+      return false
+    }
+    if (this.fontRequestFailed.has(key) || this.fontRequestAbsent.has(key)) {
+      return false
+    }
+    return true
   }
 
   private normalizeFontName(fontName: string): string {
@@ -953,7 +1009,9 @@ export class FontManager {
       return
     }
     this.clearMissedFontEntry(fontName)
-    this.fontRequestFailed.delete(fontName.toLowerCase())
+    const key = fontName.toLowerCase()
+    this.fontRequestFailed.delete(key)
+    this.fontRequestAbsent.delete(key)
   }
 
   /**
@@ -1108,7 +1166,9 @@ export class FontManager {
         continue
       }
       this.clearMissedFontEntry(name)
-      this.fontRequestFailed.delete(name.toLowerCase())
+      const key = name.toLowerCase()
+      this.fontRequestFailed.delete(key)
+      this.fontRequestAbsent.delete(key)
     }
   }
 
@@ -1336,6 +1396,7 @@ export class FontManager {
       this.loadedFontMap.clear()
       this.fontRequestInFlight.clear()
       this.fontRequestFailed.clear()
+      this.fontRequestAbsent.clear()
       this.fontCacheLookupMisses.clear()
       this.missedFonts = {}
       this.loadEpoch++

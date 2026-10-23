@@ -3,7 +3,9 @@ import { DefaultFontsPreset, FontLoadStatus, FontManager } from '../font'
 import {
   collectIsolateMemoryStats,
   type MemoryUsageReport,
-  readJsHeapStats
+  readJsHeapStats,
+  TextRenderProfiler,
+  type TextRenderProfileSnapshot
 } from '../memory'
 import { StyleManager } from '../renderer'
 import {
@@ -266,6 +268,33 @@ export class UnifiedRenderer {
   /** Clears session-scoped missed-font bookkeeping on the main thread and workers. */
   async clearMissedFonts(): Promise<void> {
     await this.replaceMissedFonts({})
+  }
+
+  /**
+   * Enables or disables {@link TextRenderProfiler} on the main thread and worker pool.
+   * When enabling, counters are reset for a fresh open-file session.
+   */
+  async setTextRenderProfilerEnabled(enabled: boolean): Promise<void> {
+    const alreadyOn = TextRenderProfiler.enabled
+    TextRenderProfiler.setEnabled(enabled)
+    // Avoid wiping counters if OPENPROF already enabled profiling and draw
+    // has started (async worker ack used to reset mid-open).
+    if (enabled && !alreadyOn) {
+      TextRenderProfiler.reset()
+    }
+    if (this.webWorkerRenderer) {
+      await this.webWorkerRenderer.setTextRenderProfilerEnabled(enabled)
+    }
+  }
+
+  /** Resets main-thread text profiler counters (worker deltas merge into main). */
+  resetTextRenderProfiler(): void {
+    TextRenderProfiler.reset()
+  }
+
+  /** Snapshot of merged main + worker text-render timings. */
+  getTextRenderProfile(): TextRenderProfileSnapshot {
+    return TextRenderProfiler.snapshot()
   }
 
   /**

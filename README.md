@@ -8,6 +8,7 @@ A flexible and extensible AutoCAD MText renderer implementation using Three.js. 
 - Modular font loading system
 - Font management and dynamic font loading
 - Cache parsed fonts to improve rendering performance
+- Mesh glyph unit cache, affine merge, and (with cad-viewer) scene-level glyph instancing — see [docs/text-render-performance.md](./docs/text-render-performance.md)
 
 ## Core Components
 

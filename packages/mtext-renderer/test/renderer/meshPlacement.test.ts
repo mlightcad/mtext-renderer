@@ -9,10 +9,11 @@ import { MText } from '../../src/renderer/mtext'
 import {
   CharBoxType,
   createDefaultColorSettings,
+  MESH_GLYPH_PLACEMENTS_USERDATA,
+  type MeshGlyphPlacement,
   TextStyle
 } from '../../src/renderer/types'
-
-const FONT_BASE = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
+import { loadBenchmarkFontBuffer } from '../perf/helpers/loadBenchmarkFont'
 
 const styleManager = {
   unsupportedTextStyles: {},
@@ -23,14 +24,10 @@ const styleManager = {
 }
 
 async function loadAigdt(): Promise<MeshFont> {
-  const response = await fetch(FONT_BASE + 'AIGDT.ttf')
-  if (!response.ok) {
-    throw new Error(`Failed to fetch AIGDT.ttf: ${response.status}`)
-  }
   const fontData: FontData = {
     name: 'aigdt',
     type: 'mesh',
-    data: await response.arrayBuffer(),
+    data: await loadBenchmarkFontBuffer('AIGDT.ttf'),
     alias: ['aigdt']
   }
   const font = FontFactory.instance.createFont(fontData) as MeshFont
@@ -134,6 +131,52 @@ describe('mesh glyph placement', () => {
       expect(union.min.y).toBeCloseTo(meshBox!.min.y, 3)
       expect(union.max.x).toBeCloseTo(meshBox!.max.x, 3)
       expect(union.max.y).toBeCloseTo(meshBox!.max.y, 3)
+      mtext.dispose()
+    },
+    120_000
+  )
+
+  it(
+    'keeps meshGlyphPlacements when a paragraph also has underline LineSegments',
+    async () => {
+      // Placement mode stores glyphs on Group userData (no Mesh child). Collapsing
+      // to the lone LineSegments child used to drop placements — second \\P line
+      // with \\L then never reached InstancedMesh batching.
+      FontManager.instance.release()
+      FontManager.instance.enableFontCache = false
+      await loadAigdt()
+
+      const mtext = new MText(
+        {
+          text: 'nnn\\P\\Lmmm',
+          height: 5,
+          width: 10_000,
+          collectCharBoxes: false,
+          meshGlyphOutputMode: 'placement'
+        },
+        textStyle(),
+        styleManager as never,
+        FontManager.instance,
+        createDefaultColorSettings()
+      )
+      mtext.syncDraw()
+
+      let placementCount = 0
+      let lineSegmentCount = 0
+      mtext.traverse(node => {
+        const placements = node.userData?.[MESH_GLYPH_PLACEMENTS_USERDATA] as
+          | MeshGlyphPlacement[]
+          | undefined
+        if (placements?.length) {
+          placementCount += placements.length
+        }
+        if (node instanceof THREE.LineSegments) {
+          lineSegmentCount++
+        }
+      })
+
+      expect(lineSegmentCount).toBeGreaterThan(0)
+      expect(placementCount).toBe(6)
       mtext.dispose()
     },
     120_000

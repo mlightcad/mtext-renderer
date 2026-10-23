@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+import { TextRenderProfiler } from '../memory/textRenderProfiler'
 import { BaseTextShape } from './baseTextShape'
 import { MeshFont } from './meshFont'
 import {
@@ -84,25 +85,37 @@ export class MeshTextShape extends BaseTextShape {
   toGeometry(): THREE.BufferGeometry {
     const code = this.char.codePointAt(0) ?? this.char.charCodeAt(0)
     let geometry = this.font.cache.getGeometry(code, MESH_GLYPH_CACHE_SIZE)
-    if (geometry == null) {
-      const shapes = this.font.generateShapes(this.char, MESH_GLYPH_CACHE_SIZE)
-      geometry = new THREE.ShapeGeometry(shapes, MESH_GLYPH_CURVE_SEGMENTS)
-      if (!hasFinitePositions(geometry)) {
-        geometry.dispose()
-        return new THREE.BufferGeometry()
-      }
-      // ShapeGeometry always builds uv and normal. Drop them before the copy
-      // so the cached glyph and later merges stay position+index only.
-      if (geometry.hasAttribute('uv')) {
-        geometry.deleteAttribute('uv')
-      }
-      if (geometry.hasAttribute('normal')) {
-        geometry.deleteAttribute('normal')
-      }
-      geometry = bakeMeshPositions(geometry)
-      markMeshGlyphGeometry(geometry)
-      this.font.cache.setGeometry(code, MESH_GLYPH_CACHE_SIZE, geometry)
+    if (geometry != null) {
+      TextRenderProfiler.noteCacheHit()
+      return geometry
     }
+
+    TextRenderProfiler.noteCacheMiss(code)
+
+    // Glyph tokens are loaded in getCharShape; generateShapes only builds ShapePath.
+    const shapes = this.font.generateShapes(this.char, MESH_GLYPH_CACHE_SIZE)
+    geometry = TextRenderProfiler.timeSync(
+      'triangulateMs',
+      () => new THREE.ShapeGeometry(shapes, MESH_GLYPH_CURVE_SEGMENTS)
+    )
+    if (!hasFinitePositions(geometry)) {
+      geometry.dispose()
+      return new THREE.BufferGeometry()
+    }
+    // ShapeGeometry always builds uv and normal. Drop them before the copy
+    // so the cached glyph and later merges stay position+index only.
+    if (geometry.hasAttribute('uv')) {
+      geometry.deleteAttribute('uv')
+    }
+    if (geometry.hasAttribute('normal')) {
+      geometry.deleteAttribute('normal')
+    }
+    geometry = TextRenderProfiler.timeSync('bakeCacheMs', () => {
+      const baked = bakeMeshPositions(geometry!)
+      markMeshGlyphGeometry(baked)
+      this.font.cache.setGeometry(code, MESH_GLYPH_CACHE_SIZE, baked)
+      return baked
+    })
     return geometry
   }
 
@@ -117,23 +130,30 @@ export class MeshTextShape extends BaseTextShape {
       MESH_GLYPH_CACHE_SIZE,
       MESH_GLYPH_STROKE_CACHE_VARIANT
     )
-    if (geometry == null) {
-      geometry = this.font.generateStrokeGeometry(
-        this.char,
-        MESH_GLYPH_CACHE_SIZE
-      )
-      if (!hasFinitePositions(geometry)) {
-        geometry.dispose()
-        return new THREE.BufferGeometry()
-      }
-      geometry = bakeMeshPositions(geometry)
+    if (geometry != null) {
+      TextRenderProfiler.noteCacheHit()
+      return geometry
+    }
+
+    TextRenderProfiler.noteCacheMiss(code)
+    geometry = this.font.generateStrokeGeometry(
+      this.char,
+      MESH_GLYPH_CACHE_SIZE
+    )
+    if (!hasFinitePositions(geometry)) {
+      geometry.dispose()
+      return new THREE.BufferGeometry()
+    }
+    geometry = TextRenderProfiler.timeSync('bakeCacheMs', () => {
+      const baked = bakeMeshPositions(geometry!)
       this.font.cache.setGeometry(
         code,
         MESH_GLYPH_CACHE_SIZE,
-        geometry,
+        baked,
         MESH_GLYPH_STROKE_CACHE_VARIANT
       )
-    }
+      return baked
+    })
     return geometry
   }
 

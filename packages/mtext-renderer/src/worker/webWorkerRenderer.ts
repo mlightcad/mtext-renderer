@@ -1,6 +1,10 @@
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
+import {
+  TextRenderProfiler,
+  type TextRenderProfileSnapshot
+} from '../memory/textRenderProfiler'
 import type { IsolateMemoryStats } from '../memory/types'
 import { buildCharBoxesFromObject } from '../renderer/charBoxUtils'
 import { buildWorkerMaterialColorSettings } from '../renderer/colorUtils'
@@ -57,6 +61,8 @@ interface WorkerResponseBase<TType extends string, TData = unknown> {
   success: boolean
   data?: TData
   error?: string
+  /** Optional per-render text profiler delta from the worker isolate. */
+  profilerDelta?: TextRenderProfileSnapshot
 }
 
 //
@@ -118,6 +124,13 @@ type SetMissedFontsMessage = WorkerMessageBase<
   }
 >
 
+type SetTextRenderProfilerMessage = WorkerMessageBase<
+  'setTextRenderProfiler',
+  {
+    enabled: boolean
+  }
+>
+
 type WorkerMessageTyped =
   | RenderMessage
   | LoadFontsMessage
@@ -125,6 +138,7 @@ type WorkerMessageTyped =
   | SetLazyFontLoadingMessage
   | SetAwaitFontsBeforeDrawMessage
   | SetMissedFontsMessage
+  | SetTextRenderProfilerMessage
   | SetFontUrlMessage
   | GetAvailableFontsMessage
   | GetMemoryStatsMessage
@@ -184,6 +198,13 @@ type SetMissedFontsResponse = WorkerResponseBase<
   }
 >
 
+type SetTextRenderProfilerResponse = WorkerResponseBase<
+  'setTextRenderProfiler',
+  {
+    enabled: boolean
+  }
+>
+
 /** Push notification from a worker when a font finishes lazy-loading. */
 type FontLoadedNotification = WorkerResponseBase<
   'fontLoaded',
@@ -209,6 +230,7 @@ type WorkerResponseTyped =
   | SetAwaitFontsBeforeDrawResponse
   | SetFontUrlResponse
   | SetMissedFontsResponse
+  | SetTextRenderProfilerResponse
   | GetAvailableFontsResponse
   | GetMemoryStatsResponse
   | FontLoadedNotification
@@ -398,7 +420,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       return
     }
 
-    const { id, success, data, error } = response
+    const { id, success, data, error, profilerDelta } = response
     const pendingRequest = this.pendingRequests.get(id)
 
     if (pendingRequest) {
@@ -409,6 +431,9 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       )
 
       if (success) {
+        if (profilerDelta && TextRenderProfiler.enabled) {
+          TextRenderProfiler.mergeDelta(profilerDelta)
+        }
         if (response.type === 'loadFonts') {
           const loaded =
             (data as LoadFontsResponse['data'] | undefined)?.loaded ?? []
@@ -670,6 +695,7 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
   ): Promise<MTextObject> {
     await this.ensureInitialized()
 
+    const transferT0 = TextRenderProfiler.enabled ? performance.now() : 0
     const serialized = await this.sendMessageToOneWorker<
       RenderMessage,
       RenderResponse
@@ -677,8 +703,32 @@ export class WebWorkerRenderer implements MTextBaseRenderer {
       type: 'render',
       data: { mtextContent, textStyle, colorSettings }
     })
+    if (TextRenderProfiler.enabled) {
+      TextRenderProfiler.addMs('transferWaitMs', performance.now() - transferT0)
+    }
 
-    return this.reconstructMText(serialized, colorSettings)
+    return TextRenderProfiler.timeSync('reconstructMs', () =>
+      this.reconstructMText(serialized, colorSettings)
+    )
+  }
+
+  /**
+   * Enables or disables {@link TextRenderProfiler} on every worker isolate.
+   */
+  async setTextRenderProfilerEnabled(enabled: boolean): Promise<void> {
+    await this.ensureInitialized()
+    const alreadyOn = TextRenderProfiler.enabled
+    TextRenderProfiler.setEnabled(enabled)
+    if (enabled && !alreadyOn) {
+      TextRenderProfiler.reset()
+    }
+    await this.sendMessageToAllWorkers<
+      SetTextRenderProfilerMessage,
+      SetTextRenderProfilerResponse
+    >({
+      type: 'setTextRenderProfiler',
+      data: { enabled }
+    })
   }
 
   /**

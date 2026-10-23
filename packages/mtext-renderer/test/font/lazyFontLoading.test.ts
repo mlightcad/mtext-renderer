@@ -134,23 +134,24 @@ describe('FontManager lazy font loading', () => {
     requestFont.mockRestore()
   })
 
-  it('requestFont retries NotFound so a later catalog refresh can succeed', async () => {
+  it('requestFont does not retry NotFound until release (session-sticky)', async () => {
+    // Open-time draws hit the same absent face tens of thousands of times;
+    // catalog misses stay sticky for the session (cleared on release / register).
     const load = vi
       .spyOn(FontManager.instance, 'loadFontsByNames')
-      .mockResolvedValueOnce([
+      .mockResolvedValue([
         { fontName: 'malgun', url: '', status: 'NotFound' }
       ])
-      .mockResolvedValueOnce([
-        {
-          fontName: 'malgun',
-          url: 'https://cdn.example.com/fonts/noto-sans-kr.woff',
-          status: 'Success'
-        }
-      ])
 
     await FontManager.instance.requestFont('malgun')
     await FontManager.instance.requestFont('malgun')
+    await FontManager.instance.requestFont('malgun')
 
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(FontManager.instance.needsFontLoad('malgun')).toBe(false)
+
+    FontManager.instance.release()
+    await FontManager.instance.requestFont('malgun')
     expect(load).toHaveBeenCalledTimes(2)
     load.mockRestore()
   })

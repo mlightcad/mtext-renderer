@@ -9,6 +9,7 @@ import { ShxFontType } from '@mlightcad/shx-parser'
 import * as THREE from 'three'
 
 import { FontManager } from '../font'
+import { TextRenderProfiler } from '../memory/textRenderProfiler'
 import { buildCharBoxesFromObject } from './charBoxUtils'
 import { DEFAULT_LINE_SPACE_FACTOR, DEFAULT_LINE_SPACE_STYLE } from './constants'
 import { resolveMTextWrapWidth } from './mtextDataUtils'
@@ -21,6 +22,8 @@ import {
   ColorSettings,
   createDefaultColorSettings,
   LineLayout,
+  MESH_GLYPH_PLACEMENTS_USERDATA,
+  type MeshGlyphPlacement,
   MTextAttachmentPoint,
   MTextData,
   MTextFlowDirection,
@@ -32,6 +35,8 @@ import {
 } from './types'
 import { expandUnicodeEscapes } from './unicodeEscapes'
 
+const _anchorPlacementMatrix = /*@__PURE__*/ new THREE.Matrix4()
+const _anchorPlacementTranslation = /*@__PURE__*/ new THREE.Matrix4()
 const tempPoint = /*@__PURE__*/ new THREE.Vector3()
 const tempPoint2 = /*@__PURE__*/ new THREE.Vector3()
 const tempPoint3 = /*@__PURE__*/ new THREE.Vector3()
@@ -128,6 +133,11 @@ export class MText extends THREE.Object3D {
   private _box: THREE.Box3
   /** Lazily built layout data (line geometry + char boxes). */
   private _layoutData: MTextLayout | undefined
+  /**
+   * Cached result of {@link MText.getFonts} for {@link _mtextData.text}.
+   * Avoids re-parsing control codes on every {@link asyncDraw}.
+   */
+  private _contentFontNames: string[] | undefined
 
   /** Raw mtext data to draw on demand */
   private _mtextData: MTextData
@@ -225,8 +235,14 @@ export class MText extends THREE.Object3D {
    * {@link FontManager.awaitFontsBeforeDraw} to wait for referenced fonts first.
    */
   async asyncDraw(options?: MTextDrawOptions) {
-    // Determine fonts used in the mtext string (without extensions)
-    const fonts = Array.from(MText.getFonts(this._mtextData.text || '', true))
+    // Cache content-font scan — open paths call asyncDraw tens of thousands of
+    // times and getFonts() re-parses the whole string each time.
+    if (!this._contentFontNames) {
+      this._contentFontNames = Array.from(
+        MText.getFonts(this._mtextData.text || '', true)
+      )
+    }
+    const fonts = this._contentFontNames.slice()
 
     // Determine fonts used in font style (retry on later draws if preload throws)
     if (!this._fontsInStyleLoaded) {
@@ -255,6 +271,11 @@ export class MText extends THREE.Object3D {
     // redraw on FontManager.events.fontLoaded (or call regen) pick up glyphs
     // that resolve only via symbolFonts / defaultFonts (e.g. U+2205 → amgdt).
     const fontsToRequest = [...new Set(fonts)]
+    // Skip faces already loaded or session-settled (FailedToLoad / NotFound)
+    // so open-time draws do not re-await the loader tens of thousands of times.
+    const pendingFonts = fontsToRequest.filter(name =>
+      this._fontManager.needsFontLoad(name)
+    )
     const requested = new Set(fontsToRequest.map(name => name.toLowerCase()))
     const fallbackFonts = this._fontManager
       .getFontsToLoad()
@@ -265,22 +286,34 @@ export class MText extends THREE.Object3D {
         // Schedule unused preset faces in the background only when this draw
         // actually waits on content/style fonts — empty first draws should not
         // pull the whole default chain.
-        if (awaitFonts && fallbackFonts.length > 0) {
+        if (awaitFonts && pendingFonts.length > 0 && fallbackFonts.length > 0) {
           void this._fontManager.requestFonts(fallbackFonts)
         }
-        if (awaitFonts) {
-          await this._fontManager.requestFonts(fontsToRequest)
-        } else {
+        if (awaitFonts && pendingFonts.length > 0) {
+          // Skip await entirely when every face is already resident — avoids a
+          // microtask per MTEXT on large drawings (10k+ entities).
+          if (TextRenderProfiler.enabled) {
+            await TextRenderProfiler.timeAsync('requestFontsMs', () =>
+              this._fontManager.requestFonts(pendingFonts)
+            )
+          } else {
+            await this._fontManager.requestFonts(pendingFonts)
+          }
+        } else if (!awaitFonts) {
           void this._fontManager.requestFonts(fontsToRequest)
         }
       }
-    } else if (fontsToRequest.length > 0 || fallbackFonts.length > 0) {
+    } else if (pendingFonts.length > 0 || fallbackFonts.length > 0) {
       // Non-lazy mode still needs the configured fallbacks available before
       // syncDraw; keep awaiting the full set when not using on-demand loads.
-      await this._fontManager.loadFontsByNames([
-        ...fontsToRequest,
-        ...fallbackFonts
-      ])
+      const toLoad = [...pendingFonts, ...fallbackFonts]
+      if (TextRenderProfiler.enabled) {
+        await TextRenderProfiler.timeAsync('requestFontsMs', () =>
+          this._fontManager.loadFontsByNames(toLoad)
+        )
+      } else {
+        await this._fontManager.loadFontsByNames(toLoad)
+      }
     }
 
     // Only mark style fonts handled once they are actually registered.
@@ -312,6 +345,7 @@ export class MText extends THREE.Object3D {
    * not found, the default font will be used.
    */
   syncDraw() {
+    TextRenderProfiler.noteDraw()
     const obj = this.loadMText(this._mtextData, this._style)
     if (obj) {
       this._layoutData = undefined
@@ -530,6 +564,29 @@ export class MText extends THREE.Object3D {
           geometry.translate(anchorPoint.x, anchorPoint.y, 0)
         }
       }
+      // Placement mode has no Mesh geometry to translate — bake the same
+      // anchor offset into each instance matrix.
+      const placements = obj.userData?.[MESH_GLYPH_PLACEMENTS_USERDATA] as
+        | MeshGlyphPlacement[]
+        | undefined
+      if (
+        placements &&
+        placements.length > 0 &&
+        Number.isFinite(anchorPoint.x) &&
+        Number.isFinite(anchorPoint.y) &&
+        (anchorPoint.x !== 0 || anchorPoint.y !== 0)
+      ) {
+        _anchorPlacementTranslation.makeTranslation(
+          anchorPoint.x,
+          anchorPoint.y,
+          0
+        )
+        for (const placement of placements) {
+          _anchorPlacementMatrix.fromArray(placement.matrixElements)
+          _anchorPlacementMatrix.premultiply(_anchorPlacementTranslation)
+          placement.matrixElements.set(_anchorPlacementMatrix.elements)
+        }
+      }
       // Char-box metadata is stored alongside geometry for normal glyphs and
       // on placeholder objects for spaces/empty lines, so translate it for both.
       translateCharBoxEntries(
@@ -703,7 +760,8 @@ export class MText extends THREE.Object3D {
       byLayerColor: this._colorSettings.byLayerColor,
       removeFontExtension: true,
       collectCharBoxes: mtextData.collectCharBoxes ?? true,
-      meshFontRenderMode: mtextData.meshFontRenderMode ?? 'mesh'
+      meshFontRenderMode: mtextData.meshFontRenderMode ?? 'mesh',
+      meshGlyphOutputMode: mtextData.meshGlyphOutputMode ?? 'merge'
     }
 
     const context = new MTextContext()
@@ -734,8 +792,15 @@ export class MText extends THREE.Object3D {
       this.fontManager,
       textLineFormatOptions
     )
+    // Most drawing labels have neither %% control codes nor \U+ escapes; skip
+    // the expand passes so open-time layout stays on the hot path.
+    const rawText = mtextData.text
+    const expandedText =
+      rawText.includes('%') || rawText.includes('\\')
+        ? expandUnicodeEscapes(expandPercentControlCodes(rawText))
+        : rawText
     const parser = new MTextParser(
-      expandUnicodeEscapes(expandPercentControlCodes(mtextData.text)),
+      expandedText,
       context,
       {
         // AutoCAD keeps `\pxq*` / `\pi` / `\pl` until the next `\p` command.
