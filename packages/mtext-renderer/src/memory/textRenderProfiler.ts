@@ -440,7 +440,7 @@ export class TextRenderProfiler {
             : '0'
         }` +
         ` max=${snap.mergeMeshEntriesMax}` +
-        ` buckets[1|2-8|9-32|33+]=` +
+        ' buckets[1|2-8|9-32|33+]=' +
         `${snap.mergeMeshBucket1}|${snap.mergeMeshBucket2to8}|` +
         `${snap.mergeMeshBucket9to32}|${snap.mergeMeshBucket33plus}`,
       `    leafTotal≈${leafTotal.toFixed(1)} ms`,
@@ -450,7 +450,7 @@ export class TextRenderProfiler {
       row('transferWait', snap.transferWaitMs, transportTotal),
       row('reconstruct', snap.reconstructMs, transportTotal),
       `    transportTotal≈${transportTotal.toFixed(1)} ms` +
-        ` (transferWait includes workerBuild+serialize+IPC; sums may exceed wall under concurrency)`
+        ' (transferWait includes workerBuild+serialize+IPC; sums may exceed wall under concurrency)'
     ]
   }
 }

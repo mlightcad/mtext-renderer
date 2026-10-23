@@ -11,7 +11,6 @@ import * as THREE from 'three'
 import { getColorByIndex } from '../common'
 import { FontManager } from '../font'
 import { BaseTextShape } from '../font/baseTextShape'
-import { TextRenderProfiler } from '../memory/textRenderProfiler'
 import {
   isMeshGlyphGeometry,
   markMeshGlyphGeometry
@@ -20,6 +19,7 @@ import {
   TextGeometryBuilder,
   type TransformedLineGeometryEntry
 } from '../font/textGeometryBuilder'
+import { TextRenderProfiler } from '../memory/textRenderProfiler'
 import { resolveMTextColor } from './colorUtils'
 import {
   LINE_SPACING_SCALE_FACTOR,
