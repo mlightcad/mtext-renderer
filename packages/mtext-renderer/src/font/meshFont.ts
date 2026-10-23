@@ -3,9 +3,11 @@ import { FontData as ThreeFontData } from 'three/examples/jsm/loaders/FontLoader
 
 import { LRUCache } from '../common/lruCache'
 import { estimateStringBytes } from '../memory/estimateGeometryBytes'
+import { TextRenderProfiler } from '../memory/textRenderProfiler'
 import {
   type FontMemoryStats,
-  MESH_PARSED_FONT_OVERHEAD} from '../memory/types'
+  MESH_PARSED_FONT_OVERHEAD
+} from '../memory/types'
 import { BaseFont } from './baseFont'
 import { FontData } from './font'
 import { computeMeshFontScaleFactor } from './meshFontScaleFactor'
@@ -225,7 +227,11 @@ export class MeshFont extends BaseFont {
       return
     }
 
-    if (this.opentypeHasGlyph(char)) {
+    if (!this.opentypeHasGlyph(char)) {
+      return
+    }
+
+    const load = () => {
       const lookupChar = this.opentypeLookupChar(char)
       const glyph = this.opentypeFont.charToGlyph(lookupChar)
       if (!glyph || !glyph.path) return
@@ -253,6 +259,12 @@ export class MeshFont extends BaseFont {
       this.data.glyphs[char] = token
       this.glyphCache.set(char, token)
     }
+
+    if (TextRenderProfiler.enabled) {
+      TextRenderProfiler.timeSync('glyphLoadMs', load)
+    } else {
+      load()
+    }
   }
 
   /**
@@ -265,7 +277,9 @@ export class MeshFont extends BaseFont {
     for (const char of text) {
       this._loadGlyphIfNeeded(char)
     }
-    return this.font.generateShapes(text, size)
+    return TextRenderProfiler.timeSync('shapeBuildMs', () =>
+      this.font.generateShapes(text, size)
+    )
   }
 
   /**
@@ -278,7 +292,9 @@ export class MeshFont extends BaseFont {
     for (const char of text) {
       this._loadGlyphIfNeeded(char)
     }
-    return this.font.generateStrokeGeometry(text, size)
+    return TextRenderProfiler.timeSync('strokeSampleMs', () =>
+      this.font.generateStrokeGeometry(text, size)
+    )
   }
 
   /**

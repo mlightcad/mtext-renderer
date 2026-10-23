@@ -19,6 +19,7 @@ import {
   TextGeometryBuilder,
   type TransformedLineGeometryEntry
 } from '../font/textGeometryBuilder'
+import { TextRenderProfiler } from '../memory/textRenderProfiler'
 import { resolveMTextColor } from './colorUtils'
 import {
   LINE_SPACING_SCALE_FACTOR,
@@ -34,7 +35,10 @@ import {
   CharBoxType,
   ColorSettings,
   LineLayout,
+  MESH_GLYPH_PLACEMENTS_USERDATA,
   type MeshFontRenderMode,
+  type MeshGlyphOutputMode,
+  type MeshGlyphPlacement,
   MTextFlowDirection,
   MTextLineSpacingStyle,
   STACK_DIVIDER_CHAR,
@@ -45,6 +49,10 @@ import {
 const tempVector = /*@__PURE__*/ new THREE.Vector3()
 /** Identity matrix reused when line geometries need no additional transform. */
 const _identityMatrix = /*@__PURE__*/ new THREE.Matrix4()
+/** Scratch matrices for translating {@link MeshGlyphPlacement} instances. */
+const _placementMatrix = /*@__PURE__*/ new THREE.Matrix4()
+const _placementTranslation = /*@__PURE__*/ new THREE.Matrix4()
+const _placementBox = /*@__PURE__*/ new THREE.Box3()
 /** Reusable scale matrix for per-glyph width-factor transforms. */
 const _scaleMatrix = /*@__PURE__*/ new THREE.Matrix4()
 /** Reusable skew matrix for oblique/italic glyph shearing. */
@@ -131,6 +139,10 @@ export interface MTextFormatOptions {
    * How TrueType/OTF (mesh) glyphs are drawn. Default is `'mesh'`.
    */
   meshFontRenderMode?: MeshFontRenderMode
+  /**
+   * How filled mesh glyphs are packaged. Default `'merge'`.
+   */
+  meshGlyphOutputMode?: MeshGlyphOutputMode
 }
 
 /**
@@ -1133,6 +1145,7 @@ export class MTextProcessor {
    * {@link MTextFormatOptions.meshFontRenderMode}.
    */
   private getGlyphGeometry(shape: BaseTextShape): THREE.BufferGeometry {
+    TextRenderProfiler.notePlacedChar()
     return this._options.meshFontRenderMode === 'line'
       ? shape.toStrokeGeometry()
       : shape.toGeometry()
@@ -1292,6 +1305,10 @@ export class MTextProcessor {
    * @returns A {@link THREE.Group} containing merged line/mesh objects and layout metadata.
    */
   processText(tokens: Generator<MTextToken>) {
+    const profile = TextRenderProfiler.enabled
+    const t0 = profile ? performance.now() : 0
+    const leafBefore = profile ? TextRenderProfiler.geometryLeafTotalMs() : 0
+
     this._lastCharBoxTarget = undefined
     this._lineBatchEntries = []
     this._meshBatchEntries = []
@@ -1430,6 +1447,13 @@ export class MTextProcessor {
           : undefined
     }))
     group.userData.logicalAdvanceWidth = this._maxLineAdvance
+
+    if (profile) {
+      TextRenderProfiler.addProcessTextResidual(
+        performance.now() - t0,
+        leafBefore
+      )
+    }
     return group
   }
 
@@ -2559,13 +2583,19 @@ export class MTextProcessor {
   }
 
   /**
-   * Applies translation on the specified buffer geometries according to text alignment setting.
+   * Applies horizontal translation on the current visual line according to
+   * paragraph alignment.
    *
-   * Translates both geometry vertices and attached char boxes on the current visual line.
+   * Updates merged {@link THREE.BufferGeometry} vertices, {@link MeshGlyphPlacement}
+   * matrices (placement output mode), and attached char boxes.
    */
   private processAlignment() {
     const geometryEntries: Array<{
       geometry: THREE.BufferGeometry
+      owner: THREE.Object3D
+    }> = []
+    const placementOwners: Array<{
+      placements: MeshGlyphPlacement[]
       owner: THREE.Object3D
     }> = []
     this.currentLineObjects.forEach(object =>
@@ -2576,24 +2606,30 @@ export class MTextProcessor {
             owner: obj as THREE.Object3D
           })
         }
+        const placements = obj.userData?.[MESH_GLYPH_PLACEMENTS_USERDATA] as
+          | MeshGlyphPlacement[]
+          | undefined
+        if (placements && placements.length > 0) {
+          placementOwners.push({ placements, owner: obj as THREE.Object3D })
+        }
       })
     )
-    if (geometryEntries.length == 0) return
+    if (geometryEntries.length === 0 && placementOwners.length === 0) return
 
-    let bbox: THREE.Box3 | undefined
-    geometryEntries.forEach((entry, i) => {
+    const resolvedBBox = new THREE.Box3()
+    geometryEntries.forEach(entry => {
       if (!entry.geometry.boundingBox) {
         entry.geometry.computeBoundingBox()
       }
-      if (i === 0) {
-        bbox = entry.geometry.boundingBox as THREE.Box3
-      } else {
-        bbox!.union(entry.geometry.boundingBox as THREE.Box3)
+      if (entry.geometry.boundingBox) {
+        resolvedBBox.union(entry.geometry.boundingBox)
       }
     })
-    if (!bbox) return
+    placementOwners.forEach(entry => {
+      this.unionBoxFromPlacements(resolvedBBox, entry.placements)
+    })
+    if (resolvedBBox.isEmpty()) return
 
-    const resolvedBBox = bbox
     const size = resolvedBBox.getSize(tempVector)
     const translateCharBoxes = (owner: THREE.Object3D, dx: number) => {
       const charBoxes = owner.userData?.layout?.chars as CharBox[] | undefined
@@ -2604,11 +2640,7 @@ export class MTextProcessor {
       }
     }
 
-    const applyLeftAlignment = () => {
-      const dx = Number.isFinite(this.maxLineWidth)
-        ? this._currentLeftMargin - resolvedBBox.min.x
-        : this._currentLeftMargin
-
+    const applyDx = (dx: number) => {
       const translated = new Set<THREE.Object3D>()
       geometryEntries.forEach(entry => {
         entry.geometry.translate(dx, 0, 0)
@@ -2617,6 +2649,20 @@ export class MTextProcessor {
           translated.add(entry.owner)
         }
       })
+      placementOwners.forEach(entry => {
+        this.translateMeshGlyphPlacements(entry.placements, dx, 0)
+        if (!translated.has(entry.owner)) {
+          translateCharBoxes(entry.owner, dx)
+          translated.add(entry.owner)
+        }
+      })
+    }
+
+    const applyLeftAlignment = () => {
+      const dx = Number.isFinite(this.maxLineWidth)
+        ? this._currentLeftMargin - resolvedBBox.min.x
+        : this._currentLeftMargin
+      applyDx(dx)
     }
 
     const alignment =
@@ -2635,19 +2681,11 @@ export class MTextProcessor {
           applyLeftAlignment()
           break
         }
-        const dx =
+        applyDx(
           this._currentLeftMargin +
-          (this.maxLineWidth - size.x) / 2 -
-          resolvedBBox.min.x
-
-        const translated = new Set<THREE.Object3D>()
-        geometryEntries.forEach(entry => {
-          entry.geometry.translate(dx, 0, 0)
-          if (!translated.has(entry.owner)) {
-            translateCharBoxes(entry.owner, dx)
-            translated.add(entry.owner)
-          }
-        })
+            (this.maxLineWidth - size.x) / 2 -
+            resolvedBBox.min.x
+        )
         break
       }
       case MTextParagraphAlignment.RIGHT: {
@@ -2655,20 +2693,12 @@ export class MTextProcessor {
           applyLeftAlignment()
           break
         }
-        const dx =
+        applyDx(
           this._currentLeftMargin +
-          this.maxLineWidth -
-          size.x -
-          resolvedBBox.min.x
-
-        const translated = new Set<THREE.Object3D>()
-        geometryEntries.forEach(entry => {
-          entry.geometry.translate(dx, 0, 0)
-          if (!translated.has(entry.owner)) {
-            translateCharBoxes(entry.owner, dx)
-            translated.add(entry.owner)
-          }
-        })
+            this.maxLineWidth -
+            size.x -
+            resolvedBBox.min.x
+        )
         break
       }
       case MTextParagraphAlignment.DISTRIBUTED: {
@@ -2676,25 +2706,88 @@ export class MTextProcessor {
           applyLeftAlignment()
           break
         }
+        // Prefer geometry leaves when present (merge / decorations); otherwise
+        // space placement-only segment groups.
+        const distributeTargets: Array<{
+          apply: (dx: number) => void
+          owner: THREE.Object3D
+        }> =
+          geometryEntries.length > 0
+            ? geometryEntries.map(entry => ({
+                owner: entry.owner,
+                apply: (dx: number) => entry.geometry.translate(dx, 0, 0)
+              }))
+            : placementOwners.map(entry => ({
+                owner: entry.owner,
+                apply: (dx: number) =>
+                  this.translateMeshGlyphPlacements(entry.placements, dx, 0)
+              }))
         const gap =
-          geometryEntries.length > 1
-            ? (this.maxLineWidth - size.x) / (geometryEntries.length - 1)
+          distributeTargets.length > 1
+            ? (this.maxLineWidth - size.x) / (distributeTargets.length - 1)
             : 0
         const translated = new Set<THREE.Object3D>()
-        geometryEntries.forEach((entry, index) => {
+        distributeTargets.forEach((entry, index) => {
           const dx =
             gap * index + (this._currentLeftMargin - resolvedBBox.min.x)
-
-          entry.geometry.translate(dx, 0, 0)
+          entry.apply(dx)
           if (!translated.has(entry.owner)) {
             translateCharBoxes(entry.owner, dx)
             translated.add(entry.owner)
           }
         })
+        // When distributing geometry leaves, still shift placement matrices on
+        // the same segment Group (placement + underline LineSegments case).
+        if (geometryEntries.length > 0) {
+          placementOwners.forEach(entry => {
+            const matched = distributeTargets.findIndex(
+              t =>
+                t.owner === entry.owner || t.owner.parent === entry.owner
+            )
+            const index = matched >= 0 ? matched : 0
+            const dx =
+              gap * index + (this._currentLeftMargin - resolvedBBox.min.x)
+            this.translateMeshGlyphPlacements(entry.placements, dx, 0)
+          })
+        }
         break
       }
       default:
         break
+    }
+  }
+
+  /** Unions axis-aligned bounds of unit glyphs transformed by placement matrices. */
+  private unionBoxFromPlacements(
+    target: THREE.Box3,
+    placements: MeshGlyphPlacement[]
+  ) {
+    for (const placement of placements) {
+      if (!placement.geometry.boundingBox) {
+        placement.geometry.computeBoundingBox()
+      }
+      if (!placement.geometry.boundingBox) continue
+      _placementBox.copy(placement.geometry.boundingBox)
+      _placementMatrix.fromArray(placement.matrixElements)
+      _placementBox.applyMatrix4(_placementMatrix)
+      target.union(_placementBox)
+    }
+  }
+
+  /** Left-multiplies each placement by a translation (same as `geometry.translate`). */
+  private translateMeshGlyphPlacements(
+    placements: MeshGlyphPlacement[],
+    dx: number,
+    dy: number
+  ) {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) {
+      return
+    }
+    _placementTranslation.makeTranslation(dx, dy, 0)
+    for (const placement of placements) {
+      _placementMatrix.fromArray(placement.matrixElements)
+      _placementMatrix.premultiply(_placementTranslation)
+      placement.matrixElements.set(_placementMatrix.elements)
     }
   }
 
@@ -2751,19 +2844,38 @@ export class MTextProcessor {
     const shouldCollectCharBoxes = this._options.collectCharBoxes !== false
 
     if (this._meshBatchEntries.length > 0) {
-      const mergedMeshGeom = TextGeometryBuilder.mergeMeshGeometries(
-        this._meshBatchEntries
-      )
-      markMeshGlyphGeometry(mergedMeshGeom)
-      const mesh = new THREE.Mesh(mergedMeshGeom, meshMaterial)
-      mesh.userData.bboxIntersectionCheck = true
-      mesh.userData.charBoxType = charBoxType
-      mesh.userData.mtextColor = segmentColor
-      if (shouldCollectCharBoxes && meshCharBoxes.length > 0) {
-        mesh.userData.layout = { chars: meshCharBoxes.slice() }
-      }
+      if (this._options.meshGlyphOutputMode === 'placement') {
+        // Emit shared unit glyphs + matrices; scene batcher builds InstancedMesh.
+        // Skips per-entity mergeMesh vertex bake (open-time hot path).
+        const placements: MeshGlyphPlacement[] = this._meshBatchEntries.map(
+          entry => ({
+            geometry: entry.geometry,
+            matrixElements: new Float32Array(entry.matrix.elements)
+          })
+        )
+        meshGroup.userData[MESH_GLYPH_PLACEMENTS_USERDATA] = placements
+        meshGroup.userData.meshGlyphMaterial = meshMaterial
+        meshGroup.userData.mtextColor = segmentColor
+        meshGroup.userData.charBoxType = charBoxType
+        meshGroup.userData.bboxIntersectionCheck = true
+        if (shouldCollectCharBoxes && meshCharBoxes.length > 0) {
+          meshGroup.userData.layout = { chars: meshCharBoxes.slice() }
+        }
+      } else {
+        const mergedMeshGeom = TextGeometryBuilder.mergeMeshGeometries(
+          this._meshBatchEntries
+        )
+        markMeshGlyphGeometry(mergedMeshGeom)
+        const mesh = new THREE.Mesh(mergedMeshGeom, meshMaterial)
+        mesh.userData.bboxIntersectionCheck = true
+        mesh.userData.charBoxType = charBoxType
+        mesh.userData.mtextColor = segmentColor
+        if (shouldCollectCharBoxes && meshCharBoxes.length > 0) {
+          mesh.userData.layout = { chars: meshCharBoxes.slice() }
+        }
 
-      meshGroup.add(mesh)
+        meshGroup.add(mesh)
+      }
     }
 
     // All line-based geometries: SHX font batch + decorations + legacy line geoms
@@ -2791,12 +2903,16 @@ export class MTextProcessor {
       meshGroup.add(lineMesh)
     }
 
-    // Reduce hierarchy if only one child
-    if (meshGroup.children.length === 1) {
+    // Reduce hierarchy if only one child. Placement mode stores glyph instances
+    // on the Group's userData (no Mesh child); collapsing to a lone LineSegments
+    // (underline / SHX) would drop meshGlyphPlacements and skip InstancedMesh.
+    const hasMeshPlacements =
+      Array.isArray(meshGroup.userData[MESH_GLYPH_PLACEMENTS_USERDATA]) &&
+      meshGroup.userData[MESH_GLYPH_PLACEMENTS_USERDATA].length > 0
+    if (meshGroup.children.length === 1 && !hasMeshPlacements) {
       return meshGroup.children[0]
-    } else {
-      return meshGroup
     }
+    return meshGroup
   }
 
   /**

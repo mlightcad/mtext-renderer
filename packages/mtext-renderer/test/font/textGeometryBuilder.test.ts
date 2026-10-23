@@ -59,4 +59,30 @@ describe('TextGeometryBuilder', () => {
 
     expect(merged.getAttribute('position').count).toBe(4)
   })
+
+  it('merges mesh glyphs with affine placement and offset indices', () => {
+    const tri = new THREE.BufferGeometry()
+    tri.setAttribute(
+      'position',
+      new THREE.BufferAttribute(
+        new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+        3
+      )
+    )
+    tri.setIndex([0, 1, 2])
+
+    const merged = TextGeometryBuilder.mergeMeshGeometries([
+      { geometry: tri, matrix: new THREE.Matrix4().makeTranslation(10, 0, 0) },
+      { geometry: tri, matrix: new THREE.Matrix4().makeTranslation(20, 0, 0) }
+    ])
+
+    const pos = merged.getAttribute('position').array as Float32Array
+    expect(Array.from(pos.slice(0, 3))).toEqual([10, 0, 0])
+    expect(Array.from(pos.slice(9, 12))).toEqual([20, 0, 0])
+    const index = merged.getIndex()!.array as ArrayLike<number>
+    expect(index[0]).toBe(0)
+    expect(index[3]).toBe(3)
+    expect(merged.boundingBox?.min.x).toBe(10)
+    expect(merged.boundingBox?.max.x).toBe(21)
+  })
 })

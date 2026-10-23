@@ -191,6 +191,26 @@ export const createDefaultColorSettings = (): ColorSettings => ({
 export type MeshFontRenderMode = 'mesh' | 'line'
 
 /**
+ * How filled mesh glyphs are packaged after layout.
+ * - `merge`: bake placements into one BufferGeometry (default)
+ * - `placement`: leave unit glyph geometries + matrices on
+ *   `userData.meshGlyphPlacements` for a scene-level InstancedMesh batcher
+ *   (main-thread only; skips per-entity vertex copy)
+ */
+export type MeshGlyphOutputMode = 'merge' | 'placement'
+
+/**
+ * One unit-glyph instance emitted when {@link MeshGlyphOutputMode} is
+ * `'placement'`. `geometry` is the shared cache entry — do not dispose it
+ * with the entity.
+ */
+export interface MeshGlyphPlacement {
+  geometry: THREE.BufferGeometry
+  /** Column-major 4×4 placement (same layout as {@link THREE.Matrix4.elements}). */
+  matrixElements: Float32Array
+}
+
+/**
  * Represents the data structure for multiline text (MText) entities.
  * Contains all necessary properties to define the appearance and positioning of text.
  */
@@ -232,7 +252,15 @@ export interface MTextData {
    * `line` draws sampled contours only, skipping triangulation.
    */
   meshFontRenderMode?: MeshFontRenderMode
+  /**
+   * How filled mesh glyphs are packaged. Default `'merge'`.
+   * `'placement'` is for scene-level InstancedMesh batching (main thread).
+   */
+  meshGlyphOutputMode?: MeshGlyphOutputMode
 }
+
+/** `userData` key for {@link MeshGlyphPlacement} arrays on an MText object. */
+export const MESH_GLYPH_PLACEMENTS_USERDATA = 'meshGlyphPlacements'
 
 /**
  * Describes one AutoCAD SHAPE entity for rendering.

@@ -3,6 +3,7 @@ import * as THREE from 'three'
 
 import { FontManager } from '../font'
 import { collectIsolateMemoryStats } from '../memory/collectIsolateMemoryStats'
+import { TextRenderProfiler } from '../memory/textRenderProfiler'
 import type { IsolateMemoryStats } from '../memory/types'
 import { serializeMTextColor } from '../renderer/colorUtils'
 import { DefaultStyleManager } from '../renderer/defaultStyleManager'
@@ -25,6 +26,7 @@ interface WorkerMessage {
     | 'setAwaitFontsBeforeDraw'
     | 'setFontUrl'
     | 'setMissedFonts'
+    | 'setTextRenderProfiler'
     | 'getAvailableFonts'
     | 'getMemoryStats'
   id: string
@@ -49,6 +51,7 @@ interface WorkerResponse {
     | 'setAwaitFontsBeforeDraw'
     | 'setFontUrl'
     | 'setMissedFonts'
+    | 'setTextRenderProfiler'
     | 'getAvailableFonts'
     | 'getMemoryStats'
     | 'fontLoaded'
@@ -58,6 +61,7 @@ interface WorkerResponse {
   success: boolean
   data?: unknown
   error?: string
+  profilerDelta?: ReturnType<typeof TextRenderProfiler.snapshot>
 }
 
 // Initialize managers in the worker
@@ -98,6 +102,10 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
           colorSettings: ColorSettings
         }
         const normalizedColorSettings = normalizeColorSettings(colorSettings)
+        const profiling = TextRenderProfiler.enabled
+        if (profiling) {
+          TextRenderProfiler.reset()
+        }
 
         // Create MText instance and draw (loads fonts on demand)
         let mtext = new MText(
@@ -107,19 +115,32 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
           fontManager,
           normalizedColorSettings
         )
+        const buildT0 = profiling ? performance.now() : 0
         await mtext.asyncDraw()
         mtext.updateMatrixWorld(true)
+        if (profiling) {
+          TextRenderProfiler.addMs('workerBuildMs', performance.now() - buildT0)
+        }
 
         // Serialize the MText object for transfer with transferable objects
+        const serializeT0 = profiling ? performance.now() : 0
         const { data: serializedMText, transferableObjects } =
           serializeMText(mtext)
+        if (profiling) {
+          TextRenderProfiler.addMs('serializeMs', performance.now() - serializeT0)
+        }
+
+        const profilerDelta = profiling
+          ? TextRenderProfiler.takeDelta()
+          : undefined
 
         self.postMessage(
           {
             type: 'render',
             id,
             success: true,
-            data: serializedMText
+            data: serializedMText,
+            profilerDelta
           } as WorkerResponse,
           { transfer: transferableObjects }
         )
@@ -128,6 +149,21 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
         mtext.dispose()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(mtext as any) = undefined
+        break
+      }
+
+      case 'setTextRenderProfiler': {
+        const enabled = !!(data as { enabled?: boolean } | undefined)?.enabled
+        TextRenderProfiler.setEnabled(enabled)
+        if (enabled) {
+          TextRenderProfiler.reset()
+        }
+        self.postMessage({
+          type: 'setTextRenderProfiler',
+          id,
+          success: true,
+          data: { enabled }
+        } as WorkerResponse)
         break
       }
 

@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 
+import { TextRenderProfiler } from '../memory/textRenderProfiler'
+
 /**
  * One cached glyph geometry plus the world transform to apply at merge time.
  */
@@ -25,6 +27,19 @@ export class TextGeometryBuilder {
    * @returns A single non-indexed line geometry containing all transformed segments.
    */
   static mergeLineGeometries(
+    entries: TransformedLineGeometryEntry[]
+  ): THREE.BufferGeometry {
+    return TextRenderProfiler.timeSync('mergeLineMs', () => {
+      const merged = TextGeometryBuilder.mergeLineGeometriesUnprofiled(entries)
+      if (TextRenderProfiler.enabled) {
+        const position = merged.getAttribute('position')
+        TextRenderProfiler.addGeometryCounts(position?.count ?? 0, 0)
+      }
+      return merged
+    })
+  }
+
+  private static mergeLineGeometriesUnprofiled(
     entries: TransformedLineGeometryEntry[]
   ): THREE.BufferGeometry {
     if (entries.length === 0) {
@@ -158,6 +173,26 @@ export class TextGeometryBuilder {
   static mergeMeshGeometries(
     entries: TransformedLineGeometryEntry[]
   ): THREE.BufferGeometry {
+    return TextRenderProfiler.timeSync('mergeMeshMs', () => {
+      if (TextRenderProfiler.enabled) {
+        TextRenderProfiler.noteMergeMeshBatch(entries.length)
+      }
+      const merged = TextGeometryBuilder.mergeMeshGeometriesUnprofiled(entries)
+      if (TextRenderProfiler.enabled) {
+        const position = merged.getAttribute('position')
+        const index = merged.getIndex()
+        TextRenderProfiler.addGeometryCounts(
+          position?.count ?? 0,
+          index?.count ?? 0
+        )
+      }
+      return merged
+    })
+  }
+
+  private static mergeMeshGeometriesUnprofiled(
+    entries: TransformedLineGeometryEntry[]
+  ): THREE.BufferGeometry {
     if (entries.length === 0) {
       return new THREE.BufferGeometry()
     }
@@ -184,12 +219,14 @@ export class TextGeometryBuilder {
 
     let vertexBase = 0
     let indexWrite = 0
-    let minX = Infinity
-    let minY = Infinity
-    let minZ = Infinity
-    let maxX = -Infinity
-    let maxY = -Infinity
-    let maxZ = -Infinity
+    const bounds: MeshMergeBounds = {
+      minX: Infinity,
+      minY: Infinity,
+      minZ: Infinity,
+      maxX: -Infinity,
+      maxY: -Infinity,
+      maxZ: -Infinity
+    }
 
     for (const entry of entries) {
       const position = entry.geometry.getAttribute('position')
@@ -202,21 +239,24 @@ export class TextGeometryBuilder {
         entry.matrix,
         positions,
         vertexBase,
-        (x, y, z) => {
-          if (x < minX) minX = x
-          if (y < minY) minY = y
-          if (z < minZ) minZ = z
-          if (x > maxX) maxX = x
-          if (y > maxY) maxY = y
-          if (z > maxZ) maxZ = z
-        }
+        bounds
       )
 
       const index = entry.geometry.getIndex()
       if (index) {
-        const source = index.array as ArrayLike<number>
-        for (let i = 0; i < index.count; i++) {
-          indices[indexWrite++] = source[i] + vertexBase
+        const source = index.array
+        if (vertexBase === 0 && source instanceof IndexArray) {
+          // Single-glyph (or first glyph) TypedArray → bulk copy.
+          ;(indices as Uint16Array | Uint32Array).set(
+            source as Uint16Array | Uint32Array,
+            indexWrite
+          )
+          indexWrite += index.count
+        } else {
+          const src = source as ArrayLike<number>
+          for (let i = 0; i < index.count; i++) {
+            indices[indexWrite++] = src[i] + vertexBase
+          }
         }
       } else {
         for (let i = 0; i < position.count; i++) {
@@ -231,32 +271,83 @@ export class TextGeometryBuilder {
     merged.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     merged.setIndex(new THREE.BufferAttribute(indices, 1))
     merged.boundingBox = new THREE.Box3(
-      new THREE.Vector3(minX, minY, minZ),
-      new THREE.Vector3(maxX, maxY, maxZ)
+      new THREE.Vector3(bounds.minX, bounds.minY, bounds.minZ),
+      new THREE.Vector3(bounds.maxX, bounds.maxY, bounds.maxZ)
     )
     return merged
   }
 
   /**
    * Writes `position` transformed by `matrix` into `output` at `vertexBase`.
-   * Affine placement matrices keep `w` at 1; the perspective term matches
-   * {@link THREE.Vector3.applyMatrix4} for any other matrix.
+   * Glyph placement matrices are affine (no perspective); that path skips the
+   * per-vertex `w` divide. Non-affine matrices keep full `applyMatrix4` math.
    */
   private static writeTransformedMeshPositions(
     position: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
     matrix: THREE.Matrix4,
     output: Float32Array,
     vertexBase: number,
-    expandBounds: (x: number, y: number, z: number) => void
+    bounds: MeshMergeBounds
   ): number {
     const e = matrix.elements
     const count = position.count
     const base = vertexBase * 3
+    const affine =
+      e[3] === 0 && e[7] === 0 && e[11] === 0 && e[15] === 1
     const fast =
       position instanceof THREE.BufferAttribute &&
       position.itemSize === 3 &&
       !position.normalized &&
       position.array instanceof Float32Array
+
+    let minX = bounds.minX
+    let minY = bounds.minY
+    let minZ = bounds.minZ
+    let maxX = bounds.maxX
+    let maxY = bounds.maxY
+    let maxZ = bounds.maxZ
+
+    if (fast && affine) {
+      const src = position.array as Float32Array
+      const e0 = e[0]
+      const e1 = e[1]
+      const e2 = e[2]
+      const e4 = e[4]
+      const e5 = e[5]
+      const e6 = e[6]
+      const e8 = e[8]
+      const e9 = e[9]
+      const e10 = e[10]
+      const e12 = e[12]
+      const e13 = e[13]
+      const e14 = e[14]
+      for (let i = 0; i < count; i++) {
+        const s = i * 3
+        const x = src[s]
+        const y = src[s + 1]
+        const z = src[s + 2]
+        const ox = e0 * x + e4 * y + e8 * z + e12
+        const oy = e1 * x + e5 * y + e9 * z + e13
+        const oz = e2 * x + e6 * y + e10 * z + e14
+        const d = base + s
+        output[d] = ox
+        output[d + 1] = oy
+        output[d + 2] = oz
+        if (ox < minX) minX = ox
+        if (oy < minY) minY = oy
+        if (oz < minZ) minZ = oz
+        if (ox > maxX) maxX = ox
+        if (oy > maxY) maxY = oy
+        if (oz > maxZ) maxZ = oz
+      }
+      bounds.minX = minX
+      bounds.minY = minY
+      bounds.minZ = minZ
+      bounds.maxX = maxX
+      bounds.maxY = maxY
+      bounds.maxZ = maxZ
+      return count
+    }
 
     if (fast) {
       const src = position.array as Float32Array
@@ -273,8 +364,19 @@ export class TextGeometryBuilder {
         output[d] = ox
         output[d + 1] = oy
         output[d + 2] = oz
-        expandBounds(ox, oy, oz)
+        if (ox < minX) minX = ox
+        if (oy < minY) minY = oy
+        if (oz < minZ) minZ = oz
+        if (ox > maxX) maxX = ox
+        if (oy > maxY) maxY = oy
+        if (oz > maxZ) maxZ = oz
       }
+      bounds.minX = minX
+      bounds.minY = minY
+      bounds.minZ = minZ
+      bounds.maxX = maxX
+      bounds.maxY = maxY
+      bounds.maxZ = maxZ
       return count
     }
 
@@ -282,7 +384,9 @@ export class TextGeometryBuilder {
       const x = position.getX(i)
       const y = position.getY(i)
       const z = position.getZ(i)
-      const w = 1 / (e[3] * x + e[7] * y + e[11] * z + e[15])
+      const w = affine
+        ? 1
+        : 1 / (e[3] * x + e[7] * y + e[11] * z + e[15])
       const ox = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w
       const oy = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w
       const oz = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w
@@ -290,8 +394,29 @@ export class TextGeometryBuilder {
       output[d] = ox
       output[d + 1] = oy
       output[d + 2] = oz
-      expandBounds(ox, oy, oz)
+      if (ox < minX) minX = ox
+      if (oy < minY) minY = oy
+      if (oz < minZ) minZ = oz
+      if (ox > maxX) maxX = ox
+      if (oy > maxY) maxY = oy
+      if (oz > maxZ) maxZ = oz
     }
+    bounds.minX = minX
+    bounds.minY = minY
+    bounds.minZ = minZ
+    bounds.maxX = maxX
+    bounds.maxY = maxY
+    bounds.maxZ = maxZ
     return count
   }
+}
+
+/** Mutable AABB updated while transforming mesh glyph vertices. */
+interface MeshMergeBounds {
+  minX: number
+  minY: number
+  minZ: number
+  maxX: number
+  maxY: number
+  maxZ: number
 }

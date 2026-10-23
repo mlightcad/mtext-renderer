@@ -79,6 +79,9 @@ export class Shape extends THREE.Object3D {
     // Match MText.asyncDraw: await style fonts only; schedule default/symbol
     // fallbacks in the background under lazy loading.
     const fontsToRequest = [...new Set(fonts)]
+    const pendingFonts = fontsToRequest.filter(name =>
+      this._fontManager.needsFontLoad(name)
+    )
     const requested = new Set(fontsToRequest.map(name => name.toLowerCase()))
     const fallbackFonts = this._fontManager
       .getFontsToLoad()
@@ -86,18 +89,18 @@ export class Shape extends THREE.Object3D {
 
     if (this._fontManager.lazyFontLoading) {
       if (fontsToRequest.length > 0) {
-        if (awaitFonts && fallbackFonts.length > 0) {
+        if (awaitFonts && pendingFonts.length > 0 && fallbackFonts.length > 0) {
           void this._fontManager.requestFonts(fallbackFonts)
         }
-        if (awaitFonts) {
-          await this._fontManager.requestFonts(fontsToRequest)
-        } else {
+        if (awaitFonts && pendingFonts.length > 0) {
+          await this._fontManager.requestFonts(pendingFonts)
+        } else if (!awaitFonts) {
           void this._fontManager.requestFonts(fontsToRequest)
         }
       }
-    } else if (fontsToRequest.length > 0 || fallbackFonts.length > 0) {
+    } else if (pendingFonts.length > 0 || fallbackFonts.length > 0) {
       await this._fontManager.loadFontsByNames([
-        ...fontsToRequest,
+        ...pendingFonts,
         ...fallbackFonts
       ])
     }
