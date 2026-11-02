@@ -27,7 +27,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@mlightcad/mtext-parser": "^1.5.5",
+    "@mlightcad/mtext-parser": "^1.5.7",
     "@mlightcad/mtext-renderer": "workspace:*",
     "three": "^0.186.1"
   },
