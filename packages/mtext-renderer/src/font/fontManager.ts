@@ -13,7 +13,6 @@ import { emptyMaterialStats } from '../memory/types'
 import { BaseFont } from './baseFont'
 import { BaseTextShape } from './baseTextShape'
 import { DefaultFontLoader } from './defaultFontLoader'
-import { ShxFont } from './shxFont'
 import {
   DEFAULT_FONTS_PRESETS,
   DefaultFontsPreset,
@@ -23,6 +22,7 @@ import {
 import { FontData, FontType } from './font'
 import { FontFactory } from './fontFactory'
 import { FontInfo, FontLoader, FontLoadStatus } from './fontLoader'
+import { ShxFont } from './shxFont'
 
 /**
  * Font mappings configuration.
