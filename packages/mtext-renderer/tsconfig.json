@@ -6,7 +6,8 @@
       "es2020"
     ],
     "declaration": true,
-    "outDir": "./dist",
+    "emitDeclarationOnly": true,
+    "outDir": "./lib",
     "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,

@@ -1549,7 +1549,8 @@ export class MTextProcessor {
    * Lays out and renders one parser word token, breaking to a new visual line when needed.
    *
    * - CJK / non-Latin: no whole-word wrap — {@link processChar} breaks between
-   *   characters when the next glyph would not fit in the defined width.
+   *   characters when the pen has already reached the defined width (a glyph
+   *   that starts inside may slightly overshoot).
    * - Latin/ASCII: wrap only at word boundaries (spaces). AutoCAD/GstarCAD do
    *   not hyphenate: a token wider than the column stays on one visual line and
    *   overflows the box (e.g. part numbers like `1157*25*1.5`). A short run that
@@ -2099,10 +2100,14 @@ export class MTextProcessor {
    * Renders one character glyph, including decorations and line-break handling.
    *
    * Missing glyphs are treated as spaces. Soft wrap is decided before placement:
-   * if the glyph's advance would not fit in the remaining defined width, break
-   * first (CJK may break between any two characters). Latin/ASCII word tokens
-   * suppress this so they overflow instead of hyphenating. The first glyph on an
-   * empty line is always placed even when wider than the box.
+   * break when the pen has already reached the defined width so the next glyph
+   * cannot *start* inside the column (CJK may break between any two characters).
+   * A glyph that starts inside the column is kept even if its advance slightly
+   * overshoots — AutoCAD title-block cells are often sized to N capital-A CJK
+   * advances within a fraction of a percent, and wrapping on end-past-width
+   * falsely pushes the last ideograph onto the next line. Latin/ASCII word
+   * tokens suppress this so they overflow instead of hyphenating. The first
+   * glyph on an empty line is always placed even when wider than the box.
    *
    * @param char Character to render.
    * @param geometries Mesh geometry accumulator.
@@ -2133,23 +2138,19 @@ export class MTextProcessor {
     }
 
     const maxWidth = this.maxLineWidth || Infinity
-    const isDistributed =
-      this.currentHorizontalAlignment == MTextParagraphAlignment.DISTRIBUTED
-    // Advance without oblique shear — enough to decide soft wrap; shear is
-    // applied again when committing the pen below.
-    const wrapAdvance = isDistributed
-      ? shape.width * this.currentWidthFactor
-      : this.penAdvance(shape.width)
 
     if (
       !this._suppressSoftWrap &&
       Number.isFinite(maxWidth) &&
       this.hOffset > 0 &&
-      this.hOffset + wrapAdvance > maxWidth
+      this.hOffset >= maxWidth
     ) {
       this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
       this.advanceToNextLine(false)
     }
+
+    const isDistributed =
+      this.currentHorizontalAlignment == MTextParagraphAlignment.DISTRIBUTED
 
     const charX = this.hOffset
     const charY =
@@ -2157,7 +2158,8 @@ export class MTextProcessor {
         ? this.vOffset
         : this.vOffset - this.currentLayoutFontSize
     const charHeight = this.currentLayoutFontSize
-    const charWidth = shape.width * this.currentWidthFactor
+    const advanceWidth = resolved?.layoutAdvance ?? shape.width
+    const charWidth = advanceWidth * this.currentWidthFactor
 
     const { matrix, obliqueExtraAdvance } = this.buildCharTransformMatrix(
       charX,
@@ -2178,10 +2180,10 @@ export class MTextProcessor {
 
     if (isDistributed) {
       this._hOffset +=
-        shape.width * this.currentWidthFactor +
+        advanceWidth * this.currentWidthFactor +
         obliqueExtraAdvance * this.currentWidthFactor
     } else {
-      this._hOffset += this.penAdvance(shape.width, obliqueExtraAdvance)
+      this._hOffset += this.penAdvance(advanceWidth, obliqueExtraAdvance)
     }
     this._lineHasRenderableChar = true
 
@@ -2335,18 +2337,30 @@ export class MTextProcessor {
   }
 
   /**
-   * Resolves the text shape for one character using primary font, big font, defaults, and symbol fonts.
+   * Drawing-space glyph size for a specific face.
    *
-   * Updates {@link _maxFontSize} when the active font size exceeds the current line maximum.
-   * Falls back to the not-found glyph when no renderable geometry is available.
-   *
-   * @param char Character to resolve.
-   * @returns Renderable text shape and the font that supplied it.
+   * {@link currentFontSize} is inflated by the *primary* style font's scale
+   * factor (SHX cap-height or TrueType capital-A). BIGFONT / fallback faces
+   * have their own scale — fetching them at the primary size stretches CJK
+   * cells and shifts mixed runs.
    */
+  private shapeSizeForFont(fontName: string): number {
+    const scale = this.fontManager.getFontScaleFactor(fontName) || 1
+    return this.currentLayoutFontSize * scale
+  }
+
   private resolveCharShape(
     char: string
-  ): { shape: BaseTextShape; sourceFont: string } | undefined {
+  ):
+    | {
+        shape: BaseTextShape
+        sourceFont: string
+        /** Layout advance override (e.g. style BIGFONT cell for mesh fallback). */
+        layoutAdvance?: number
+      }
+    | undefined {
     const primaryFont = this.currentFont
+    const primarySize = this.shapeSizeForFont(primaryFont)
     const bigFont = (
       this._currentContext.bigFont !== undefined
         ? this._currentContext.bigFont
@@ -2354,31 +2368,43 @@ export class MTextProcessor {
     )?.trim()
     let shape: BaseTextShape | undefined
     let sourceFont = primaryFont
+    let usedSize = primarySize
+    let layoutAdvance: number | undefined
 
     if (this.canProbeFontOwnership()) {
       if (this.fontHasChar(primaryFont, char)) {
-        shape = this.fontManager.getCharShape(
-          char,
-          primaryFont,
-          this.currentFontSize
-        )
+        shape = this.fontManager.getCharShape(char, primaryFont, primarySize)
       }
     } else {
-      shape = this.fontManager.getCharShape(
-        char,
-        primaryFont,
-        this.currentFontSize
-      )
+      shape = this.fontManager.getCharShape(char, primaryFont, primarySize)
     }
 
     if (!shape && bigFont) {
-      shape = this.fontManager.getCharShape(
-        char,
-        bigFont,
-        this.currentFontSize
-      )
+      const bigSize = this.shapeSizeForFont(bigFont)
+      shape = this.fontManager.getCharShape(char, bigFont, bigSize)
       if (shape) {
         sourceFont = bigFont
+        usedSize = bigSize
+      }
+    }
+
+    // Style Big Font code page missed the glyph — try other loaded BIGFONT
+    // faces (gbcbig / hztxt / …) before mesh defaults. Only when the style
+    // declares a Big Font; otherwise leave resolution to defaults / mesh.
+    if (
+      !shape &&
+      bigFont &&
+      typeof this.fontManager.getCharShapeFromLoadedBigfonts === 'function'
+    ) {
+      const bigfontHit = this.fontManager.getCharShapeFromLoadedBigfonts(
+        char,
+        this.currentLayoutFontSize,
+        bigFont
+      )
+      if (bigfontHit) {
+        shape = bigfontHit.shape
+        sourceFont = bigfontHit.fontName
+        usedSize = this.shapeSizeForFont(bigfontHit.fontName)
       }
     }
 
@@ -2389,16 +2415,33 @@ export class MTextProcessor {
       const literalSymbol = getLiteralPercentSymbolData(char)
       if (literalSymbol) {
         shape = this.trySymbolFontPercentShape(literalSymbol)
+        if (shape) {
+          usedSize = this.currentFontSize
+        }
       }
     }
 
     if (!shape) {
-      shape = this.fontManager.getCharShapeFromDefaults(
-        char,
-        this.currentFontSize
-      )
+      shape = this.fontManager.getCharShapeFromDefaults(char, primarySize)
       if (shape) {
         sourceFont = primaryFont
+        usedSize = primarySize
+        // Mesh / western substitutes often advance ~½ a CJK cell. When the
+        // style declares a Big Font, keep pen steps on that cell so following
+        // glyphs do not drift left (title-block labels).
+        if (
+          bigFont &&
+          this.isCjkIdeograph(char) &&
+          typeof this.fontManager.getBigfontCellWidth === 'function'
+        ) {
+          const cell = this.fontManager.getBigfontCellWidth(
+            bigFont,
+            this.currentLayoutFontSize
+          )
+          if (cell != null && cell > 0) {
+            layoutAdvance = cell
+          }
+        }
       }
     }
 
@@ -2411,25 +2454,54 @@ export class MTextProcessor {
         )
         if (shape) {
           sourceFont = primaryFont
+          usedSize = this.currentFontSize
         }
       }
     }
 
     if (!shape || !this.shapeHasStrokeGeometry(shape, char)) {
-      shape = this.fontManager.getNotFoundTextShape(this.currentFontSize)
+      shape = this.fontManager.getNotFoundTextShape(primarySize)
       if (!shape) {
         return undefined
       }
       sourceFont = primaryFont
+      usedSize = primarySize
+      if (
+        bigFont &&
+        this.isCjkIdeograph(char) &&
+        typeof this.fontManager.getBigfontCellWidth === 'function'
+      ) {
+        const cell = this.fontManager.getBigfontCellWidth(
+          bigFont,
+          this.currentLayoutFontSize
+        )
+        if (cell != null && cell > 0) {
+          layoutAdvance = cell
+        }
+      }
     }
 
-    if (this.currentFontSize > this._maxFontSize) {
-      this._maxFontSize = this.currentFontSize
+    if (usedSize > this._maxFontSize) {
+      this._maxFontSize = usedSize
     }
     if (this.currentLayoutFontSize > this._maxLayoutFontSize) {
       this._maxLayoutFontSize = this.currentLayoutFontSize
     }
-    return { shape, sourceFont }
+    return { shape, sourceFont, layoutAdvance }
+  }
+
+  /** CJK Unified Ideographs and common compatibility blocks used in CAD text. */
+  private isCjkIdeograph(char: string): boolean {
+    const code = char.codePointAt(0)
+    if (code == null) {
+      return false
+    }
+    return (
+      (code >= 0x3400 && code <= 0x4dbf) ||
+      (code >= 0x4e00 && code <= 0x9fff) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0x20000 && code <= 0x2ceaf)
+    )
   }
 
   private canProbeFontOwnership(): boolean {
