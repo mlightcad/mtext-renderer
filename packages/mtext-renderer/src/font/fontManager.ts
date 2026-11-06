@@ -13,6 +13,7 @@ import { emptyMaterialStats } from '../memory/types'
 import { BaseFont } from './baseFont'
 import { BaseTextShape } from './baseTextShape'
 import { DefaultFontLoader } from './defaultFontLoader'
+import { ShxFont } from './shxFont'
 import {
   DEFAULT_FONTS_PRESETS,
   DefaultFontsPreset,
@@ -897,6 +898,103 @@ export class FontManager {
       }
     }
     return undefined
+  }
+
+  /**
+   * Looks up `char` in every loaded SHX BIGFONT face (and BIGFONT names listed
+   * in {@link defaultFonts}), using each face's own scale factor.
+   *
+   * AutoCAD text styles bind one Big Font file, but when that face's code page
+   * cannot represent a glyph (e.g. simplified Chinese on Japanese `bigfont.shx`)
+   * viewers still find the character in another available Big Font such as
+   * `gbcbig.shx`. A hand-maintained simplified→Japanese character map cannot
+   * cover the repertoire; searching loaded BIGFONT faces does.
+   *
+   * @param char - Character to resolve.
+   * @param layoutSize - MTEXT layout height (cap-height), before per-font scale.
+   * @param excludeFontName - Optional style Big Font already tried.
+   * @returns Shape plus the font that supplied it, or `undefined`.
+   */
+  public getCharShapeFromLoadedBigfonts(
+    char: string,
+    layoutSize: number,
+    excludeFontName?: string
+  ): { shape: BaseTextShape; fontName: string } | undefined {
+    const exclude = excludeFontName?.trim().toLowerCase()
+    const tried = new Set<string>()
+
+    const tryFont = (
+      font: BaseFont,
+      fontName: string
+    ): { shape: BaseTextShape; fontName: string } | undefined => {
+      const key = fontName.toLowerCase()
+      if (tried.has(key) || (exclude && key === exclude)) {
+        return undefined
+      }
+      tried.add(key)
+      if (font.type !== 'shx') {
+        return undefined
+      }
+      if (
+        (font.data as ShxFontData).header?.fontType !== ShxFontType.BIGFONT
+      ) {
+        return undefined
+      }
+      if (!font.hasChar(char)) {
+        return undefined
+      }
+      const size = layoutSize * (font.getScaleFactor() || 1)
+      const shape = font.getCharShape(char, size)
+      if (!shape) {
+        return undefined
+      }
+      return { shape, fontName }
+    }
+
+    // Prefer configured default faces (e.g. gbcbig) over arbitrary load order.
+    for (const fontName of this.defaultFonts) {
+      const font = this.loadedFontMap.get(fontName.toLowerCase())
+      if (!font) {
+        if (this.lazyFontLoading) {
+          void this.requestFont(fontName)
+        }
+        continue
+      }
+      const hit = tryFont(font, fontName)
+      if (hit) {
+        return hit
+      }
+    }
+
+    for (const [name, font] of this.loadedFontMap) {
+      const hit = tryFont(font, name)
+      if (hit) {
+        return hit
+      }
+    }
+
+    return undefined
+  }
+
+  /**
+   * Horizontal BIGFONT cell width at `layoutSize` for the named face, or
+   * `undefined` when the face is missing / not a BIGFONT.
+   */
+  public getBigfontCellWidth(
+    fontName: string,
+    layoutSize: number
+  ): number | undefined {
+    const font = this.getFontByName(fontName, false)
+    if (
+      !font ||
+      font.type !== 'shx' ||
+      !(font instanceof ShxFont) ||
+      (font.data as ShxFontData).header?.fontType !== ShxFontType.BIGFONT
+    ) {
+      return undefined
+    }
+    const size = layoutSize * (font.getScaleFactor() || 1)
+    return font.getFontMetrics(size).cellWidth
   }
 
   /**

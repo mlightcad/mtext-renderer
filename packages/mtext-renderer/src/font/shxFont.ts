@@ -11,7 +11,8 @@ import iconv from 'iconv-lite'
 import { LRUCache } from '../common/lruCache'
 import {
   type FontMemoryStats,
-  SHX_PARSED_FONT_OVERHEAD} from '../memory/types'
+  SHX_PARSED_FONT_OVERHEAD
+} from '../memory/types'
 import { BaseFont } from './baseFont'
 import { FontData } from './font'
 import {
