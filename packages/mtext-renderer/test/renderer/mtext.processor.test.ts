@@ -911,6 +911,19 @@ describe('MTextProcessor format state', () => {
     expect(getInternalLineCount(processor)).toBeGreaterThan(1)
   })
 
+  it('keeps a CJK glyph that starts inside the column even if advance overshoots', () => {
+    // Fake glyphs are 1 wide. With maxWidth 3.5, four ideographs end at 4.
+    // AutoCAD title-block cells often size to N advances within a fraction of
+    // a percent; wrapping on end-past-width would wrongly push the last glyph.
+    const { processor } = createProcessor('mesh', { maxWidth: 3.5 })
+
+    processor.processText([
+      { type: TOKEN_WORD, ctx: null, data: '上一版本' }
+    ] as any)
+
+    expect(getInternalLineCount(processor)).toBe(1)
+  })
+
   it('resolves supplementary-plane characters as one glyph, not surrogate halves', () => {
     const { processor, fontManager } = createProcessor('mesh')
     const getCharShape = vi.spyOn(fontManager, 'getCharShape')

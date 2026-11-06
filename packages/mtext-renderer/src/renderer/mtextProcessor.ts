@@ -1549,7 +1549,8 @@ export class MTextProcessor {
    * Lays out and renders one parser word token, breaking to a new visual line when needed.
    *
    * - CJK / non-Latin: no whole-word wrap — {@link processChar} breaks between
-   *   characters when the next glyph would not fit in the defined width.
+   *   characters when the pen has already reached the defined width (a glyph
+   *   that starts inside may slightly overshoot).
    * - Latin/ASCII: wrap only at word boundaries (spaces). AutoCAD/GstarCAD do
    *   not hyphenate: a token wider than the column stays on one visual line and
    *   overflows the box (e.g. part numbers like `1157*25*1.5`). A short run that
@@ -2099,10 +2100,14 @@ export class MTextProcessor {
    * Renders one character glyph, including decorations and line-break handling.
    *
    * Missing glyphs are treated as spaces. Soft wrap is decided before placement:
-   * if the glyph's advance would not fit in the remaining defined width, break
-   * first (CJK may break between any two characters). Latin/ASCII word tokens
-   * suppress this so they overflow instead of hyphenating. The first glyph on an
-   * empty line is always placed even when wider than the box.
+   * break when the pen has already reached the defined width so the next glyph
+   * cannot *start* inside the column (CJK may break between any two characters).
+   * A glyph that starts inside the column is kept even if its advance slightly
+   * overshoots — AutoCAD title-block cells are often sized to N capital-A CJK
+   * advances within a fraction of a percent, and wrapping on end-past-width
+   * falsely pushes the last ideograph onto the next line. Latin/ASCII word
+   * tokens suppress this so they overflow instead of hyphenating. The first
+   * glyph on an empty line is always placed even when wider than the box.
    *
    * @param char Character to render.
    * @param geometries Mesh geometry accumulator.
@@ -2133,23 +2138,19 @@ export class MTextProcessor {
     }
 
     const maxWidth = this.maxLineWidth || Infinity
-    const isDistributed =
-      this.currentHorizontalAlignment == MTextParagraphAlignment.DISTRIBUTED
-    // Advance without oblique shear — enough to decide soft wrap; shear is
-    // applied again when committing the pen below.
-    const wrapAdvance = isDistributed
-      ? shape.width * this.currentWidthFactor
-      : this.penAdvance(shape.width)
 
     if (
       !this._suppressSoftWrap &&
       Number.isFinite(maxWidth) &&
       this.hOffset > 0 &&
-      this.hOffset + wrapAdvance > maxWidth
+      this.hOffset >= maxWidth
     ) {
       this.recordVisualLineBreak(meshCharBoxes, lineCharBoxes)
       this.advanceToNextLine(false)
     }
+
+    const isDistributed =
+      this.currentHorizontalAlignment == MTextParagraphAlignment.DISTRIBUTED
 
     const charX = this.hOffset
     const charY =

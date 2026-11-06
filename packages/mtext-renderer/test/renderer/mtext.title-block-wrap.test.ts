@@ -14,17 +14,24 @@ import {
 } from '../../src/renderer/types'
 
 const FONT_BASE = 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data/fonts/'
-const LOCAL_SIMFANG = path.resolve('D:/code/cad-data/fonts/simfang.woff')
+const LOCAL_SIMFANG_CANDIDATES = [
+  path.resolve('../../../cad-viewer-nextjs-demo/cad-data/fonts/simfang.woff'),
+  path.resolve('D:/code/cad-data/fonts/simfang.woff')
+]
 
 async function loadSimfangFont(): Promise<void> {
-  let data: ArrayBuffer
-  if (fs.existsSync(LOCAL_SIMFANG)) {
-    const buffer = fs.readFileSync(LOCAL_SIMFANG)
-    data = buffer.buffer.slice(
-      buffer.byteOffset,
-      buffer.byteOffset + buffer.byteLength
-    )
-  } else {
+  let data: ArrayBuffer | undefined
+  for (const candidate of LOCAL_SIMFANG_CANDIDATES) {
+    if (fs.existsSync(candidate)) {
+      const buffer = fs.readFileSync(candidate)
+      data = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength
+      )
+      break
+    }
+  }
+  if (!data) {
     const response = await fetch(FONT_BASE + 'simfang.woff')
     if (!response.ok) throw new Error(`Failed to fetch simfang.woff`)
     data = await response.arrayBuffer()
