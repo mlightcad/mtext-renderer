@@ -136,6 +136,60 @@ function createTextFixture(
 }
 
 describe('MText attachment anchoring', () => {
+  it('preserves leading spaces under TopLeft with a finite wrap width', () => {
+    // Fake font: every glyph (including space) advances 10. Two leading
+    // spaces before "14" must keep the digits 20 units right of the
+    // insertion — ink-based LEFT alignment used to cancel that offset.
+    const mtext = createTextFixture({
+      text: '  14',
+      height: 24,
+      width: 2856,
+      position: { x: 100, y: 200, z: 0 },
+      attachmentPoint: MTextAttachmentPoint.TopLeft
+    })
+
+    mtext.syncDraw()
+    const box = createGeometryBox(mtext)
+
+    expect(box.min.x).toBeCloseTo(120, 4)
+    expect(box.max.x).toBeCloseTo(140, 4)
+  })
+
+  it('preserves first-line indent under TopLeft with a finite wrap width', () => {
+    // `\pxi1` → indent = 1 * height (24). Digits must sit at insertion+indent,
+    // not be snapped back to the insertion by LEFT alignment.
+    const mtext = createTextFixture({
+      text: '\\pxi1;14',
+      height: 24,
+      width: 2856,
+      position: { x: 100, y: 200, z: 0 },
+      attachmentPoint: MTextAttachmentPoint.TopLeft
+    })
+
+    mtext.syncDraw()
+    const box = createGeometryBox(mtext)
+
+    expect(box.min.x).toBeCloseTo(124, 4)
+    expect(box.max.x).toBeCloseTo(144, 4)
+  })
+
+  it('stacks first-line indent with leading spaces under TopLeft', () => {
+    // indent 24 + two spaces (20) → digits start at insertion + 44.
+    const mtext = createTextFixture({
+      text: '\\pxi1;  14',
+      height: 24,
+      width: 2856,
+      position: { x: 100, y: 200, z: 0 },
+      attachmentPoint: MTextAttachmentPoint.TopLeft
+    })
+
+    mtext.syncDraw()
+    const box = createGeometryBox(mtext)
+
+    expect(box.min.x).toBeCloseTo(144, 4)
+    expect(box.max.x).toBeCloseTo(164, 4)
+  })
+
   it('keeps \\pxql across \\P inside a TopCenter defined-width frame', () => {
     const mtext = createTextFixture({
       text: '\\pxql;AA\\PBB',
