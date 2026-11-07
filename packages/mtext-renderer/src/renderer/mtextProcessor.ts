@@ -2541,7 +2541,6 @@ export class MTextProcessor {
     }
     this.captureCurrentLineAdvance()
     this.recordCurrentLineLayout()
-    this._hOffset = 0
     if (!this._lineHasRenderableChar) {
       this._pendingEmptyLineFontSizeAdjust = this.currentFontSize
     } else {
@@ -2555,6 +2554,7 @@ export class MTextProcessor {
     this._lineCount++
     this.processAlignment()
     this._currentLineObjects = []
+    this._hOffset = 0
     if (this._lineCount == 2) {
       this._totalHeight = this.currentMaxFontSize
     } else {
@@ -2731,10 +2731,11 @@ export class MTextProcessor {
     }
 
     const applyLeftAlignment = () => {
-      const dx = Number.isFinite(this.maxLineWidth)
-        ? this._currentLeftMargin - resolvedBBox.min.x
-        : this._currentLeftMargin
-      applyDx(dx)
+      // Shift the line's layout origin (x=0, before indent/spaces) to the left
+      // margin. Do not snap to first-glyph ink — that cancelled leading spaces
+      // on finite-width callouts such as `"  {\\H0.833333x;14}"`, and do not
+      // subtract first-line indent either (indent is already in pen X).
+      applyDx(this._currentLeftMargin)
     }
 
     const alignment =
@@ -2800,8 +2801,9 @@ export class MTextProcessor {
             : 0
         const translated = new Set<THREE.Object3D>()
         distributeTargets.forEach((entry, index) => {
-          const dx =
-            gap * index + (this._currentLeftMargin - resolvedBBox.min.x)
+          // Same pen-origin rule as LEFT: keep leading spaces / indent baked
+          // into layout X rather than cancelling them via ink bbox.
+          const dx = gap * index + this._currentLeftMargin
           entry.apply(dx)
           if (!translated.has(entry.owner)) {
             translateCharBoxes(entry.owner, dx)
@@ -2817,8 +2819,7 @@ export class MTextProcessor {
                 t.owner === entry.owner || t.owner.parent === entry.owner
             )
             const index = matched >= 0 ? matched : 0
-            const dx =
-              gap * index + (this._currentLeftMargin - resolvedBBox.min.x)
+            const dx = gap * index + this._currentLeftMargin
             this.translateMeshGlyphPlacements(entry.placements, dx, 0)
           })
         }
