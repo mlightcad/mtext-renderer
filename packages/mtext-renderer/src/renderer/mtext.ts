@@ -767,7 +767,9 @@ export class MText extends THREE.Object3D {
     const context = new MTextContext()
     context.color = this._colorSettings.color.copy()
     context.fontFace.family = this.fontManager
-      .findAndReplaceFont(style.font)
+      .findAndReplaceFont(style.font, {
+        hasBigFont: !!style.bigFont?.trim()
+      })
       .toLowerCase()
     context.capHeight = {
       value: defaultFontSize,

@@ -33,6 +33,25 @@ import { ShxFont } from './shxFont'
 export type FontMapping = Record<string, string>
 
 /**
+ * Optional hints for {@link FontManager.findAndReplaceFont} when the face is
+ * missing. CAD pipelines often strip `.shx` / `.ttf` from style font names, so
+ * callers that still know the AutoCAD text-style context (e.g. a Big Font is
+ * set) should pass that here.
+ */
+export interface FindAndReplaceFontOptions {
+  /**
+   * When the text style declares a Big Font, the primary face is an SHX
+   * shapes font even if the file extension was stripped from the name.
+   * Applied only after {@link preferredType} and
+   * {@link FontManager.inferFontTypeFromName} so an explicit `.ttf` / catalog
+   * mesh face is not forced onto the SHX replacement path.
+   */
+  hasBigFont?: boolean
+  /** Explicit type preference when already known by the caller. */
+  preferredType?: FontType
+}
+
+/**
  * Event arguments for font-related events.
  */
 export interface FontManagerEventArgs {
@@ -66,6 +85,11 @@ export class FontManager {
   public unsupportedChars: Record<string, number> = {}
   /** Record of fonts that were requested but not found */
   public missedFonts: Record<string, number> = {}
+  /**
+   * Catalog / loaded-face type hints keyed by normalized bare font name.
+   * Used when style names arrive without a `.shx` / `.ttf` extension.
+   */
+  private fontTypeByName = new Map<string, FontType>()
   /** Flag to enable/disable font caching */
   public enableFontCache = true
   /**
@@ -258,7 +282,12 @@ export class FontManager {
   async getAvailableFonts(): Promise<FontInfo[]> {
     const remoteFonts = await this.fontLoader.getAvailableFonts()
     if (!this.enableFontCache) {
-      return remoteFonts.map(font => ({ ...font, source: 'remote' as const }))
+      const fonts = remoteFonts.map(font => ({
+        ...font,
+        source: 'remote' as const
+      }))
+      this.rememberFontTypesFromInfos(fonts)
+      return fonts
     }
 
     const fontMap = new Map<string, FontInfo>()
@@ -276,9 +305,24 @@ export class FontManager {
       fontMap.set(key, this.cachedFontDataToFontInfo(cached))
     }
 
-    return [...fontMap.values()].sort((a, b) =>
+    const fonts = [...fontMap.values()].sort((a, b) =>
       a.name[0].localeCompare(b.name[0], undefined, { sensitivity: 'base' })
     )
+    this.rememberFontTypesFromInfos(fonts)
+    return fonts
+  }
+
+  private rememberFontTypesFromInfos(fonts: readonly FontInfo[]) {
+    for (const font of fonts) {
+      const type: FontType =
+        font.type === 'shx' || font.file.toLowerCase().endsWith('.shx')
+          ? 'shx'
+          : 'mesh'
+      this.rememberFontType(getFileNameWithoutExtension(font.file), type)
+      for (const alias of font.name ?? []) {
+        this.rememberFontType(alias, type)
+      }
+    }
   }
 
   /**
@@ -718,9 +762,13 @@ export class FontManager {
    * schedules {@link requestFont} for the face that will be fetched.
    *
    * @param fontName - The font name to find
+   * @param options - Optional type hints when the file extension was stripped
    * @returns The original font name if found, or the replacement font name if not found
    */
-  findAndReplaceFont(fontName: string) {
+  findAndReplaceFont(
+    fontName: string,
+    options?: FindAndReplaceFontOptions
+  ) {
     const requested = fontName == null ? '' : String(fontName)
     const missName = this.stripFontFileExtension(requested)
     let font = this.loadedFontMap.get(requested.toLowerCase())
@@ -728,7 +776,11 @@ export class FontManager {
       font = this.loadedFontMap.get(missName.toLowerCase())
     }
     if (font == null) {
-      const mappedFontName = this.fontMapping[requested]
+      const mappedFontName =
+        this.fontMapping[requested] ??
+        (missName && missName !== requested
+          ? this.fontMapping[missName]
+          : undefined)
       if (mappedFontName) {
         font = this.loadedFontMap.get(mappedFontName.toLowerCase())
         if (!font && this.lazyFontLoading) {
@@ -749,17 +801,16 @@ export class FontManager {
     }
     // Not loaded and no mapping — record miss (schedules lazy load once).
     this.recordMissedFonts(missName, true)
-    // Prefer non-BIGFONT defaults as the primary face. BIGFONT SHX files (hztxt,
-    // gbcbig, …) map ASCII to GBK fullwidth cells (0xA3xx), which makes Latin
-    // runs much wider than AutoCAD and triggers false MTEXT wrapping when the
-    // style font is missing (e.g. Chinese styles named "标准").
-    const loadedDefault = this.pickLoadedDefaultFont(true)
-    if (loadedDefault) {
-      return loadedDefault
-    }
-    const anyLoadedDefault = this.pickLoadedDefaultFont(false)
-    if (anyLoadedDefault) {
-      return anyLoadedDefault
+    // Prefer explicit caller hints, then name/catalog inference (so `.ttf`
+    // stays mesh even when the style also has a Big Font), then Big Font as
+    // a last-resort SHX hint for extension-stripped shapes faces (e.g. `txt8`).
+    const preferredType =
+      options?.preferredType ??
+      this.inferFontTypeFromName(requested) ??
+      (options?.hasBigFont ? 'shx' : undefined)
+    const replacement = this.pickReplacementDefaultFont(preferredType)
+    if (replacement) {
+      return replacement
     }
     const firstDefault = [...this.defaultFonts][0] ?? ''
     if (firstDefault && this.lazyFontLoading) {
@@ -769,15 +820,90 @@ export class FontManager {
   }
 
   /**
-   * Returns the first loaded font from {@link defaultFonts}.
-   *
-   * @param skipBigfont When true, ignores SHX BIGFONT faces so ASCII/Latin text
-   *   is not forced through fullwidth CJK glyph cells.
+   * Infers {@link FontType} from a style / file name when the face is not loaded.
+   * Order: file extension → catalog / loaded-face type cache → unknown.
    */
-  private pickLoadedDefaultFont(skipBigfont: boolean): string | undefined {
+  inferFontTypeFromName(fontName: string): FontType | undefined {
+    const lower = fontName.trim().toLowerCase()
+    if (!lower) {
+      return undefined
+    }
+    if (lower.endsWith('.shx')) {
+      return 'shx'
+    }
+    if (
+      lower.endsWith('.ttf') ||
+      lower.endsWith('.otf') ||
+      lower.endsWith('.woff') ||
+      lower.endsWith('.woff2')
+    ) {
+      return 'mesh'
+    }
+    const bare = this.stripFontFileExtension(lower).toLowerCase()
+    return this.fontTypeByName.get(bare)
+  }
+
+  /** Records a bare-name → {@link FontType} hint for extension-stripped lookups. */
+  private rememberFontType(fontName: string, type: FontType) {
+    const key = this.stripFontFileExtension(fontName).toLowerCase()
+    if (key) {
+      this.fontTypeByName.set(key, type)
+    }
+  }
+
+  /**
+   * Picks a loaded {@link defaultFonts} face to replace a missing style font.
+   *
+   * - Known SHX request: SHX non-BIGFONT → SHX BIGFONT → mesh
+   * - Known mesh request: mesh → SHX non-BIGFONT → SHX BIGFONT
+   * - Unknown (e.g. "标准"): non-BIGFONT first (avoids fullwidth Latin cells),
+   *   then any loaded default — same as the historical modern-preset behavior
+   */
+  private pickReplacementDefaultFont(
+    preferredType?: FontType
+  ): string | undefined {
+    if (preferredType === 'shx') {
+      return (
+        this.pickLoadedDefaultFont({ type: 'shx', skipBigfont: true }) ??
+        this.pickLoadedDefaultFont({ type: 'shx', skipBigfont: false }) ??
+        this.pickLoadedDefaultFont({ type: 'mesh' })
+      )
+    }
+    if (preferredType === 'mesh') {
+      return (
+        this.pickLoadedDefaultFont({ type: 'mesh' }) ??
+        this.pickLoadedDefaultFont({ type: 'shx', skipBigfont: true }) ??
+        this.pickLoadedDefaultFont({ type: 'shx', skipBigfont: false })
+      )
+    }
+    // Prefer non-BIGFONT defaults as the primary face. BIGFONT SHX files (hztxt,
+    // gbcbig, …) map ASCII to GBK fullwidth cells (0xA3xx), which makes Latin
+    // runs much wider than AutoCAD and triggers false MTEXT wrapping when the
+    // style font is missing (e.g. Chinese styles named "标准").
+    return (
+      this.pickLoadedDefaultFont({ skipBigfont: true }) ??
+      this.pickLoadedDefaultFont({ skipBigfont: false })
+    )
+  }
+
+  /**
+   * Returns the first loaded font from {@link defaultFonts} matching filters.
+   *
+   * @param options.type - When set, only faces of this {@link FontType}
+   * @param options.skipBigfont - When true, ignores SHX BIGFONT faces so
+   *   ASCII/Latin text is not forced through fullwidth CJK glyph cells.
+   */
+  private pickLoadedDefaultFont(options: {
+    type?: FontType
+    skipBigfont?: boolean
+  } = {}): string | undefined {
+    const { type, skipBigfont = false } = options
     for (const defaultFontName of this.defaultFonts) {
       const loaded = this.loadedFontMap.get(defaultFontName.toLowerCase())
       if (!loaded) {
+        continue
+      }
+      if (type && loaded.type !== type) {
         continue
       }
       if (
@@ -885,19 +1011,41 @@ export class FontManager {
   /**
    * Gets the text shape from the first loaded default font that contains the character.
    * Used after primary and optional bigFont lookups per AutoCAD text-style semantics.
+   *
+   * When `preferredType` is set, same-type defaults are tried first (preserving
+   * {@link defaultFonts} order within each pass), then the other type. This keeps
+   * SHX runs on SHX faces and mesh runs on mesh faces before crossing types.
    */
   public getCharShapeFromDefaults(
     char: string,
-    size: number
+    size: number,
+    preferredType?: FontType
   ): BaseTextShape | undefined {
-    for (const fontName of this.defaultFonts) {
-      const font = this.loadedFontMap.get(fontName.toLowerCase())
-      const shape = font?.getCharShape(char, size)
-      if (shape) {
-        return shape
+    const tryDefaults = (
+      typeFilter?: FontType
+    ): BaseTextShape | undefined => {
+      for (const fontName of this.defaultFonts) {
+        const font = this.loadedFontMap.get(fontName.toLowerCase())
+        if (!font) {
+          continue
+        }
+        if (typeFilter && font.type !== typeFilter) {
+          continue
+        }
+        const shape = font.getCharShape(char, size)
+        if (shape) {
+          return shape
+        }
       }
+      return undefined
     }
-    return undefined
+
+    if (!preferredType) {
+      return tryDefaults()
+    }
+
+    const otherType: FontType = preferredType === 'shx' ? 'mesh' : 'shx'
+    return tryDefaults(preferredType) ?? tryDefaults(otherType)
   }
 
   /**
@@ -1454,6 +1602,7 @@ export class FontManager {
       }
       this.loadedFontMap.set(key, font)
       this.fontCacheLookupMisses.delete(key)
+      this.rememberFontType(key, font.type)
     }
     register(primaryName)
     font.names.forEach(name => register(name))
@@ -1492,6 +1641,7 @@ export class FontManager {
         font.dispose?.()
       }
       this.loadedFontMap.clear()
+      this.fontTypeByName.clear()
       this.fontRequestInFlight.clear()
       this.fontRequestFailed.clear()
       this.fontRequestAbsent.clear()
@@ -1508,6 +1658,7 @@ export class FontManager {
     for (const [key, value] of this.loadedFontMap) {
       if (value === font) {
         this.loadedFontMap.delete(key)
+        this.fontTypeByName.delete(key)
       }
     }
     return true

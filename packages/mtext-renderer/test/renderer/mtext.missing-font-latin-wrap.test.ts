@@ -133,4 +133,20 @@ describe('missing style font Latin wrap width', () => {
 
     expect(FontManager.instance.findAndReplaceFont('标准')).toBe('simsun')
   }, 120_000)
+
+  it('replaces a missing .shx style face with hztxt before simsun', async () => {
+    FontManager.instance.release()
+    FontManager.instance.enableFontCache = false
+    FontManager.instance.lazyFontLoading = false
+    FontManager.instance.setDefaultFonts('modern')
+    await loadFont('hztxt', 'hztxt.shx', 'gbk')
+    await loadFont('simsun', 'simsun.woff')
+
+    // hz5 / txt8.shx is not on the CDN — keep the replacement stroke-based.
+    expect(FontManager.instance.findAndReplaceFont('txt8.shx')).toBe('hztxt')
+    // Viewer stores bare `txt8` after stripping; Big Font marks it as SHX.
+    expect(
+      FontManager.instance.findAndReplaceFont('txt8', { hasBigFont: true })
+    ).toBe('hztxt')
+  }, 120_000)
 })

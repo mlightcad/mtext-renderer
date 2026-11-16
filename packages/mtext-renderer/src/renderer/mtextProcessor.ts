@@ -363,7 +363,9 @@ export class MTextProcessor {
     // Resolve missing style fonts to the default chain before the first glyph.
     // Normalize to lowercase to match FontManager's loadedFontMap keys.
     const resolvedFont = this.fontManager
-      .findAndReplaceFont(this.textStyle.font)
+      .findAndReplaceFont(this.textStyle.font, {
+        hasBigFont: !!this.textStyle.bigFont?.trim()
+      })
       .toLowerCase()
     this._currentContext = new RenderContext({
       fontScaleFactor: this.fontManager.getFontScaleFactor(resolvedFont),
@@ -2246,12 +2248,29 @@ export class MTextProcessor {
    * @param fontName Font family name from an inline `\f` command or text style.
    */
   private changeFont(fontName: string) {
+    // Infer from the raw `\f` name before stripping the extension. Test doubles
+    // may omit inferFontTypeFromName — fall back to extension-only heuristics.
+    const preferredType =
+      typeof this.fontManager.inferFontTypeFromName === 'function'
+        ? this.fontManager.inferFontTypeFromName(fontName)
+        : /\.shx$/i.test(fontName)
+          ? 'shx'
+          : /\.(ttf|otf|woff2?)$/i.test(fontName)
+            ? 'mesh'
+            : undefined
     let processedFontName = fontName
     if (this._options.removeFontExtension) {
       processedFontName = fontName.replace(/\.(ttf|otf|woff|shx)$/, '')
     }
-    this._currentContext.fontFace.family =
-      this.fontManager.findAndReplaceFont(processedFontName)
+    // Lowercase to match FontManager's loadedFontMap keys (same as style init).
+    this._currentContext.fontFace.family = this.fontManager
+      .findAndReplaceFont(processedFontName, {
+        preferredType,
+        // Inline `\f` switches only change the primary face; keep the style
+        // Big Font as an SHX-type hint when the face name lost its extension.
+        hasBigFont: !!this.textStyle.bigFont?.trim()
+      })
+      .toLowerCase()
     this.calcuateLineParams()
     this._currentContext.blankWidth = this.calculateBlankWidthForFont(
       this._currentContext.fontFace.family,
@@ -2422,7 +2441,12 @@ export class MTextProcessor {
     }
 
     if (!shape) {
-      shape = this.fontManager.getCharShapeFromDefaults(char, primarySize)
+      const preferredType = this.fontManager.getFontType(primaryFont)
+      shape = this.fontManager.getCharShapeFromDefaults(
+        char,
+        primarySize,
+        preferredType
+      )
       if (shape) {
         sourceFont = primaryFont
         usedSize = primarySize
