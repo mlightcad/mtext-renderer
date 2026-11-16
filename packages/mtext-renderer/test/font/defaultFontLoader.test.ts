@@ -357,6 +357,169 @@ describe('DefaultFontLoader', () => {
     })
   })
 
+  it('keeps catalog fonts loadable while a concurrent miss refreshes fonts.json', async () => {
+    const catalog: FontInfo[] = [
+      {
+        name: ['arial'],
+        file: 'arial.woff',
+        type: 'mesh',
+        url: ''
+      }
+    ]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+        // Let the sibling load() interleave while refresh is in flight.
+        await new Promise<void>(resolve => setTimeout(resolve, 5))
+        return jsonResponse(catalog)
+      })
+    )
+    vi.mocked(FontManager.instance.loadFonts).mockImplementation(
+      async fonts => {
+        const list = Array.isArray(fonts) ? fonts : [fonts]
+        return list.map(font => ({
+          fontName: 'arial',
+          url: font.url,
+          status: 'Success' as const
+        }))
+      }
+    )
+    const loader = new DefaultFontLoader()
+    loader.baseUrl = 'https://fonts.test/'
+
+    const [missing, arial] = await Promise.all([
+      loader.load(['cityblueprint']),
+      loader.load(['arial'])
+    ])
+
+    expect(missing.map(r => r.status)).toEqual(['NotFound'])
+    expect(arial).toEqual([
+      {
+        fontName: 'arial',
+        url: 'https://fonts.test/arial.woff',
+        status: 'Success'
+      }
+    ])
+  })
+
+  it('resolves style file names with extensions via the catalog', async () => {
+    vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([
+      {
+        fontName: 'txt8',
+        url: 'https://cdn.example.com/fonts/txt8.shx',
+        status: 'Success'
+      }
+    ])
+    const loader = new DefaultFontLoader()
+    loader.baseUrl = 'https://cdn.example.com/fonts/'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse([
+          {
+            name: ['txt8'],
+            file: 'txt8.shx',
+            type: 'shx',
+            url: ''
+          }
+        ])
+      )
+    )
+
+    const statuses = await loader.load(['txt8.shx'])
+
+    expect(FontManager.instance.loadFonts).toHaveBeenCalledWith([
+      expect.objectContaining({ file: 'txt8.shx' })
+    ])
+    expect(statuses).toEqual([
+      {
+        fontName: 'txt8',
+        url: 'https://cdn.example.com/fonts/txt8.shx',
+        status: 'Success'
+      }
+    ])
+  })
+
+  it('shares one catalog refresh across concurrent loads of newly published faces', async () => {
+    const staleCatalog: FontInfo[] = [
+      {
+        name: ['simsun'],
+        file: 'simsun.woff',
+        type: 'mesh',
+        url: ''
+      }
+    ]
+    const freshCatalog: FontInfo[] = [
+      ...staleCatalog,
+      {
+        name: ['txt8'],
+        file: 'txt8.shx',
+        type: 'shx',
+        url: ''
+      },
+      {
+        name: ['hztxt2'],
+        file: 'hztxt2.shx',
+        type: 'shx',
+        encoding: 'gbk',
+        url: ''
+      }
+    ]
+    let resolveFresh: ((value: ReturnType<typeof jsonResponse>) => void) | null =
+      null
+    const freshResponse = new Promise<ReturnType<typeof jsonResponse>>(
+      resolve => {
+        resolveFresh = resolve
+      }
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(staleCatalog))
+        .mockImplementationOnce(() => freshResponse)
+    )
+    vi.mocked(FontManager.instance.loadFonts).mockImplementation(
+      async fonts => {
+        const list = Array.isArray(fonts) ? fonts : [fonts]
+        return list.map(font => ({
+          fontName: font.file.replace(/\.shx$/i, '').toLowerCase(),
+          url: font.url,
+          status: 'Success' as const
+        }))
+      }
+    )
+    const loader = new DefaultFontLoader()
+    loader.baseUrl = 'https://cdn.example.com/fonts/'
+
+    // Prime the stale in-memory catalog (shared by both concurrent loads).
+    await loader.getAvailableFonts()
+
+    const txt8Load = loader.load(['txt8'])
+    const hztxt2Load = loader.load(['hztxt2'])
+    // Both see a miss and must join the same in-flight refresh.
+    await Promise.resolve()
+    expect(resolveFresh).not.toBeNull()
+    resolveFresh!(jsonResponse(freshCatalog))
+
+    const [txt8, hztxt2] = await Promise.all([txt8Load, hztxt2Load])
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(txt8).toEqual([
+      {
+        fontName: 'txt8',
+        url: 'https://cdn.example.com/fonts/txt8.shx',
+        status: 'Success'
+      }
+    ])
+    expect(hztxt2).toEqual([
+      {
+        fontName: 'hztxt2',
+        url: 'https://cdn.example.com/fonts/hztxt2.shx',
+        status: 'Success'
+      }
+    ])
+  })
+
   it('reports success for alias requests when load status uses the file name', async () => {
     vi.mocked(FontManager.instance.isFontLoaded).mockReturnValue(false)
     vi.mocked(FontManager.instance.loadFonts).mockResolvedValue([
