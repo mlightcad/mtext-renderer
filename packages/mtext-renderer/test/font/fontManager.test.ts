@@ -217,6 +217,35 @@ describe('FontManager', () => {
     FontManager.instance.events.fontNotFound.removeEventListener(listener)
   })
 
+  it('replaces a missing .shx face with SHX defaults before mesh', () => {
+    const manager = FontManager.instance as any
+    const simsun = createFakeFont({ type: 'mesh' })
+    const hztxt = createFakeFont({
+      type: 'shx',
+      data: { header: { fontType: 'bigfont' } }
+    })
+    manager.defaultFonts = new Set(['simsun', 'hztxt'])
+    manager.loadedFontMap.set('simsun', simsun)
+    manager.loadedFontMap.set('hztxt', hztxt)
+
+    // Same drawing pattern as hz5 / txt8.shx: SHX style face missing from CDN.
+    expect(FontManager.instance.findAndReplaceFont('txt8.shx')).toBe('hztxt')
+    // data-model strips the extension; Big Font on the style is the SHX hint.
+    expect(
+      FontManager.instance.findAndReplaceFont('txt8', { hasBigFont: true })
+    ).toBe('hztxt')
+    // Bare Chinese style names stay on mesh for Latin metrics.
+    expect(FontManager.instance.findAndReplaceFont('标准')).toBe('simsun')
+    // Explicit mesh request stays on mesh.
+    expect(FontManager.instance.findAndReplaceFont('arial.ttf')).toBe('simsun')
+    // Extension / catalog inference wins over a style Big Font flag.
+    expect(
+      FontManager.instance.findAndReplaceFont('arial.ttf', {
+        hasBigFont: true
+      })
+    ).toBe('simsun')
+  })
+
   it('finds fonts by name, strips common font extensions, and records misses', () => {
     const manager = FontManager.instance as any
     const listener = vi.fn()
@@ -283,6 +312,61 @@ describe('FontManager', () => {
 
     expect(FontManager.instance.getCharShapeFromDefaults('中', 12)).toBe(shape)
     expect(fallback.getCharShape).toHaveBeenCalledWith('中', 12)
+  })
+
+  it('prefers same-type defaultFonts before crossing to the other type', () => {
+    const meshShape = { width: 1 }
+    const shxShape = { width: 2 }
+    const manager = FontManager.instance as any
+    const simsun = createFakeFont({
+      type: 'mesh',
+      getCharShape: vi.fn().mockReturnValue(meshShape)
+    })
+    const hztxt = createFakeFont({
+      type: 'shx',
+      getCharShape: vi.fn().mockReturnValue(shxShape)
+    })
+    // modern-style order: mesh first in the list
+    manager.defaultFonts = new Set(['simsun', 'hztxt'])
+    manager.loadedFontMap.set('simsun', simsun)
+    manager.loadedFontMap.set('hztxt', hztxt)
+
+    expect(
+      FontManager.instance.getCharShapeFromDefaults('中', 12, 'shx')
+    ).toBe(shxShape)
+    expect(hztxt.getCharShape).toHaveBeenCalledWith('中', 12)
+    expect(simsun.getCharShape).not.toHaveBeenCalled()
+
+    simsun.getCharShape.mockClear()
+    hztxt.getCharShape.mockClear()
+
+    expect(
+      FontManager.instance.getCharShapeFromDefaults('中', 12, 'mesh')
+    ).toBe(meshShape)
+    expect(simsun.getCharShape).toHaveBeenCalledWith('中', 12)
+    expect(hztxt.getCharShape).not.toHaveBeenCalled()
+  })
+
+  it('crosses font type when preferred-type defaults lack the glyph', () => {
+    const meshShape = { width: 1 }
+    const manager = FontManager.instance as any
+    const simsun = createFakeFont({
+      type: 'mesh',
+      getCharShape: vi.fn().mockReturnValue(meshShape)
+    })
+    const hztxt = createFakeFont({
+      type: 'shx',
+      getCharShape: vi.fn().mockReturnValue(undefined)
+    })
+    manager.defaultFonts = new Set(['simsun', 'hztxt'])
+    manager.loadedFontMap.set('simsun', simsun)
+    manager.loadedFontMap.set('hztxt', hztxt)
+
+    expect(
+      FontManager.instance.getCharShapeFromDefaults('中', 12, 'shx')
+    ).toBe(meshShape)
+    expect(hztxt.getCharShape).toHaveBeenCalledWith('中', 12)
+    expect(simsun.getCharShape).toHaveBeenCalledWith('中', 12)
   })
 
   it('skips default fonts that hasChar but cannot build a shape', () => {
