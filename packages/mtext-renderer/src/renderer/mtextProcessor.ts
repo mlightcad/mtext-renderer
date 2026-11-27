@@ -2271,11 +2271,8 @@ export class MTextProcessor {
         hasBigFont: !!this.textStyle.bigFont?.trim()
       })
       .toLowerCase()
+    // also measures the space of the new face at the new size
     this.calcuateLineParams()
-    this._currentContext.blankWidth = this.calculateBlankWidthForFont(
-      this._currentContext.fontFace.family,
-      this.currentLayoutFontSize
-    )
   }
 
   /**
@@ -2294,6 +2291,13 @@ export class MTextProcessor {
       fontHeight *
       this._currentContext.fontScaleFactor *
       this._currentContext.fontSizeScaleFactor
+    // The space must be measured at the size glyphs are drawn with (font scale
+    // factor included) and follow every size change (`\H`, stacks, font
+    // switches); otherwise spaces come out narrower than the font's own.
+    this._currentContext.blankWidth = this.calculateBlankWidthForFont(
+      this.currentFont,
+      this._currentContext.fontSize
+    )
   }
 
   /**
